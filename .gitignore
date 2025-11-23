@@ -1,0 +1,79 @@
+# Protocol Monk Core - Git Ignore
+
+# Environment and secrets
+.env
+.env.local
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Session data
+.protocol_history.txt
+*.log
+
+# Working directory (user projects)
+monk_workspace/
+
+
+# Session logs and private config files
+detailed_session_*.jsonl
+*.log
+.session*
+*.history
+*.json
+
+# Protocol Monk specific
+.protocol_history.txt
+neural_memory/
+.scratch/
+.neuralsym/
+context_snapshots/
+*.py.bak
+
+# Local configuration
+*.local
+config/local_*
+
+# Markdown files (mostly fluid working documents)
+*.md
+
+# But keep important documentation
+!README.md
+!GETTING_STARTED.md

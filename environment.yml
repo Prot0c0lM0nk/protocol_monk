@@ -1,0 +1,23 @@
+name: protocol-monk
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python version
+  - python=3.11
+
+  # Core dependencies from conda-forge
+  - pip>=23.0
+
+  # Install remaining dependencies via pip
+  - pip:
+      - rich>=13.0.0
+      - prompt-toolkit>=3.0.0
+      - requests>=2.31.0
+      - tiktoken>=0.5.0
+
+# Optional dependencies (uncomment if needed):
+# - pip:
+#     - youtube-transcript-api>=0.6.0
+#     - beautifulsoup4>=4.12.0
