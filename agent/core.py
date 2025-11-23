@@ -178,9 +178,11 @@ class ProtocolAgent:
                                     importance=5
                                 )
 
+                                tool_data = getattr(result, "data", {}) or {}
+                            
                                 self.context_manager.record_tool_execution_outcome(
                                     tool_name=result.tool_name,
-                                    arguments=result.data if result.data else {}, # or keep the original params
+                                    arguments=tool_data,
                                     success=result.success,
                                     error_message=result.output if not result.success else None
                                 )

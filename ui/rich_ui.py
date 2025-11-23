@@ -7,19 +7,15 @@ import asyncio
 from typing import Dict, Any, Union, List
 
 from rich.live import Live
-from rich.text import Text
-from rich.markdown import Markdown
 from rich.console import Group
-from rich.spinner import Spinner
-from rich.align import Align
-from rich.table import Table
-from rich.panel import Panel
 # --- IMPORTS ---
 from .base import UI, ToolResult
 # ADD: Import the new factory function
 from .styles import console, create_monk_panel 
 from .renderers.message import render_user_message, render_agent_message
 from .renderers.tools import render_tool_call_pretty, render_tool_result
+from .renderers.models import render_model_table, render_switch_report
+from .renderers.streaming import generate_stream_panel
 from .stream_processor import StreamProcessor
 
 class RichUI(UI):
@@ -42,39 +38,13 @@ class RichUI(UI):
         self.processor = StreamProcessor()
         
         self._live_display = Live(
-            self._generate_stream_panel("", False, 0), 
+            generate_stream_panel("", False, 0),
             console=console, 
             refresh_per_second=12,
             vertical_overflow="visible"
         )
         self._live_display.start()
-        
-    def _generate_stream_panel(self, content_str, is_tool, tool_len):
-        """Generates the panel frame using the shared style factory."""
-        # 1. Generate Content
-        if content_str.strip():
-            if any(c in content_str for c in ['*', '_', '#', '`']):
-                content = Markdown(content_str)
-            else:
-                content = Text(content_str)
-        else:
-            content = Text("...", style="dim")
-            
-        # 2. Use the Shared Factory (Clean & Consistent)
-        main_panel = create_monk_panel(content)
-
-        # 3. If Tool Detected, add the Status Footer
-        if is_tool:
-            status_text = Text.assemble(
-                ("  Constructing Neural Action... ", "dim"),
-                (f"({tool_len} bytes)", "dim cyan")
-            )
-            spinner = Spinner("dots", text=status_text, style="#ffaa44")  # Orthodox gold color
-            
-            return Group(main_panel, Align.center(spinner))
-            
-        return main_panel
-        
+                
     async def print_stream(self, text: str):
         if not self._streaming_active:
             self._start_streaming()
@@ -86,7 +56,7 @@ class RichUI(UI):
         
         if self._live_display:
             self._live_display.update(
-                self._generate_stream_panel(visible_text, is_tool, tool_len)
+                generate_stream_panel(visible_text, is_tool, tool_len)
             )
             
     def _end_streaming(self):
@@ -95,7 +65,7 @@ class RichUI(UI):
                 self.processor.flush()
                 visible_text, is_tool, tool_len = self.processor.get_view_data()
                 self._live_display.update(
-                    self._generate_stream_panel(visible_text, is_tool, tool_len)
+                    generate_stream_panel(visible_text, is_tool, tool_len)
                 )
 
             self._streaming_active = False
@@ -134,81 +104,13 @@ class RichUI(UI):
         self._end_streaming()
         self._stop_thinking()
         
-        # Create the Table
-        table = Table(
-            title="Available Protocols", 
-            title_style="holy.gold",
-            border_style="dim white",
-            header_style="bold cyan",
-            box=None,
-            expand=True
-        )
-        
-        table.add_column("Model Name", style="white")
-        table.add_column("Provider", style="dim")
-        table.add_column("Context", justify="right", style="green")
-        table.add_column("Status", justify="center")
-
-        for model in models:
-            # Handle both objects (ModelInfo) and dicts
-            name = getattr(model, 'name', model.get('name') if isinstance(model, dict) else str(model))
-            provider = getattr(model, 'provider', model.get('provider', 'unknown') if isinstance(model, dict) else '')
-            ctx = getattr(model, 'context_window', model.get('context_window', 0) if isinstance(model, dict) else 0)
-            
-            is_current = (name == current_model)
-            
-            # Formatting
-            status_str = "ACTIVE" if is_current else ""
-            row_style = "holy.gold" if is_current else None
-            ctx_str = f"{ctx:,}"
-            
-            table.add_row(name, provider, ctx_str, status_str, style=row_style)
-            
-        console.print()
-        console.print(table)
-        console.print()
+        render_model_table(models, current_model)
 
     async def display_switch_report(self, report: Any, current_model: str, target_model: str):
         """Render the Context Guardrail report."""
         self._end_streaming()
         self._stop_thinking()
-        
-        # Extract data (handle object vs dict)
-        safe = getattr(report, 'safe', report.get('safe', False))
-        curr = getattr(report, 'current_tokens', 0)
-        limit = getattr(report, 'target_limit', 0)
-        
-        if safe:
-            # Safe Switch - Small Green Notification
-            console.print(f"  [success]✓ Context check passed ({curr:,} < {limit:,})[/]")
-        else:
-            # DANGER - Red Guardrail Panel
-            excess = curr - limit
-            
-            msg = Text()
-            msg.append("⚠️ CONTEXT OVERFLOW DETECTED\n", style="bold red")
-            msg.append(f"Switching from ", style="dim")
-            msg.append(current_model, style="bold white")
-            msg.append(" to ", style="dim")
-            msg.append(target_model, style="bold white")
-            msg.append("\n\n")
-            
-            msg.append(f"Current Usage: {curr:,} tokens\n", style="red")
-            msg.append(f"Target Limit:  {limit:,} tokens\n", style="red")
-            msg.append(f"Excess:        +{excess:,} tokens\n", style="bold red underline")
-            
-            msg.append("\n[!] You must Prune history or Archive context to proceed.", style="dim white")
-            
-            panel = Panel(
-                msg, 
-                border_style="red", 
-                title="[bold red]Protocol Guardrail[/]",
-                padding=(1, 2)
-            )
-            
-            console.print()
-            console.print(panel)
-            console.print()
+        render_switch_report(report, current_model, target_model)
         if self._thinking_status:
             self._thinking_status.stop()
             self._thinking_status = None
