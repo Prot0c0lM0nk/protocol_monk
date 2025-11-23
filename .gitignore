@@ -77,3 +77,44 @@ config/local_*
 # But keep important documentation
 !README.md
 !GETTING_STARTED.md
+
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Model specific files (protect model choices)
+model_choices.txt
+model_config.json
+models/*.json
+models/*.yaml
+models/*.yml
+
+# Anthropic remnants
+*anthropic*
+*claude*
+.anthropic*
+
+# Private configuration
+.private*
+config/private*
+config/models/*
+!config/models/.gitkeep
+
+# Temporary and cache files
+*.tmp
+*.temp
+.cache
+.tmp/
+
+# IDE and editor specific
+*.idea/
+*.vscode/
+*.sublime*
+
+# Local development
+.local
+.development
+.dev
