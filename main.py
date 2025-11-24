@@ -49,6 +49,7 @@ def setup_logging():
         formatter = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
+
         file_handler.setFormatter(formatter)
         
         root_logger = logging.getLogger()
@@ -131,15 +132,14 @@ async def main():
 
         # Initialize UI
         if use_tui:
-            from ui.textual.app import MonkCodeTUI
-            app = MonkCodeTUI(agent)
-            app.run()
-            return
+            # TUI will be initialized after agent creation
+            ui = PlainUI()  # Placeholder UI
         elif use_rich_ui:
             from ui.rich_ui import RichUI 
             ui = RichUI()
         else:
             ui = PlainUI()
+
         
         # ---------------------------------------------------------
         # NEW STARTUP SEQUENCE (FIXED)
@@ -205,6 +205,13 @@ async def main():
         enhanced_logger = EnhancedLogger()
         
         await agent.async_initialize()
+
+        # Initialize TUI if requested
+        if use_tui:
+            from ui.textual.app import MonkCodeTUI
+            app = MonkCodeTUI(agent)
+            app.run()
+            return
         
         validation_errors = settings.validate()
         if validation_errors:
@@ -219,29 +226,30 @@ async def main():
         dispatcher = CommandDispatcher(agent)
         
         # Main Loop
-        while True:
-            try:
-                user_input = await agent.ui.prompt_user("Next command")
-                if not await process_user_input(agent, dispatcher, user_input):
+        if use_rich_ui:
+            session_history = FileHistory(settings.filesystem.history_file)
+            session_prompt = PromptSession(history=session_history)
+            while True:
+                try:
+                    user_input = await asyncio.to_thread(session_prompt.prompt, "☦> ")
+                    if not user_input.strip():
+                        continue
+                    if not await process_user_input(agent, dispatcher, user_input):
+                        break
+                except (OSError, RuntimeError, EOFError):
                     break
-            except (EOFError, KeyboardInterrupt):
-                print("\nReceived interrupt signal. Exiting...")
-                break
-        
-        session_history = FileHistory(settings.filesystem.history_file)
-        session_prompt = PromptSession(history=session_history)
-        while True:
-            try:
-                user_input = await asyncio.to_thread(session_prompt.prompt, "☦> ")
-                if not user_input.strip():
-                    continue
-                if not await process_user_input(agent, dispatcher, user_input):
+                except KeyboardInterrupt:
+                    print("\nReceived interrupt signal. Exiting...")
                     break
-            except (OSError, RuntimeError, EOFError):
-                break
-            except KeyboardInterrupt:
-                print("\nReceived interrupt signal. Exiting...")
-                break
+        else:
+            while True:
+                try:
+                    user_input = await agent.ui.prompt_user("Next command")
+                    if not await process_user_input(agent, dispatcher, user_input):
+                        break
+                except (EOFError, KeyboardInterrupt):
+                    print("\nReceived interrupt signal. Exiting...")
+                    break
                     
     except exceptions.ConfigurationError as e:
         print(f"❌ Config Error: {e.message}", file=sys.stderr)

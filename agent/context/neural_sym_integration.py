@@ -3,7 +3,6 @@ neural_sym_integration.py
 Integration of NeuralSym guidance system with the agent context manager
 """
 
-import asyncio
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -16,7 +15,6 @@ try:
     NEURALSYM_AVAILABLE = True
 except ImportError:
     NEURALSYM_AVAILABLE = False
-    logging.warning("NeuralSym components not available. Guidance features will be disabled.")
 
 
 class NeuralSymContextManager:
@@ -52,14 +50,6 @@ class NeuralSymContextManager:
     def get_guidance_for_intent(self, intent: str, context_tags: set, model_size: str = "large") -> Tuple[str, Dict]:
         """
         Get guidance for a specific intent, optimized for model size.
-        
-        Args:
-            intent: The intent or task to get guidance for
-            context_tags: Context tags to help guide the analysis
-            model_size: Size of the model ("large", "8b_standard", "8b_basic")
-        
-        Returns:
-            Tuple of (guidance_text, trace_dict)
         """
         if not self.guidance_system:
             return "", {}
@@ -108,22 +98,18 @@ class NeuralSymContextManager:
         
         try:
             if success:
-                # Record success
-                from NeuralSym.knowledge.base import Evidence, EvidenceStrength
-                ev = Evidence.new(
-                    source="tool_execution",
-                    content=f"Successfully executed {tool_name} with args {arguments}",
-                    strength=EvidenceStrength.STRONG
-                )
-                
+                # Record success using Evidence
                 self.kg.add_fact(
                     fact_type="tool_success",
                     value={
                         "tool": tool_name,
                         "arguments": arguments
                     },
-                    evidence=ev,
-                    context_tags={"tool_execution"}
+                    status="verified",
+                    evidence={
+                        "source": "tool_execution",
+                        "content": f"Successfully executed {tool_name}"
+                    }
                 )
             else:
                 # Record failure
@@ -140,8 +126,44 @@ class NeuralSymContextManager:
         """
         Enhance the base context with NeuralSym guidance when appropriate.
         """
-        # For now, we're not modifying the context directly but this could be extended
-        # to inject guidance based on the conversation history
+        if not self.guidance_system:
+            return base_context
+
+        # 1. Extract latest user intent (heuristic)
+        # Find the last message from the user
+        last_user_msg = next((m for m in reversed(base_context) if m.get("role") == "user"), None)
+        
+        if not last_user_msg:
+            return base_context
+
+        user_content = last_user_msg.get("content", "")
+        if not user_content:
+            return base_context
+
+        # Use first 200 chars as intent proxy for lookup
+        user_intent = user_content[:200]
+
+        # 2. Get Guidance
+        # We use context tags to help filter. "general" is default.
+        guidance_text, _ = self.guidance_system.get_guidance(user_intent, context_tags={"general"})
+
+        if guidance_text:
+            # 3. Inject as System Note
+            # We construct a system note containing the guidance
+            system_note = {
+                "role": "system", 
+                "content": f"[MEMORY GUIDANCE]\nRelevant past patterns and constraints:\n{guidance_text}"
+            }
+            
+            # Create a new list to avoid mutating the input list in place
+            new_context = list(base_context)
+            
+            # Insert after the main system prompt (index 1), or at index 0 if list is empty/weird
+            insert_idx = 1 if len(new_context) > 0 else 0
+            new_context.insert(insert_idx, system_note)
+            
+            return new_context
+
         return base_context
     
     def close(self):
