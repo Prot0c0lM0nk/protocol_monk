@@ -90,9 +90,6 @@ We welcome contributions! Please see our [Contribution Guidelines](CONTRIBUTING.
 - UI/UX enhancements
 - Documentation updates
 
-## 📄 License
-
-MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
