@@ -113,124 +113,76 @@ class ProtocolAgent:
             while iteration < max_autonomous_iterations:
                 iteration += 1
 
-                # --- CONTEXT RETRIEVAL (Simplified) ---
-                try:
-                    # We just pass the model name, Manager handles the "NeuralSym" logic
-                    conversation_context = await self.context_manager.get_context(self.current_model)
-                    
-                    # VISIBILITY FIX: Dump the context to file so we can see what the bot sees
-                    self.enhanced_logger.log_context_snapshot(conversation_context)
-                    
-                except Exception as e:
-                    await self.ui.print_error(f"Error getting context: {e}")
+                # Step 1: Prepare context
+                context = await self._prepare_context()
+                if context is None:
                     return False
 
-                await self.ui.start_thinking()
-
-                # --- STREAMING ---
-                full_response = ""
-                try:
-                    async for chunk in self.model_client.get_response_async(
-                        conversation_context, stream=True
-                    ):
-                        full_response += chunk
-                        await self.ui.print_stream(chunk)
-                except KeyboardInterrupt:
-                    await self.ui.print_warning("\n\n🛑 Interrupted by user.")
-                    return True 
-                except Exception as e:
-                    await self.ui.print_error(f"Streaming Error: {e}")
+                # Step 2: Get model response
+                response = await self._get_model_response(context)
+                if response is None:  # Interrupted by user
+                    return True
+                if response is False:  # Error occurred
                     return False
 
-                # --- PARSING & EXECUTION ---
-                collected_tool_calls, is_truncated = extract_json_with_feedback(full_response)
+                # Step 3: Parse response
+                actions, is_truncated = self._parse_response(response)
                 
-                # 1. Always show the text first (The Assistant's "Thought")
-                # Note: If you are streaming, this is already on screen, 
-                # but we need to make sure it's saved to history.
-                if full_response:
-                     await self.context_manager.add_message("assistant", full_response)
+                # Always save assistant message to history
+                if response:
+                    await self.context_manager.add_message("assistant", response)
 
-                # 2. Handle Truncation
+                # Step 4: Handle truncation
                 if is_truncated:
                     await self.ui.print_warning("⚠️ Response was cut off (Context Limit Reached).")
                     self.logger.warning("ContextLimitExceeded: Model output truncated.")
-                    
-                    # Soft Failure: We added the partial message above, so we just stop here.
-                    # We do NOT return False (which implies a crash), we return True (task done, but messy).
                     await self.context_manager.add_message("system", "System Note: The previous message was truncated due to length.")
-                    return True 
-                
-                try:
-                    if full_response:
-                        await self.context_manager.add_message("assistant", full_response)
+                    return True
 
-                    if collected_tool_calls:
-                        self.consecutive_errors = 0
-                        try:
-                            execution_results = await self.tool_executor.execute_tool_calls(collected_tool_calls)
-
-                            had_failure = False
-                            for result in execution_results.results:
-                                await self.context_manager.add_message(
-                                    role="tool",
-                                    content=result.output,
-                                    importance=5
-                                )
-
-                                tool_data = getattr(result, "data", {}) or {}
-                            
-                                self.context_manager.record_tool_execution_outcome(
-                                    tool_name=result.tool_name,
-                                    arguments=tool_data,
-                                    success=result.success,
-                                    error_message=result.output if not result.success else None
-                                )
-
-                                if not result.success:
-                                    had_failure = True
-
-                            if execution_results.should_finish:
-                                return True
-
-                            if had_failure:
-                                consecutive_failures += 1
-                                if consecutive_failures >= max_failure_retries:
-                                    await self.ui.print_error(f"⚠️ Max retries ({max_failure_retries}) reached")
-                                    return False
-                                continue
-
-                            consecutive_failures = 0
-                            await self.ui.print_info("→ Waiting for model...")
-                            continue
-                        
-                        except UserCancellationError:
-                            await self.ui.print_warning("⛔ Task Aborted by User.")
-                            await self.context_manager.add_message("system", "User aborted the process.")
-                            return True
-
+                # Step 5: If no actions, conversation turn is complete
+                if not actions:
                     # Ghost Tool Detection
-                    elif ("\"action\":" in full_response or "\"name\":" in full_response) and "{" in full_response:
+                    if ("\"action\":" in response or "\"name\":" in response) and "{" in response:
                         await self.ui.print_warning("⚠️ Detected malformed tool call. Retrying...")
                         await self.context_manager.add_message(
                             "system", 
                             "System Alert: Your JSON tool call was malformed. Rewrite it strictly."
                         )
                         continue
-
-                    elif full_response:
+                    elif response:
                         self.consecutive_errors = 0
                         return True
-                        
                     else:
                         consecutive_failures += 1
                         if consecutive_failures >= max_failure_retries: return False
                         continue
 
-                except Exception as e:
-                    await self.ui.print_error(f"Error: {e}")
-                    await self.ui.print_info(traceback.format_exc())
-                    return False
+                # Step 6: Execute actions
+                try:
+                    results = await self._execute_actions(actions)
+                except UserCancellationError:
+                    await self.ui.print_warning("⛔ Task Aborted by User.")
+                    await self.context_manager.add_message("system", "User aborted the process.")
+                    return True
+
+                # Step 7: Record results
+                had_failure = await self._record_results(results)
+
+                # Check if we should finish
+                if results.should_finish:
+                    return True
+
+                # Handle failures
+                if had_failure:
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_failure_retries:
+                        await self.ui.print_error(f"⚠️ Max retries ({max_failure_retries}) reached")
+                        return False
+                    continue
+
+                consecutive_failures = 0
+                await self.ui.print_info("→ Waiting for model...")
+                continue
 
         except KeyboardInterrupt:
             await self.ui.print_warning("\n\n🛑 Process interrupted by user.")
@@ -262,3 +214,70 @@ class ProtocolAgent:
         if model_info:
             self.context_manager.accountant.max_tokens = model_info.context_window
             self.context_manager.pruner.max_tokens = model_info.context_window
+
+
+    async def _prepare_context(self):
+        """Prepare conversation context for model input."""
+        try:
+            # We just pass the model name, Manager handles the "NeuralSym" logic
+            conversation_context = await self.context_manager.get_context(self.current_model)
+            
+            # VISIBILITY FIX: Dump the context to file so we can see what the bot sees
+            self.enhanced_logger.log_context_snapshot(conversation_context)
+            
+            return conversation_context
+        except Exception as e:
+            await self.ui.print_error(f"Error getting context: {e}")
+            return None
+
+    async def _get_model_response(self, context):
+        """Get model response with streaming."""
+        await self.ui.start_thinking()
+        
+        # --- STREAMING ---
+        full_response = ""
+        try:
+            async for chunk in self.model_client.get_response_async(
+                context, stream=True
+            ):
+                full_response += chunk
+                await self.ui.print_stream(chunk)
+            return full_response
+        except KeyboardInterrupt:
+            await self.ui.print_warning("\n\n🛑 Interrupted by user.")
+            return None  # Special signal for interruption
+        except Exception as e:
+            await self.ui.print_error(f"Streaming Error: {e}")
+            return False  # Error signal
+
+    def _parse_response(self, text):
+        """Parse model response for tool calls."""
+        collected_tool_calls, is_truncated = extract_json_with_feedback(text)
+        return collected_tool_calls, is_truncated
+
+    async def _execute_actions(self, actions):
+        """Execute tool actions."""
+        return await self.tool_executor.execute_tool_calls(actions)
+
+    async def _record_results(self, summary):
+        """Record tool execution results in context."""
+        had_failure = False
+        for result in summary.results:
+            await self.context_manager.add_message(
+                role="tool",
+                content=result.output,
+                importance=5
+            )
+            tool_data = getattr(result, "data", {}) or {}
+        
+            self.context_manager.record_tool_execution_outcome(
+                tool_name=result.tool_name,
+                arguments=tool_data,
+                success=result.success,
+                error_message=result.output if not result.success else None
+            )
+
+            if not result.success:
+                had_failure = True
+        
+        return had_failure

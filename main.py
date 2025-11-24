@@ -23,13 +23,15 @@ from config.session import initialize_session, get_active_session
 
 # Import core components
 from agent.core import ProtocolAgent
-from agent import exceptions
+from agent.command_dispatcher import CommandDispatcher
 from tools.registry import ToolRegistry
 from ui.base import UI
 from ui.plain import PlainUI
 
 # Import Model Manager
 from agent.model_manager import RuntimeModelManager
+# Import exceptions
+from agent import exceptions
 
 # =============================================================================
 # LOGGING SETUP
@@ -92,145 +94,23 @@ async def display_startup_animation(ui: UI):
         await asyncio.sleep(0.3)
     await ui.display_startup_frame("")
 
-async def display_status(agent: ProtocolAgent):
-    """Display agent status."""
-    stats = await agent.get_status()
-    session = get_active_session()
+async def process_user_input(agent: ProtocolAgent, dispatcher: CommandDispatcher, user_input: str) -> bool:
+    """Process user input using the command dispatcher."""
+    result = await dispatcher.dispatch(user_input)
     
-    env_info = "system"
-    if session.preferred_env:
-        env_info = f"conda: {session.preferred_env}"
-    elif session.venv_path:
-        env_info = f"venv: {session.venv_path}"
-    elif session.is_python_project:
-        env_info = "system Python"
-    else:
-        env_info = "general directory"
-
-    status_text = f"""Current State:
-
-🤖 Model: {stats['current_model']}
-🔌 Provider: {stats['provider']}
-📁 Working Directory: {session.directory_name}
-   {stats['working_dir']}
-🐍 Environment: {env_info}
-
-💬 Conversation Length: {stats['conversation_length']} messages
-🧮 Token Usage: {stats['estimated_tokens']:,} / {stats['token_limit']:,} ({(stats['estimated_tokens']/stats['token_limit']*100):.1f}%)
-"""
-    await agent.ui.print_info(status_text)
-
-async def display_help(agent: ProtocolAgent):
-    help_text = """The Protocol Commands:
-
-/help     - Display this wisdom
-/status   - View current state
-/model    - Switch to a different model
-/clear    - Clear conversation history
-/quit     - Exit with blessing
-"""
-    await agent.ui.print_info(help_text)
-
-async def handle_model_switch_command(agent: ProtocolAgent, ui: UI):
-    """Handle the model switch command with guardrail workflow."""
-    model_manager = RuntimeModelManager()
-    available_models = model_manager.get_available_models()
-    
-    await ui.print_info("Available Models:")
-    model_list = list(available_models.keys())
-    
-    # Safe display loop
-    for i, model_name in enumerate(model_list, 1):
-        # Handle both object and dict access safely
-        m = available_models[model_name]
-        prov = getattr(m, 'provider', m.get('provider', 'unknown') if isinstance(m, dict) else 'unknown')
-        ctx = getattr(m, 'context_window', m.get('context_window', 0) if isinstance(m, dict) else 0)
-        await ui.print_info(f"  {i}. {model_name} ({prov}, {ctx:,} tokens)")
-    
-    try:
-        choice = await ui.prompt_user("\nSelect a model (enter number or name): ")
-        choice = choice.strip()
-        
-        if choice.isdigit():
-            idx = int(choice) - 1
-            if 0 <= idx < len(model_list):
-                selected_model = model_list[idx]
-            else:
-                await ui.print_error("Invalid selection.")
-                return None
-        else:
-            if choice in available_models:
-                selected_model = choice
-            else:
-                await ui.print_error(f"Model '{choice}' not found.")
-                return None
-        
-        # Startup phase check
-        if agent is None:
-            await ui.print_info(f"\nSelected model: {selected_model}")
-            return selected_model
-        
-        # Guardrail Logic
-        current_tokens = agent.context_manager.get_total_tokens()
-        switch_report = model_manager.assess_switch(current_tokens, selected_model)
-        
-        if switch_report.safe:
-            await agent.set_model(selected_model)
-            await ui.print_info(f"✅ Model switched to: {selected_model}")
-        else:
-            await ui.print_warning(f"⚠️  Context Warning: {switch_report.message}")
-            await ui.print_warning(f"Current tokens: {switch_report.current_tokens:,}")
-            await ui.print_warning(f"Target limit: {switch_report.target_limit:,}")
-            
-            action = await ui.prompt_user("Prune, Archive, or Cancel? (p/a/c): ")
-            action = action.strip().lower()
-            
-            if action in ['p', 'prune']:
-                agent.context_manager.prune_context("strict", switch_report.target_limit)
-                await agent.set_model(selected_model)
-                await ui.print_info(f"✅ Context pruned and model switched to: {selected_model}")
-            elif action in ['a', 'archive']:
-                agent.context_manager.prune_context("archive", switch_report.target_limit)
-                await agent.set_model(selected_model)
-                await ui.print_info(f"✅ Context archived and model switched to: {selected_model}")
-            else:
-                await ui.print_info("Model switch cancelled.")
-                return None
-        
-        return selected_model
-                
-    except Exception as e:
-        await ui.print_error(f"Error during model switch: {e}")
-        return None
-
-async def process_user_input(agent: ProtocolAgent, user_input: str) -> bool:
-    cmd = user_input.strip().lower()
-    
-    if cmd == '/quit':
-        await agent.ui.print_info(BLESSING)
+    if result is False:  # Quit command
         return False
-    elif cmd == '/help':
-        await display_help(agent)
+    elif result is True:  # Command handled
         return True
-    elif cmd == '/status':
-        await display_status(agent)
+    elif result is None:  # Not a command, process as chat
+        if user_input:
+            try:
+                await agent.process_request(user_input)
+                await agent.ui.print_info("")
+            except KeyboardInterrupt:
+                await agent.ui.print_warning("Operation interrupted by user.")
+                await agent.ui.print_info("")
         return True
-    elif cmd == '/clear':
-        await agent.clear_conversation()
-        return True
-    elif cmd.startswith('/model'):
-        await handle_model_switch_command(agent, agent.ui)
-        return True
-    
-    if user_input:
-        try:
-            await agent.process_request(user_input)
-            await agent.ui.print_info("")
-        except KeyboardInterrupt:
-            await agent.ui.print_warning("Operation interrupted by user.")
-            await agent.ui.print_info("")
-        
-    return True
 
 async def main():
     """Main entry point."""
@@ -335,33 +215,33 @@ async def main():
         await display_startup_animation(agent.ui)
         await agent.ui.display_startup_banner(MORPHEUS_GREETING)
         
+        # Initialize Command Dispatcher
+        dispatcher = CommandDispatcher(agent)
+        
         # Main Loop
-        if use_rich_ui:
-            while True:
-                try:
-                    user_input = await agent.ui.prompt_user("Next command")
-                except (EOFError, KeyboardInterrupt):
-                    print("\nReceived interrupt signal. Exiting...")
+        while True:
+            try:
+                user_input = await agent.ui.prompt_user("Next command")
+                if not await process_user_input(agent, dispatcher, user_input):
                     break
-                
-                if not await process_user_input(agent, user_input):
+            except (EOFError, KeyboardInterrupt):
+                print("\nReceived interrupt signal. Exiting...")
+                break
+        
+        session_history = FileHistory(settings.filesystem.history_file)
+        session_prompt = PromptSession(history=session_history)
+        while True:
+            try:
+                user_input = await asyncio.to_thread(session_prompt.prompt, "☦> ")
+                if not user_input.strip():
+                    continue
+                if not await process_user_input(agent, dispatcher, user_input):
                     break
-                await asyncio.sleep(0.1)
-        else:
-            session_history = FileHistory(settings.filesystem.history_file)
-            session_prompt = PromptSession(history=session_history)
-            while True:
-                try:
-                    user_input = await asyncio.to_thread(session_prompt.prompt, "☦> ")
-                    if not user_input.strip():
-                        continue
-                    if not await process_user_input(agent, user_input):
-                        break
-                except (OSError, RuntimeError, EOFError):
-                    break
-                except KeyboardInterrupt:
-                    print("\nReceived interrupt signal. Exiting...")
-                    break
+            except (OSError, RuntimeError, EOFError):
+                break
+            except KeyboardInterrupt:
+                print("\nReceived interrupt signal. Exiting...")
+                break
                     
     except exceptions.ConfigurationError as e:
         print(f"❌ Config Error: {e.message}", file=sys.stderr)
