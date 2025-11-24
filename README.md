@@ -96,4 +96,4 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
-Developed with ❤️ by Nicholas Pitzarella
+Developed with ☦︎ by Nicholas Pitzarella
