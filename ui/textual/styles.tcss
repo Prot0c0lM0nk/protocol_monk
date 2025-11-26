@@ -1,0 +1,47 @@
+/* Global Orthodox Theme */
+Screen {
+    background: $surface;
+    color: $text;
+}
+
+/* Colors */
+$primary: green;          /* Matrix Text */
+$secondary: purple;       /* Borders */
+$accent: gold;            /* Icons/User Focus */
+$error: red;
+
+/* Widgets */
+InputPanel {
+    dock: bottom;
+    height: auto;
+    border-top: solid $secondary;
+    padding: 1;
+}
+
+MessageList {
+    height: 1fr;
+    scrollbar-color: $primary;
+}
+
+/* Message Bubbles */
+.message {
+    padding: 1;
+    margin: 1;
+    border: tall $background;
+}
+.message.user {
+    text-align: right;
+    color: $accent;
+    border-left: none;
+    border-right: tall $accent;
+}
+.message.assistant {
+    text-align: left;
+    color: $primary;
+    border-left: tall $primary;
+    border-right: none;
+}
+.message.tool {
+    color: $secondary;
+    border: dashed $secondary;
+}

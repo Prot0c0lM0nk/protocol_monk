@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple
 try:
     from NeuralSym.knowledge.graph import KnowledgeGraph
     from NeuralSym.patterns.analyzer import AdvancedPatternAnalyzer
-    from NeuralSym.guidance import GuidanceSystem
+    from NeuralSym.guidance.unified import UnifiedGuidanceSystem
     NEURALSYM_AVAILABLE = True
 except ImportError:
     NEURALSYM_AVAILABLE = False
@@ -32,7 +32,7 @@ class NeuralSymContextManager:
                 # Initialize NeuralSym components
                 self.kg = KnowledgeGraph(persistence_path=self.working_dir / ".neuralsym" / "knowledge.json")
                 self.patterns = AdvancedPatternAnalyzer(persistence_path=self.working_dir / ".neuralsym" / "patterns.json")
-                self.guidance_system = GuidanceSystem(self.kg, self.patterns)
+                self.guidance_system = UnifiedGuidanceSystem(self.kg, self.patterns)
                 
                 # Wire telemetry for learning
                 self.kg.telemetry_callback = self.patterns.on_knowledge_event
@@ -53,41 +53,62 @@ class NeuralSymContextManager:
         """
         if not self.guidance_system:
             return "", {}
+        # Use the unified guidance system with model name parameter
+        return self.guidance_system.get_guidance(
+            intent=intent,
+            context_tags=context_tags,
+            model_name=model_size
+        )
         
-        # For small models, use the optimized guidance methods
-        if model_size.startswith("8b"):
-            return self.guidance_system.get_small_model_guidance(intent, context_tags)
-        else:
-            # For large models, use standard guidance
-            return self.guidance_system.get_guidance(intent, context_tags)
-    
     def get_structured_context_for_model(self, intent: str, model_size: str = "large") -> Dict:
         """
         Get structured context optimized for the model size.
         """
-        if not self.guidance_system or not hasattr(self.guidance_system, 'get_structured_context'):
+        if not self.guidance_system:
             return {}
         
-        return self.guidance_system.get_structured_context(intent)
+        # Get guidance from the unified system
+        guidance_text, trace = self.guidance_system.get_guidance(
+            intent=intent,
+            context_tags={"general"},
+            model_name=model_size
+        )
+        
+        # Parse the guidance text into structured format
+        # This is a simple implementation - you might want to enhance this
+        return {
+            "guidance": guidance_text,
+            "trace": trace
+        }
     
     def get_critical_constraints_for_model(self, intent: str, model_size: str = "large") -> List[str]:
         """
         Get critical constraints optimized for the model size.
         """
-        if not self.guidance_system or not hasattr(self.guidance_system, 'get_critical_constraints'):
+        if not self.guidance_system:
             return []
         
-        return self.guidance_system.get_critical_constraints(intent)
+        # Get risks from the pattern analyzer directly
+        risks = self.patterns.identify_common_mistakes(intent)
+        
+        # Limit based on model profile
+        profile = self.guidance_system._resolve_profile(model_size)
+        return risks[:profile.max_risks]
     
     def get_verification_checklist_for_model(self, intent: str, model_size: str = "large") -> List[str]:
         """
         Get verification checklist optimized for the model size.
         """
-        if not self.guidance_system or not hasattr(self.guidance_system, 'get_verification_checklist'):
+        if not self.guidance_system:
             return []
         
-        return self.guidance_system.get_verification_checklist(intent)
-    
+        # Get facts from the knowledge graph directly
+        facts = self.kg.get_relevant_context(intent)
+        
+        # Limit based on model profile
+        profile = self.guidance_system._resolve_profile(model_size)
+        return facts[:profile.max_facts]
+        
     def record_interaction_outcome(self, tool_name: str, arguments: Dict, success: bool, 
                                  error_message: str = None, context_summary: str = None):
         """
@@ -145,7 +166,11 @@ class NeuralSymContextManager:
 
         # 2. Get Guidance
         # We use context tags to help filter. "general" is default.
-        guidance_text, _ = self.guidance_system.get_guidance(user_intent, context_tags={"general"})
+        guidance_text, _ = self.guidance_system.get_guidance(
+            intent=user_intent, 
+            context_tags={"general"},
+            model_name=model_name
+        )
 
         if guidance_text:
             # 3. Inject as System Note

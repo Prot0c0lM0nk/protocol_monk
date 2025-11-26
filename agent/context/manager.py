@@ -126,7 +126,8 @@ class ContextManager:
         
         # 2. Check if we need to enhance it (Small Model Logic)
         if model_name and self.neural_sym:
-            is_small_model = any(x in model_name.lower() for x in ["8b", "small", "mini", "tiny"])
+            # Check if model is small (contains size indicators like 8b, 4b, 2b, 1.7b, 0.6b, etc.)
+            is_small_model = any(x in model_name.lower() for x in ["8b", "4b", "2b", "1.7b", "0.6b", "small", "mini", "tiny"])
             if is_small_model:
                 try:
                     return await self.neural_sym.get_enhanced_context(base_context, model_name)

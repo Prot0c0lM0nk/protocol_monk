@@ -56,7 +56,7 @@ class ModelManager:
     
     def __init__(self):
         # Default model (Ollama)
-        self.default_model = os.getenv("PROTOCOL_MODEL", "qwen3-coder:480b-cloud")
+        self.default_model = os.getenv("PROTOCOL_MODEL", "qwen3-vl:4b-instruct-q4_K_M")
         
         # Model map file
         self.model_map_file = os.getenv(

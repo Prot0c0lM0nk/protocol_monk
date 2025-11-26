@@ -21,13 +21,13 @@ from prompt_toolkit.history import FileHistory
 from config.static import settings
 from config.session import initialize_session, get_active_session
 
-# Import core components
 from agent.core import ProtocolAgent
 from agent.command_dispatcher import CommandDispatcher
 from tools.registry import ToolRegistry
 from ui.base import UI
+from ui.textual.app import MonkCodeTUI
 from ui.plain import PlainUI
-
+from ui.rich_ui import RichUI
 # Import Model Manager
 from agent.model_manager import RuntimeModelManager
 # Import exceptions
@@ -130,17 +130,14 @@ async def main():
             venv_path=session.venv_path
         )
 
-        # Initialize UI
+        
         if use_tui:
-            # TUI will be initialized after agent creation
-            ui = PlainUI()  # Placeholder UI
+            # Initialize TUI
+            ui = MonkCodeTUI(agent)
         elif use_rich_ui:
-            from ui.rich_ui import RichUI 
             ui = RichUI()
         else:
             ui = PlainUI()
-
-        
         # ---------------------------------------------------------
         # NEW STARTUP SEQUENCE (FIXED)
         # ---------------------------------------------------------
