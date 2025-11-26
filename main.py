@@ -132,8 +132,8 @@ async def main():
 
         
         if use_tui:
-            # Initialize TUI
-            ui = MonkCodeTUI(agent)
+            # For TUI, we'll create the UI later after agent initialization
+            ui = None
         elif use_rich_ui:
             ui = RichUI()
         else:
@@ -144,47 +144,48 @@ async def main():
         model_manager = RuntimeModelManager()
         current_model = settings.model.default_model
         selected_model = current_model  # Default to current model
-        if use_rich_ui:
-            from rich.panel import Panel
-            from ui.styles import console
-            console.print()
-            console.print(Panel(
-                f"Target Model: [bold holy.gold]{current_model}[/]",
-                title="[dim]System Configuration[/]",
-                border_style="dim white",
-                padding=(1, 2)
-            ))
-        
-        # Actually prompt (assuming rich_ui.py prompt_user has console.print fix)
-        choice = await ui.prompt_user("Initialize with this model? (Y/n)")
-        
-        if choice.strip().lower() in ['n', 'no']:
-            # Safe fetch
-            available_models = model_manager.get_available_models()
-            # Convert dict values to list safely
-            models = list(available_models.values()) if available_models else []
+        if not use_tui:  # Skip model selection for TUI as it will handle it itself
+            if use_rich_ui:
+                from rich.panel import Panel
+                from ui.styles import console
+                console.print()
+                console.print(Panel(
+                    f"Target Model: [bold holy.gold]{current_model}[/]",
+                    title="[dim]System Configuration[/]",
+                    border_style="dim white",
+                    padding=(1, 2)
+                ))
             
-            if models:
-                await ui.display_model_list(models, current_model)
+            # Actually prompt (assuming rich_ui.py prompt_user has console.print fix)
+            choice = await ui.prompt_user("Initialize with this model? (Y/n)")
+            
+            if choice.strip().lower() in ['n', 'no']:
+                # Safe fetch
+                available_models = model_manager.get_available_models()
+                # Convert dict values to list safely
+                models = list(available_models.values()) if available_models else []
                 
-                new_model_name = await ui.prompt_user("Enter model name to select:")
-                if new_model_name:
-                    # Safe name extraction
-                    valid_names = []
-                    for m in models:
-                        # Handle if m is dict or object
-                        name = getattr(m, 'name', m.get('name') if isinstance(m, dict) else str(m))
-                        valid_names.append(name)
+                if models:
+                    await ui.display_model_list(models, current_model)
                     
-                    if new_model_name in valid_names:
-                        settings.model.update_model(new_model_name)  # Use the new method
-                        current_model = new_model_name
-                        selected_model = new_model_name  # Also update selected_model
-                        await ui.print_info(f"✓ Target updated to: {current_model}")
-                    else:
-                        await ui.print_warning(f"Model '{new_model_name}' not found. Using default.")
-            else:
-                 await ui.print_warning("No models detected (Scanner empty). Continuing with default.")
+                    new_model_name = await ui.prompt_user("Enter model name to select:")
+                    if new_model_name:
+                        # Safe name extraction
+                        valid_names = []
+                        for m in models:
+                            # Handle if m is dict or object
+                            name = getattr(m, 'name', m.get('name') if isinstance(m, dict) else str(m))
+                            valid_names.append(name)
+                        
+                        if new_model_name in valid_names:
+                            settings.model.update_model(new_model_name)  # Use the new method
+                            current_model = new_model_name
+                            selected_model = new_model_name  # Also update selected_model
+                            await ui.print_info(f"✓ Target updated to: {current_model}")
+                        else:
+                            await ui.print_warning(f"Model '{new_model_name}' not found. Using default.")
+                else:
+                     await ui.print_warning("No models detected (Scanner empty). Continuing with default.")
 
         # selected_model is now properly set whether user changed it or not
         # ---------------------------------------------------------
@@ -207,7 +208,7 @@ async def main():
         if use_tui:
             from ui.textual.app import MonkCodeTUI
             app = MonkCodeTUI(agent)
-            app.run()
+            await app.run_async()
             return
         
         validation_errors = settings.validate()
