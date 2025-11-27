@@ -6,7 +6,7 @@ from textual import on
 from ui.textual.interface import TextualUI
 from ui.textual.screens.chat import ChatScreen
 from ui.textual.screens.approval import ApprovalScreen
-from agent.core import ProtocolAgent
+from agent.monk import ProtocolAgent
 
 
 class MonkCodeTUI(App):

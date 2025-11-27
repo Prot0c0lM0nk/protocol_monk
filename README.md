@@ -25,7 +25,7 @@ Protocol Monk is an AI assistant that combines natural language interaction with
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/protocol-monk.git
+git clone <repository-url>
 cd protocol-monk
 
 # Create and activate virtual environment
@@ -45,12 +45,15 @@ Create a `.env` file in the project root (optional):
 
 ```bash
 # Set your preferred Ollama model (default: qwen3:4b)
-PROTOCOL_MODEL="your-preferred-model"
+# Uncomment and modify the line below to set your preferred model
+# PROTOCOL_MODEL="your-preferred-model"
 
 # Optional: Custom Ollama URL (if not using default)
+# Uncomment and modify the line below if you need a custom Ollama URL
 # PROTOCOL_OLLAMA_URL="http://localhost:11434/api/chat"
 
 # Optional: Set default working directory
+# Uncomment and modify the line below to set a default working directory
 # PROTOCOL_WORKING_DIR="$HOME/your_project"
 ```
 
@@ -77,20 +80,16 @@ User: Run pytest on the test directory
 - `/help` - Show available commands
 - `/model <name>` - Switch AI model
 - `/status` - Show token usage and current model
-- `/clear` - Clear conversation history
-- `/quit` - Exit the application
 
-## 🤝 Contributing
+## 🤝 AI Collaboration
 
-We welcome contributions! Please see our [Contribution Guidelines](CONTRIBUTING.md) for details.
+Protocol Monk is designed to work with AI models as collaborative partners. The system is built to leverage AI capabilities for code generation, analysis, and refactoring tasks.
 
-### Areas of Interest
-- New tool implementations
-- Parser improvements
-- UI/UX enhancements
-- Documentation updates
-
+### AI Model Integration
+- Seamless integration with Ollama models
+- Support for multiple AI backends
+- Customizable prompting strategies
 
 ---
 
-Developed with ☦︎ by Nicholas Pitzarella
+Solo Developed with ☦︎ by Nicholas Pitzarella

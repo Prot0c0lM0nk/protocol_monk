@@ -21,7 +21,7 @@ from prompt_toolkit.history import FileHistory
 from config.static import settings
 from config.session import initialize_session, get_active_session
 
-from agent.core import ProtocolAgent
+from agent.monk import ProtocolAgent
 from agent.command_dispatcher import CommandDispatcher
 from tools.registry import ToolRegistry
 from ui.base import UI

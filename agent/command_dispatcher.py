@@ -6,7 +6,7 @@ Centralized handling of slash commands to clean up main.py
 """
 
 from typing import Optional, Dict, List
-from agent.core import ProtocolAgent
+from agent.monk import ProtocolAgent
 from ui.base import UI
 from agent.model_manager import RuntimeModelManager
 from config.static import settings
