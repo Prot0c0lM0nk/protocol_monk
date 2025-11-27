@@ -130,10 +130,14 @@ class ModelClient:
                         message=f"Ollama client error: {response.status} - {error_text}"
                     )
 
-                # ... rest of streaming code
+                # Continue with response processing
 
                 # Stream response
                 if stream:
+                    # Reset chunk counter for new request
+                    if self.logger.isEnabledFor(logging.DEBUG):
+                        self._chunk_count = 0
+                    
                     # Ollama streams JSON objects separated by newlines
                     buffer = ""
                     async for line in response.content:
@@ -147,8 +151,20 @@ class ModelClient:
                                 line_json = line_json.strip()
                                 if not line_json:
                                     continue
-                                
-                                self.logger.debug(f"Received chunk: {line_json[:100]}...")
+                                # Collect full response for single debug log at the end
+                                if self.logger.isEnabledFor(logging.DEBUG):
+                                    chunk_count = getattr(self, '_chunk_count', 0) + 1
+                                    self._chunk_count = chunk_count
+                                    # Store chunks for final logging
+                                    if not hasattr(self, '_response_chunks'):
+                                        self._response_chunks = []
+                                    try:
+                                        chunk_data = json.loads(line_json)
+                                        chunk_content = self._extract_chunk_content(chunk_data)
+                                        if chunk_content:
+                                            self._response_chunks.append(chunk_content)
+                                    except json.JSONDecodeError:
+                                        pass  # Ignore invalid chunks for logging
                                 
                                 try:
                                     chunk_data = json.loads(line_json)
@@ -158,6 +174,14 @@ class ModelClient:
                                 except json.JSONDecodeError as e:
                                     self.logger.warning(f"Invalid JSON chunk: {line_json} - {e}")
                                     continue
+                    
+                    # Log the complete response at the end
+                    if self.logger.isEnabledFor(logging.DEBUG) and hasattr(self, '_response_chunks'):
+                        full_response = ''.join(self._response_chunks)
+                        self.logger.debug(f"Received complete response ({self._chunk_count} chunks): {full_response}")
+                        # Clean up
+                        delattr(self, '_response_chunks')
+                        delattr(self, '_chunk_count')
                 else:
                     # Non-streaming response
                     data = await response.json()

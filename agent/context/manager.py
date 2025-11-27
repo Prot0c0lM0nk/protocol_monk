@@ -82,9 +82,9 @@ class ContextManager:
         """
         async with self._lock:
             # Log meaningful information about what's being added
-            content_preview = content[:100] + "..." if len(content) > 100 else content
+            content_preview = content[:50] + "..." if len(content) > 50 else content
             self.logger.debug(f"Adding {role} message: {content_preview}")
-            
+
             # 1. Estimate tokens
             new_tokens = self.accountant.estimate(content)
 
