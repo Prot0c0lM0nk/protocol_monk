@@ -65,7 +65,7 @@ class GitOperationTool(BaseTool):
             available_ops = ", ".join(self._git_commands.keys())
             return ToolResult.invalid_params(
                 f"❌ Unknown git operation: {operation}. Available: {available_ops}",
-                data={'available_operations': list(self._git_commands.keys())}
+                missing_params=['operation']
             )
 
         # Get the git command list (copy to avoid mutating the original)

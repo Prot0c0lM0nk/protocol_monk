@@ -120,17 +120,20 @@ class NeuralSymContextManager:
         try:
             if success:
                 # Record success using Evidence
+                from NeuralSym.knowledge.base import Evidence, EvidenceStrength, FactStatus
+                evidence = Evidence.new(
+                    source="tool_execution",
+                    content=f"Successfully executed {tool_name}",
+                    strength=EvidenceStrength.MODERATE
+                )
                 self.kg.add_fact(
                     fact_type="tool_success",
                     value={
                         "tool": tool_name,
                         "arguments": arguments
                     },
-                    status="verified",
-                    evidence={
-                        "source": "tool_execution",
-                        "content": f"Successfully executed {tool_name}"
-                    }
+                    evidence=evidence,
+                    status=FactStatus.VERIFIED
                 )
             else:
                 # Record failure
