@@ -39,6 +39,7 @@ env/
 *.swp
 *.swo
 *~
+*.svg
 
 # OS
 .DS_Store
