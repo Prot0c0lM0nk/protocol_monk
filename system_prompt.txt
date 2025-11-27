@@ -21,21 +21,17 @@ Tool Usage Guide:
 - All tools handle atomic writes and show detailed output
 
 Tool call format:
-Respond with valid JSON when calling tools:
+You must wrap the JSON in a markdown code block labeled 'json'.
+Do not output raw JSON. Do not mix JSON with text outside the block.
+
+Example:
+I will list the files now.
+```json
 {
-    "action": "tool_name",
-    "parameters": {"param": "value"},
-    "reasoning": "brief explanation of why"
+    "action": "execute_command",
+    "parameters": {
+        "command": "ls -la",
+        "timeout": 30
+    },
+    "reasoning": "Checking directory contents"
 }
-
-You can mix conversational text with tool calls. Example:
-"I'll create the test file now.
-{"action": "create_file", "parameters": {"filepath": "test.py", "content": "print('hello')"}}
-File created successfully!"
-
-Guidelines:
-- Explain what you're doing before each tool call
-- Use replace_lines for editing (more reliable than string matching)
-- Use delete_lines instead of replace_lines with empty content.
-- Call finish() when the task is complete
-- If a tool fails, try a different approach

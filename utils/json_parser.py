@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 import json
 import re
 import logging
@@ -9,20 +9,37 @@ logger = logging.getLogger(__name__)
 
 def extract_json_from_text(text: str) -> List[Dict[str, Any]]:
     """
-    Robustly extracts JSON objects from mixed text/code content.
+    Robustly extracts JSON objects.
     
     Strategies:
-    1. Finds standard JSON blocks enclosed in braces {}.
-    2. Handles nested braces using a depth counter.
-    3. Validates parsing with json.loads().
-    
-    Returns:
-        List[Dict]: A list of successfully parsed JSON dictionaries.
+    1. STRICT FENCING: Looks for ```json ... ``` blocks first.
+    2. FALLBACK: Looks for raw JSON objects if no fences are found.
     """
     json_objects = []
     
-    # Quick optimization: if no braces, return early
-    if '{' not in text or '}' not in text:
+    # --- Strategy 1: Markdown Code Blocks (Preferred) ---
+    # Matches ```json {content} ```
+    fence_pattern = r"```json\s*(\{.*?\})\s*```"
+    matches = re.findall(fence_pattern, text, re.DOTALL)
+    
+    if matches:
+        for match in matches:
+            try:
+                obj = json.loads(match)
+                if isinstance(obj, dict):
+                    json_objects.append(obj)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse fenced JSON: {e}")
+                # Don't raise immediately, try other matches
+                continue
+        
+        # If we found fenced content, we return it. We do not mix strategies.
+        if json_objects:
+            return json_objects
+
+    # --- Strategy 2: Bracket Counting (Fallback) ---
+    # Used only if the model forgets to fence the code.
+    if '{' not in text:
         return []
 
     brace_depth = 0
@@ -34,15 +51,12 @@ def extract_json_from_text(text: str) -> List[Dict[str, Any]]:
         if escape:
             escape = False
             continue
-            
         if char == '\\':
             escape = True
             continue
-            
         if char == '"' and not escape:
             in_string = not in_string
             continue
-            
         if in_string:
             continue
 
@@ -58,23 +72,26 @@ def extract_json_from_text(text: str) -> List[Dict[str, Any]]:
                 if brace_depth == 0 and start_index != -1:
                     candidate = text[start_index : i + 1]
                     try:
-                        # Attempt to parse the candidate block
                         obj = json.loads(candidate)
-                        
-                        # We only care about Dictionaries (JSON Objects), not Lists or primitives
-                    except json.JSONDecodeError as e:
-                        # Common issue: The model might output invalid JSON (e.g., trailing commas)
-                        # In a future iteration, we can add "heuristic repair" here.
-                        logger.debug(f"Failed to parse candidate JSON block: {candidate[:50]}...")
-                        raise JsonParsingError(f"Failed to parse JSON: {str(e)}", original_error=e) from e
-                        logger.debug(f"Failed to parse candidate JSON block: {candidate[:50]}...")
+                        if isinstance(obj, dict):
+                            # --- CRITICAL FIX: The missing append line ---
+                            json_objects.append(obj) 
+                    except json.JSONDecodeError:
                         continue
                     finally:
                         start_index = -1
 
     return json_objects
 
-# Backward compatibility alias
-def extract_json_with_feedback(text: str) -> tuple[List[Dict[str, Any]], bool]:
-    objects = extract_json_from_text(text)
-    return objects, False
+def extract_json_with_feedback(text: str) -> Tuple[List[Dict[str, Any]], bool]:
+    """
+    Wrapper for compatibility with agent logic.
+    Returns: (List of objects, boolean indicating if extraction occurred)
+    """
+    try:
+        objects = extract_json_from_text(text)
+        return objects, len(objects) > 0
+    except Exception as e:
+        logger.error(f"JSON Extraction failed: {e}")
+        # Return empty list rather than crashing the agent loop
+        return [], False
