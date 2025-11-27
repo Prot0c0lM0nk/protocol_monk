@@ -12,7 +12,8 @@ from asyncio import Lock
 import logging
 
 from ui.base import ToolResult
-from agent.exceptions import UserCancellationError
+from agent.tools.exceptions import UserCancellationError
+from agent.tools.exceptions import ToolError, ToolExecutionError, ToolSecurityError, ToolNotFoundError
 
 @dataclass
 class ExecutionSummary:

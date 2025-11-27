@@ -3,6 +3,8 @@ import json
 import re
 import logging
 
+from utils.exceptions import JsonParsingError
+
 logger = logging.getLogger(__name__)
 
 def extract_json_from_text(text: str) -> List[Dict[str, Any]]:
@@ -60,11 +62,11 @@ def extract_json_from_text(text: str) -> List[Dict[str, Any]]:
                         obj = json.loads(candidate)
                         
                         # We only care about Dictionaries (JSON Objects), not Lists or primitives
-                        if isinstance(obj, dict):
-                            json_objects.append(obj)
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as e:
                         # Common issue: The model might output invalid JSON (e.g., trailing commas)
                         # In a future iteration, we can add "heuristic repair" here.
+                        logger.debug(f"Failed to parse candidate JSON block: {candidate[:50]}...")
+                        raise JsonParsingError(f"Failed to parse JSON: {str(e)}", original_error=e) from e
                         logger.debug(f"Failed to parse candidate JSON block: {candidate[:50]}...")
                         continue
                     finally:

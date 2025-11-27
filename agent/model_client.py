@@ -19,8 +19,8 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from config.static import settings
-from agent.exceptions import (
-    ModelAPIError, ModelTimeoutError, ModelConfigurationError,
+from agent.model.exceptions import (
+    ModelError, ModelTimeoutError, ModelConfigurationError,
     EmptyResponseError
 )
 
@@ -100,7 +100,7 @@ class ModelClient:
 
         Raises:
             ModelTimeoutError: If request times out
-            ModelAPIError: If API returns error status
+            ModelError: If API returns error status
             EmptyResponseError: If response is empty
         """
         session = await self._get_session()
@@ -115,7 +115,7 @@ class ModelClient:
                 # Check for HTTP errors
                 if response.status >= 500:
                     error_text = await response.text()
-                    raise ModelAPIError(  # ✅ Correct: parentheses, single raise
+                    raise ModelError(  # ✅ Correct: parentheses, single raise
                         provider="ollama",
                         model=self.model_name,
                         status_code=response.status,
@@ -123,7 +123,7 @@ class ModelClient:
                     )
                 elif response.status >= 400:
                     error_text = await response.text()
-                    raise ModelAPIError(
+                    raise ModelError(
                         provider="ollama",
                         model=self.model_name,
                         status_code=response.status,
@@ -200,7 +200,7 @@ class ModelClient:
                 timeout_seconds=self.timeout
             )
         except aiohttp.ClientError as e:
-            raise ModelAPIError(
+            raise ModelError(
                 provider="ollama",
                 model=self.model_name,
                 message=f"Connection error: {str(e)}"

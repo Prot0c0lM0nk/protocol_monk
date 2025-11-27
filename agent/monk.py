@@ -14,7 +14,7 @@ from config.static import settings
 from agent.context import ContextManager
 from agent.model_client import ModelClient
 from agent.tool_executor import ToolExecutor, ExecutionSummary
-from agent.exceptions import ModelConfigurationError
+from agent.model.exceptions import ModelConfigurationError
 from agent.model_manager import RuntimeModelManager
 from ui.base import UI
 from ui.plain import PlainUI
@@ -22,6 +22,11 @@ from utils.json_parser import extract_json_with_feedback
 from utils.enhanced_logger import EnhancedLogger
 
 # NEW IMPORTS
+from agent.taor_loop import TAORLoop
+from agent.scratch_manager import ScratchManager
+from agent.core_exceptions import OrchestrationError, AgentCoreError
+from agent.model.exceptions import ModelError
+from agent.tools.exceptions import ToolError
 from agent.taor_loop import TAORLoop
 from agent.scratch_manager import ScratchManager
 

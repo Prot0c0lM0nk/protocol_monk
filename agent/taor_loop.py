@@ -1,7 +1,10 @@
 import logging
 from typing import List, Dict, Any
 
-from agent.exceptions import UserCancellationError
+from agent.tools.exceptions import UserCancellationError
+from agent.core_exceptions import OrchestrationError, AgentCoreError
+from agent.model.exceptions import ModelError
+from agent.tools.exceptions import ToolError
 # Circular import avoidance: We type hint generically or use string forward references if needed
 # but passing 'agent' instance is standard.
 

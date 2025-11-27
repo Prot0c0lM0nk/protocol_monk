@@ -1,7 +1,8 @@
 import logging
 from typing import List, Optional, Any
 from agent.context.message import Message
-from agent.exceptions import ContextOverflowError, ConfigurationError
+from agent.context.exceptions import ContextOverflowError
+from agent.core_exceptions import ConfigurationError
 
 # Import the official estimator from utils
 from utils.token_estimation import SmartTokenEstimator

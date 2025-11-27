@@ -3,7 +3,8 @@ import asyncio
 from pathlib import Path
 from typing import List, Dict, Optional, TYPE_CHECKING
 from config.static import settings
-from agent import exceptions
+from agent.core_exceptions import ConfigurationError
+from agent.context.exceptions import ContextError, ContextOverflowError, ContextCorruptionError
 
 # Component imports
 from .message import Message
@@ -69,7 +70,7 @@ class ContextManager:
         except FileNotFoundError as e:
             error_msg = f"System prompt template not found at: {settings.filesystem.system_prompt_file}."
             self.logger.critical(error_msg, exc_info=True)
-            raise exceptions.ConfigurationError(message=error_msg, root_cause=e)
+            raise ConfigurationError(message=error_msg)
         except Exception as e:
             error_msg = f"Failed to build system prompt: {e}"
             self.logger.error(error_msg, exc_info=True)

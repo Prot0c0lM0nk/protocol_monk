@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 from pathlib import Path
 
 from .base import BaseTool, ToolResult
-from agent.exceptions import ToolNotFoundError
+from agent.tools.exceptions import ToolNotFoundError
 
 class ToolRegistry:
     """Manages discovery, loading, and execution of tools."""

@@ -11,7 +11,7 @@ import logging
 import sys
 from typing import Dict, List, Optional, Union
 from pathlib import Path
-from agent import exceptions
+from utils.exceptions import ContextError
 
 # FIXED: Pre-compile regex patterns at module level to avoid per-word compilation
 _CHINESE_CHARS_PATTERN = re.compile(r'[\u4e00-\u9fff]')
@@ -154,7 +154,7 @@ class SmartTokenEstimator:
                 "Model rules may be misconfigured.",
                 exc_info=True
             )
-            raise exceptions.ContextError(
+            raise ContextError(
                 message="Token estimation failed due to invalid configuration.",
                 root_cause=e
             )

@@ -11,7 +11,7 @@ import logging
 from typing import Optional
 import asyncio
 
-from agent import exceptions
+# No exception imports needed
 from config.static import settings
 
 logger = logging.getLogger(__name__)

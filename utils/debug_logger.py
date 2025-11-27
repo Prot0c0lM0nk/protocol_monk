@@ -14,7 +14,7 @@ from pathlib import Path
 from datetime import datetime
 from queue import Queue, Empty
 import threading
-from agent import exceptions
+from utils.exceptions import ConfigurationError
 
 
 class DebugLogger:
@@ -61,7 +61,7 @@ class DebugLogger:
         except Exception as e:
             # This is a fatal startup error, similar to config.
             print(f"⚠️ [DebugLogger] CRITICAL: Failed to open log file: {e}", file=sys.stderr)
-            raise exceptions.ConfigurationError(
+            raise ConfigurationError(
                 message=f"Failed to open debug log file: {log_file_path}",
                 root_cause=e
             )
