@@ -54,21 +54,38 @@ class ToolExecutor:
             result = await self.tool_registry.execute_tool(action, **parameters)
             return result
             
-        except Exception as e:
-            # Log the full error internally
-            self.logger.error(
-                f"Tool execution failed: {action}", 
-                exc_info=True,
-                extra={"parameters": parameters}
-            )
-            
-            # Return a clean error to the LLM so it can self-correct
+        except ToolNotFoundError as e:
+            self.logger.error(f"Tool not found: {action}", extra={{"tool_name": action}})
             return ToolResult(
                 success=False,
-                output=f"Tool execution failed: {str(e)}",
-                tool_name=action
+                output=e.message,
+                data={"error_type": "ToolNotFoundError", "tool_name": action}
             )
-
+         
+        except ToolExecutionError as e:
+            self.logger.error(f"Tool execution failed for tool {action}", extra={{"tool_name": action}})
+            return ToolResult(
+                success=False,
+                output=e.user_hint,
+                data={"error_type": "ToolExecutionError", "tool_name": action, "details": e.message}
+            )
+         
+        except ToolSecurityError as e:
+            self.logger.warning(f"Security violation detected for tool {action}", extra={{"tool_name": action}})
+            return ToolResult(
+                success=False,
+                output=e.user_hint,
+                data={"error_type": "ToolSecurityError", "security_reason": e.security_reason}
+            )
+         
+        except Exception as e:
+            self.logger.error(f"Unexpected internal error during tool execution: {action}", exc_info=True, extra={{"tool_name": action}})
+            return ToolResult(
+                success=False,
+                output="An unexpected internal error occurred.",
+                data={"error_type": "UnexpectedError", "details": str(e)}
+            )
+        
     async def execute_tool_calls(self, tool_calls: List[Dict]) -> ExecutionSummary:
         """
         Execute a list of tool calls using async UI callback.
