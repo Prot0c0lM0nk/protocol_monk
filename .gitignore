@@ -67,7 +67,7 @@ neural_memory/
 .neuralsym/
 context_snapshots/
 *.py.bak
-
+tests/
 # Local configuration
 *.local
 config/local_*
