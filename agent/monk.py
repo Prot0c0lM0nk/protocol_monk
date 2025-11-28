@@ -142,6 +142,7 @@ class ProtocolAgent:
             return False
 
     def _parse_response(self, text: str) -> Tuple[List[Dict], bool]:
+        """Parse response and return (actions, has_json_content)."""
         return extract_json_with_feedback(text)
 
     async def _record_results(self, summary: ExecutionSummary) -> bool:

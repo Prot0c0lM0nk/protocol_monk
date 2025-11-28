@@ -10,6 +10,7 @@ from agent.monk import ProtocolAgent
 from ui.base import UI
 from agent.model_manager import RuntimeModelManager
 from config.static import settings
+import logging
 
 # Reuse the blessing from main.py
 BLESSING = """☦ Go in peace. May your code compile without warning. ☦"""
@@ -20,6 +21,7 @@ class CommandDispatcher:
     def __init__(self, agent: ProtocolAgent):
         self.agent = agent
         self.ui = agent.ui
+        self.logger = logging.getLogger(__name__)
     
     async def dispatch(self, user_input: str) -> Optional[bool]:
         """Process slash commands and return appropriate signals.
@@ -157,6 +159,16 @@ class CommandDispatcher:
             
             return selected_model
                     
+        except ValueError as e:
+            await self.ui.print_error(f"Invalid model selection: {e}")
+            return None
+        except KeyError as e:
+            await self.ui.print_error(f"Model configuration error: {e}")
+            return None
+        except RuntimeError as e:
+            await self.ui.print_error(f"Runtime error during model switch: {e}")
+            return None
         except Exception as e:
-            await self.ui.print_error(f"Error during model switch: {e}")
+            await self.ui.print_error(f"Unexpected error during model switch: {e}")
+            self.logger.error(f"Unexpected error in model switch: {e}", exc_info=True)
             return None

@@ -53,7 +53,7 @@ class RunPythonTool(BaseTool):
         
         # Ensure the file path is safe (within working directory)
         if not self._is_safe_file_path(str(temp_file_path.relative_to(self.working_dir))):
-            return ToolResult.security_blocked(f"🔒 Attempted to write to an unsafe path: {script_name}", reason="File path is outside the working directory.")
+            return ToolResult.security_blocked(f"File path is outside the working directory: {script_name}")
 
         try:
             # Write the Python code to the temporary file
@@ -69,9 +69,38 @@ class RunPythonTool(BaseTool):
             result = self.command_executor.execute(command=command, description=description)
             
             # Augment the result with Python-specific context
-            result.data['script_content'] = script_content
+            if hasattr(result, 'data') and isinstance(result.data, dict):
+                result.data['script_content'] = script_content
             return result
 
+        except SyntaxError as e:
+            self.logger.error(f"Python syntax error: {e}", exc_info=True)
+            return ToolResult(
+                ExecutionStatus.EXTERNAL_ERROR,
+                f"Python syntax error: {str(e)}",
+                {"error_type": "SyntaxError", "script_name": script_name, "details": str(e)}
+            )
+        except ImportError as e:
+            self.logger.error(f"Python import error: {e}", exc_info=True)
+            return ToolResult(
+                ExecutionStatus.EXTERNAL_ERROR,
+                f"Python import error: {str(e)}",
+                {"error_type": "ImportError", "script_name": script_name, "details": str(e)}
+            )
+        except PermissionError as e:
+            self.logger.error(f"Permission denied: {e}", exc_info=True)
+            return ToolResult(
+                ExecutionStatus.EXTERNAL_ERROR,
+                f"Permission denied: {str(e)}",
+                {"error_type": "PermissionError", "script_name": script_name, "details": str(e)}
+            )
+        except FileNotFoundError as e:
+            self.logger.error(f"File not found: {e}", exc_info=True)
+            return ToolResult(
+                ExecutionStatus.EXTERNAL_ERROR,
+                f"File not found: {str(e)}",
+                {"error_type": "FileNotFoundError", "script_name": script_name, "details": str(e)}
+            )
         except Exception as e:
             self.logger.error(f"An unexpected error occurred in RunPythonTool: {e}", exc_info=True)
             return ToolResult.internal_error(f"❌ An unexpected error occurred while trying to run the Python script: {e}")

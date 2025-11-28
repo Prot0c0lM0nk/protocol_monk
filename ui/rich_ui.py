@@ -130,7 +130,7 @@ class RichUI(UI):
         response = await asyncio.to_thread(console.input, "  [dim white]Execute this action?[/] [Y/n/m] (m = suggest modification) [holy.gold]›[/] ")
         response = response.strip().lower()
         
-        if response in ['', 'y', 'yes']:
+        if response in ['y', 'yes']:
             console.print("  [success]✓ Approved[/]")
             return True
         elif response == 'm':

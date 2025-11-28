@@ -44,14 +44,18 @@ class TAORLoop:
                 if response is False: return False # Error
 
                 # 2. PARSE (Extract Intent)
-                actions, is_truncated = self.agent._parse_response(response)
+                # 2. PARSE (Extract Intent)
+                actions, has_json_content = self.agent._parse_response(response)
                 
-                # Handle Truncation (Observe phase for System)
-                if is_truncated:
-                    await self.agent.ui.print_warning("⚠️ Response truncated.")
-                    await self.agent.context_manager.add_message("system", "System Note: Previous message was truncated.")
-                    # We continue to see if parsable actions exist
+                # Handle case where no JSON tools were found (normal conversation)
+                if not has_json_content and actions:
+                    # This is a normal response without tool calls - not truncation
+                    pass
+                elif not has_json_content and not actions:
+                    # No JSON content and no actions extracted - normal for plain text responses
+                    pass
                 
+                # If no actions, the turn is done (unless ghost tool found)
                 # If no actions, the turn is done (unless ghost tool found)
                 if not actions:
                     if self._detect_ghost_tool(response):

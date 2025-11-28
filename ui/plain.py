@@ -41,7 +41,7 @@ class PlainUI(UI):
         response = await self._get_input("Execute this action? [Y/n/m] (m = suggest modification) ")
         response = response.strip().lower()
         
-        if response in ('', 'y', 'yes'):
+        if response in ('y', 'yes'):
             return True
         elif response == 'm':
             # Modify option - get human suggestion

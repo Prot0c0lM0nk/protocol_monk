@@ -124,7 +124,7 @@ def extract_json_from_text(text: str) -> Tuple[List[Dict[str, Any]], List[JsonPa
 def extract_json_with_feedback(text: str) -> Tuple[List[Dict[str, Any]], bool]:
     """
     Wrapper for compatibility with agent logic.
-    Returns: (List of objects, boolean indicating if extraction occurred)
+    Returns: (List of objects, boolean indicating if JSON objects were extracted)
     """
     try:
         objects, errors = extract_json_from_text(text)
