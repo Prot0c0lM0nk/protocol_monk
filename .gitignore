@@ -68,6 +68,7 @@ neural_memory/
 context_snapshots/
 *.py.bak
 tests/
+.pytest_cache
 # Local configuration
 *.local
 config/local_*
