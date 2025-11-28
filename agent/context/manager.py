@@ -99,7 +99,7 @@ class ContextManager:
             if len(content) < 256 and "\n" not in content:
                 possible_file = self.tracker.working_dir / content
                 if possible_file.exists() and possible_file.is_file():
-                    await self.tracker.replace_old_file_content(content, self.conversation)
+                    await self.tracker.replace_old_file_content(str(possible_file), self.conversation)
 
             # 4. Add the new message
             if importance is None:
