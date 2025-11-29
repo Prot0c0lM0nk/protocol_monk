@@ -18,11 +18,11 @@ __all__ = [
     "AppendToFileTool",
     "InsertInFileTool",
     "ReplaceLinesTool",
-    "DeleteLinesTool"
+    "DeleteLinesTool",
 ]
 __all__ = [
     "auto_stage_large_content",
     "CreateFileTool",
     "ReadFileTool",
-    "AppendToFileTool"
+    "AppendToFileTool",
 ]

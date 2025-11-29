@@ -13,10 +13,18 @@ from pathlib import Path
 from .base import BaseTool, ToolResult
 from agent.tools.exceptions import ToolNotFoundError
 
+
 class ToolRegistry:
     """Manages discovery, loading, and execution of tools."""
-    
-    def __init__(self, working_dir: Path, context_manager=None, agent_logger=None, preferred_env: str = None, venv_path: str = None):
+
+    def __init__(
+        self,
+        working_dir: Path,
+        context_manager=None,
+        agent_logger=None,
+        preferred_env: str = None,
+        venv_path: str = None,
+    ):
         self.working_dir = working_dir
         self.context_manager = context_manager
         self.agent_logger = agent_logger
@@ -37,7 +45,7 @@ class ToolRegistry:
     def _discover_tools(self):
         """Auto-discover and register tools from the 'tools' directory."""
         tools_dir = Path(__file__).parent
-        
+
         for file_path in tools_dir.glob("**/*.py"):
             if file_path.stem.startswith("_") or file_path.stem in ["base", "registry"]:
                 continue
@@ -45,22 +53,28 @@ class ToolRegistry:
             try:
                 # Calculate module path (e.g., tools.file_operations.create_file_tool)
                 relative_path = file_path.relative_to(tools_dir.parent)
-                module_name = ".".join(list(relative_path.parts[:-1]) + [file_path.stem])
-                
+                module_name = ".".join(
+                    list(relative_path.parts[:-1]) + [file_path.stem]
+                )
+
                 if module_name in sys.modules:
-                     module = importlib.reload(sys.modules[module_name])
+                    module = importlib.reload(sys.modules[module_name])
                 else:
-                     module = importlib.import_module(module_name)
-                
+                    module = importlib.import_module(module_name)
+
                 self._register_tools_from_module(module)
-                
+
             except Exception as e:
                 self.logger.error(f"Failed to load tools from {file_path.name}: {e}")
 
     def _register_tools_from_module(self, module):
         """Helper to inspect a module and register valid tools."""
         for name, obj in inspect.getmembers(module, inspect.isclass):
-            if (issubclass(obj, BaseTool) and obj != BaseTool and not inspect.isabstract(obj)):
+            if (
+                issubclass(obj, BaseTool)
+                and obj != BaseTool
+                and not inspect.isabstract(obj)
+            ):
                 try:
                     # Dependency Injection
                     tool_params = inspect.signature(obj.__init__).parameters
@@ -69,18 +83,22 @@ class ToolRegistry:
                         "context_manager": self.context_manager,
                         "agent_logger": self.agent_logger,
                         "preferred_env": self.preferred_env,
-                        "venv_path": self.venv_path
+                        "venv_path": self.venv_path,
                     }
-                    
+
                     # Only pass what the tool asks for
-                    init_args = {k: v for k, v in dependencies.items() if k in tool_params}
-                    
+                    init_args = {
+                        k: v for k, v in dependencies.items() if k in tool_params
+                    }
+
                     tool_instance = obj(**init_args)
                     self._tools[tool_instance.schema.name] = tool_instance
                     self.logger.debug(f"Registered tool: {tool_instance.schema.name}")
-                    
+
                 except Exception as e:
-                    self.logger.error(f"Failed to instantiate tool class {name}: {e}", exc_info=True)
+                    self.logger.error(
+                        f"Failed to instantiate tool class {name}: {e}", exc_info=True
+                    )
 
     async def get_tool(self, name: str) -> Optional[BaseTool]:
         async with self._lock:
@@ -90,47 +108,48 @@ class ToolRegistry:
         """Execute a tool with pre-validation."""
         tool = await self.get_tool(name)
         if not tool:
-             available = list(self._tools.keys())
-             raise ToolNotFoundError(tool_name=name, available_tools=available)
-             
+            available = list(self._tools.keys())
+            raise ToolNotFoundError(tool_name=name, available_tools=available)
+
         # Parameter Validation
         required = tool.schema.required_params
         missing = [p for p in required if p not in kwargs]
-        
+
         if missing:
             return ToolResult.invalid_params(
-                f"Missing required parameters: {missing}", 
-                missing_params=missing
+                f"Missing required parameters: {missing}", missing_params=missing
             )
-            
+
         try:
-             if asyncio.iscoroutinefunction(tool.execute):
-                 result = await tool.execute(**kwargs)
-             else:
-                 result = await asyncio.to_thread(tool.execute, **kwargs)
-             
-             if self.agent_logger:
-                  self.agent_logger.log_tool_result(name, kwargs, result)
-             return result
-             
+            if asyncio.iscoroutinefunction(tool.execute):
+                result = await tool.execute(**kwargs)
+            else:
+                result = await asyncio.to_thread(tool.execute, **kwargs)
+
+            if self.agent_logger:
+                self.agent_logger.log_tool_result(name, kwargs, result)
+            return result
+
         except Exception as e:
-              self.logger.error(f"Tool execution error '{name}'", exc_info=True)
-              return ToolResult.internal_error(f"Tool execution error: {str(e)}")
+            self.logger.error(f"Tool execution error '{name}'", exc_info=True)
+            return ToolResult.internal_error(f"Tool execution error: {str(e)}")
 
     # --- Helper Methods ---
     async def list_tools(self) -> List[str]:
         async with self._lock:
             return list(self._tools.keys())
-            
+
     async def get_formatted_tool_schemas(self) -> str:
         async with self._lock:
             schemas = [t.schema for t in self._tools.values()]
-        
+
         if not schemas:
             return "No tools available."
-            
+
         formatted = []
         for s in schemas:
-            params = ", ".join(f"{k}: {v.get('type','any')}" for k,v in s.parameters.items())
+            params = ", ".join(
+                f"{k}: {v.get('type','any')}" for k, v in s.parameters.items()
+            )
             formatted.append(f"{s.name}({params}): {s.description}")
         return "\n".join(formatted)

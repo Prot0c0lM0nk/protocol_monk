@@ -23,12 +23,12 @@ class GitOperationTool(BaseTool):
         self.logger = logging.getLogger(__name__)
         # Map of supported git operations to their command lists (for shell=False)
         self._git_commands = {
-            'status': ['git', 'status'],
-            'add': ['git', 'add', '.'],
-            'commit': ['git', 'commit', '-m', 'AI assistant changes'],
-            'push': ['git', 'push'],
-            'pull': ['git', 'pull'],
-            'log': ['git', 'log', '--oneline', '-10']
+            "status": ["git", "status"],
+            "add": ["git", "add", "."],
+            "commit": ["git", "commit", "-m", "AI assistant changes"],
+            "push": ["git", "push"],
+            "pull": ["git", "pull"],
+            "log": ["git", "log", "--oneline", "-10"],
         }
 
     @property
@@ -40,15 +40,15 @@ class GitOperationTool(BaseTool):
                 "operation": {
                     "type": "string",
                     "description": "Git operation to perform",
-                    "enum": ["status", "add", "commit", "push", "pull", "log"]
+                    "enum": ["status", "add", "commit", "push", "pull", "log"],
                 },
                 "commit_message": {
                     "type": "string",
                     "description": "Custom commit message (only used with 'commit' operation)",
-                    "default": "AI assistant changes"
-                }
+                    "default": "AI assistant changes",
+                },
             },
-            required_params=["operation"]
+            required_params=["operation"],
         )
 
     def execute(self, **kwargs) -> ToolResult:
@@ -58,14 +58,17 @@ class GitOperationTool(BaseTool):
 
         # Validate required parameters
         if not operation:
-            return ToolResult.invalid_params("❌ Missing required parameter: 'operation'", missing_params=['operation'])
+            return ToolResult.invalid_params(
+                "❌ Missing required parameter: 'operation'",
+                missing_params=["operation"],
+            )
 
         # Validate operation
         if operation not in self._git_commands:
             available_ops = ", ".join(self._git_commands.keys())
             return ToolResult.invalid_params(
                 f"❌ Unknown git operation: {operation}. Available: {available_ops}",
-                missing_params=['operation']
+                missing_params=["operation"],
             )
 
         # Get the git command list (copy to avoid mutating the original)
@@ -73,7 +76,7 @@ class GitOperationTool(BaseTool):
 
         # Handle custom commit message (safely via list form)
         if operation == "commit" and commit_message != "AI assistant changes":
-            command = ['git', 'commit', '-m', commit_message]
+            command = ["git", "commit", "-m", commit_message]
 
         # Set timeout
         timeout = DEFAULT_GIT_TIMEOUT
@@ -85,7 +88,7 @@ class GitOperationTool(BaseTool):
                 cwd=self.working_dir,
                 capture_output=True,
                 text=True,
-                timeout=timeout
+                timeout=timeout,
             )
 
             output = ""
@@ -98,32 +101,36 @@ class GitOperationTool(BaseTool):
             status_icon = "✅" if result.returncode == 0 else "❌"
 
             # Provide helpful hint for credential errors
-            if result.returncode == 128 and operation in ['push', 'pull']:
+            if result.returncode == 128 and operation in ["push", "pull"]:
                 output += "\n💡 Hint: Exit code 128 often means authentication failed. "
                 output += "Consider configuring a credential helper or using SSH keys."
 
             # Add operation-specific success messages
             if result.returncode == 0:
                 operation_messages = {
-                    'status': "📊 Repository status retrieved",
-                    'add': "➕ Files staged for commit",
-                    'commit': "💾 Changes committed to repository",
-                    'push': "🚀 Changes pushed to remote repository",
-                    'pull': "⬇️ Changes pulled from remote repository",
-                    'log': "📜 Recent commit history retrieved"
+                    "status": "📊 Repository status retrieved",
+                    "add": "➕ Files staged for commit",
+                    "commit": "💾 Changes committed to repository",
+                    "push": "🚀 Changes pushed to remote repository",
+                    "pull": "⬇️ Changes pulled from remote repository",
+                    "log": "📜 Recent commit history retrieved",
                 }
-                success_msg = operation_messages.get(operation, f"Git {operation} completed")
+                success_msg = operation_messages.get(
+                    operation, f"Git {operation} completed"
+                )
                 formatted_output = f"{status_icon} {success_msg}\n{output}"
 
                 return ToolResult.success_result(
                     formatted_output,
                     data={
                         "operation": operation,
-                        "command": ' '.join(command),  # Convert list to string for display
+                        "command": " ".join(
+                            command
+                        ),  # Convert list to string for display
                         "exit_code": result.returncode,
                         "stdout": result.stdout,
-                        "stderr": result.stderr
-                    }
+                        "stderr": result.stderr,
+                    },
                 )
             else:
                 formatted_output = f"{status_icon} Git {operation} failed\n{output}"
@@ -133,21 +140,30 @@ class GitOperationTool(BaseTool):
                     exit_code=result.returncode,
                     data={
                         "operation": operation,
-                        "command": ' '.join(command),
+                        "command": " ".join(command),
                         "exit_code": result.returncode,
                         "stdout": result.stdout,
-                        "stderr": result.stderr
-                    }
+                        "stderr": result.stderr,
+                    },
                 )
 
         except subprocess.TimeoutExpired:
-            return ToolResult.timeout(f"⏰ Git {operation} timed out after {timeout} seconds")
+            return ToolResult.timeout(
+                f"⏰ Git {operation} timed out after {timeout} seconds"
+            )
         except FileNotFoundError:
             # This occurs if 'git' is not installed or not in PATH
-            return ToolResult.command_failed("❌ 'git' command not found. Is Git installed and in your PATH?", exit_code=127)
+            return ToolResult.command_failed(
+                "❌ 'git' command not found. Is Git installed and in your PATH?",
+                exit_code=127,
+            )
         except Exception as e:
-            self.logger.error(f"Unexpected error executing git {operation}: {e}", exc_info=True)
-            return ToolResult.internal_error(f"❌ Unexpected error executing git {operation}: {e}")
+            self.logger.error(
+                f"Unexpected error executing git {operation}: {e}", exc_info=True
+            )
+            return ToolResult.internal_error(
+                f"❌ Unexpected error executing git {operation}: {e}"
+            )
 
     def get_supported_operations(self) -> list:
         """Return list of supported git operations."""

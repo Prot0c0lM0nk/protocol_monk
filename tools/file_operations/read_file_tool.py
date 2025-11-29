@@ -28,18 +28,18 @@ class ReadFileTool(BaseTool):
             parameters={
                 "filepath": {
                     "type": "string",
-                    "description": "Path to the file to show"
+                    "description": "Path to the file to show",
                 },
                 "line_start": {
                     "type": "integer",
-                    "description": "Starting line number (1-based, optional). If omitted, shows entire file."
+                    "description": "Starting line number (1-based, optional). If omitted, shows entire file.",
                 },
                 "line_end": {
                     "type": "integer",
-                    "description": "Ending line number (1-based, optional). If omitted, shows to end of file."
-                }
+                    "description": "Ending line number (1-based, optional). If omitted, shows to end of file.",
+                },
             },
-            required_params=["filepath"]
+            required_params=["filepath"],
         )
 
     def execute(self, **kwargs) -> ToolResult:
@@ -50,11 +50,16 @@ class ReadFileTool(BaseTool):
 
         # Validate required parameters
         if not filepath:
-            return ToolResult.invalid_params("❌ Missing required parameter: 'filepath'", missing_params=['filepath'])
+            return ToolResult.invalid_params(
+                "❌ Missing required parameter: 'filepath'", missing_params=["filepath"]
+            )
 
         # Security validation for file path (read_only=True allows reading outside working_dir)
         if not self._is_safe_file_path(filepath, read_only=True):
-            return ToolResult.security_blocked(f"🔒 File path blocked due to security policy: {filepath}", reason="Unsafe file path")
+            return ToolResult.security_blocked(
+                f"🔒 File path blocked due to security policy: {filepath}",
+                reason="Unsafe file path",
+            )
 
         try:
             full_path = self.working_dir / filepath
@@ -64,9 +69,9 @@ class ReadFileTool(BaseTool):
             if file_size > self.MAX_FILE_SIZE_BYTES:
                 return ToolResult.command_failed(
                     f"❌ File is too large to read ({file_size / 1024:.2f} KB). Maximum size is {self.MAX_FILE_SIZE_BYTES / 1024:.2f} KB.",
-                    exit_code=1
+                    exit_code=1,
                 )
-            content = full_path.read_text(encoding='utf-8')
+            content = full_path.read_text(encoding="utf-8")
 
             lines = content.splitlines()
 
@@ -81,31 +86,48 @@ class ReadFileTool(BaseTool):
             if start_idx >= len(lines):
                 return ToolResult(
                     ExecutionStatus.COMMAND_FAILED,
-                    f"❌ Start line {line_start} exceeds file length ({len(lines)} lines)"
+                    f"❌ Start line {line_start} exceeds file length ({len(lines)} lines)",
                 )
 
             # Get the specified lines
             selected_lines = lines[start_idx:end_idx]
-            numbered_content = "\n".join(f"{i+start_idx+1:3}│ {line}" for i, line in enumerate(selected_lines))
+            numbered_content = "\n".join(
+                f"{i+start_idx+1:3}│ {line}" for i, line in enumerate(selected_lines)
+            )
 
             # Return formatted content - let main agent handle display
             formatted_output = f"📄 File {filepath} (lines {start_idx+1}-{end_idx}):\n{'─' * 60}\n{numbered_content}\n{'─' * 60}"
 
             return ToolResult.success_result(
                 formatted_output,
-                data={"filepath": filepath, "line_start": start_idx+1, "line_end": end_idx, "content": "\n".join(selected_lines)}
+                data={
+                    "filepath": filepath,
+                    "line_start": start_idx + 1,
+                    "line_end": end_idx,
+                    "content": "\n".join(selected_lines),
+                },
             )
 
         except FileNotFoundError:
-            return ToolResult.command_failed(f"❌ File not found: {filepath}", exit_code=1)
+            return ToolResult.command_failed(
+                f"❌ File not found: {filepath}", exit_code=1
+            )
         except PermissionError as e:
             self.logger.warning(f"Permission denied for {filepath}: {e}", exc_info=True)
-            return ToolResult.security_blocked(f"🔒 Permission denied: Cannot read {filepath}.", reason=str(e))
+            return ToolResult.security_blocked(
+                f"🔒 Permission denied: Cannot read {filepath}.", reason=str(e)
+            )
         except UnicodeDecodeError as e:
-            return ToolResult.internal_error(f"❌ Encoding error: Cannot read {filepath} as 'utf-8'. It may be a binary file. Error: {e}")
+            return ToolResult.internal_error(
+                f"❌ Encoding error: Cannot read {filepath} as 'utf-8'. It may be a binary file. Error: {e}"
+            )
         except (IOError, OSError) as e:
-            self.logger.error(f"File system error reading {filepath}: {e}", exc_info=True)
+            self.logger.error(
+                f"File system error reading {filepath}: {e}", exc_info=True
+            )
             return ToolResult.internal_error(f"❌ File system error: {e}")
         except Exception as e:
-            self.logger.error(f"Unexpected error reading {filepath}: {e}", exc_info=True)
+            self.logger.error(
+                f"Unexpected error reading {filepath}: {e}", exc_info=True
+            )
             return ToolResult.internal_error(f"❌ Unexpected error: {e}")

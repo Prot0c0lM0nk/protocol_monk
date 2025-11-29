@@ -15,15 +15,18 @@ try:
     else:
         from _constants import DANGEROUS_FILE_PATTERNS
 except ImportError:
-    DANGEROUS_FILE_PATTERNS = ['/etc/', '.ssh/', '../', '.env', '.git/']
+    DANGEROUS_FILE_PATTERNS = ["/etc/", ".ssh/", "../", ".env", ".git/"]
+
 
 @dataclass
 class ToolSchema:
     """Describes a tool's interface."""
+
     name: str
     description: str
     parameters: Dict[str, Any]
     required_params: list[str]
+
 
 class ExecutionStatus(Enum):
     SUCCESS = "success"
@@ -34,17 +37,26 @@ class ExecutionStatus(Enum):
     EXTERNAL_ERROR = "external_error"
     INTERNAL_ERROR = "internal_error"
 
+
 class ToolResult:
     """Standardized result from tool execution."""
+
     def __init__(self, status_or_success, output: str, data: Dict = None, **kwargs):
         if isinstance(status_or_success, bool):
-            self.status = ExecutionStatus.SUCCESS if status_or_success else ExecutionStatus.INTERNAL_ERROR
+            self.status = (
+                ExecutionStatus.SUCCESS
+                if status_or_success
+                else ExecutionStatus.INTERNAL_ERROR
+            )
         else:
             self.status = status_or_success
-        
+
         self.output = output
         self.data = data or {}
-        self.success = self.status in (ExecutionStatus.SUCCESS, ExecutionStatus.COMMAND_FAILED)
+        self.success = self.status in (
+            ExecutionStatus.SUCCESS,
+            ExecutionStatus.COMMAND_FAILED,
+        )
 
     @classmethod
     def success_result(cls, output: str, data: Dict = None):
@@ -60,7 +72,11 @@ class ToolResult:
 
     @classmethod
     def security_blocked(cls, reason: str):
-        return cls(ExecutionStatus.SECURITY_BLOCKED, f"Security Blocked: {reason}", {"reason": reason})
+        return cls(
+            ExecutionStatus.SECURITY_BLOCKED,
+            f"Security Blocked: {reason}",
+            {"reason": reason},
+        )
 
     @classmethod
     def internal_error(cls, output: str):
@@ -73,7 +89,7 @@ class ToolResult:
 
 class BaseTool(ABC):
     """Abstract base class for all tools."""
-    
+
     def __init__(self, working_dir: Path):
         self.logger = logging.getLogger(f"tools.{self.__class__.__name__}")
         self.working_dir = Path(working_dir).resolve()
@@ -83,7 +99,9 @@ class BaseTool(ABC):
             try:
                 self.working_dir.mkdir(parents=True, exist_ok=True)
             except Exception as e:
-                raise exceptions.ConfigurationError(f"Could not create working directory: {e}")
+                raise exceptions.ConfigurationError(
+                    f"Could not create working directory: {e}"
+                )
 
     @property
     @abstractmethod
@@ -101,21 +119,23 @@ class BaseTool(ABC):
         try:
             # Resolve path relative to working dir
             target_path = (self.working_dir / filepath).resolve()
-            
+
             # 1. Path Traversal Check
             if not str(target_path).startswith(str(self.working_dir)):
                 self.logger.warning(f"Security: Path traversal blocked: {filepath}")
                 return False
-            
+
             # 2. Dangerous Pattern Check
             path_str = str(target_path)
             for pattern in DANGEROUS_FILE_PATTERNS:
                 if pattern in path_str:
-                    self.logger.warning(f"Security: Dangerous pattern '{pattern}' blocked in {filepath}")
+                    self.logger.warning(
+                        f"Security: Dangerous pattern '{pattern}' blocked in {filepath}"
+                    )
                     return False
-                    
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Path validation error: {e}")
             return False
