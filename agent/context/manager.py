@@ -4,8 +4,15 @@ from pathlib import Path
 from typing import List, Dict, Optional, TYPE_CHECKING
 from config.static import settings
 from agent.core_exceptions import ConfigurationError
-from agent.context.exceptions import ContextError, ContextOverflowError, ContextCorruptionError
-from agent.context.exceptions_expanded import NeuralSymIntegrationError, ContextValidationError
+from agent.context.exceptions import (
+    ContextError,
+    ContextOverflowError,
+    ContextCorruptionError,
+)
+from agent.context.exceptions_expanded import (
+    NeuralSymIntegrationError,
+    ContextValidationError,
+)
 
 # Component imports
 from .message import Message
@@ -19,32 +26,38 @@ from .neural_sym_integration import NeuralSymContextManager, NEURALSYM_AVAILABLE
 if TYPE_CHECKING:
     from tools.registry import ToolRegistry
 
+
 class ContextManager:
     """
     Manages conversation history and coordinates token budgeting.
     Acts as the central hub for the ProtocolAgent's memory.
     """
+
     def __init__(
         self,
         max_tokens: int = 16384,
         working_dir: Optional[Path] = None,
-        tokenizer = None,
-        tool_registry: Optional['ToolRegistry'] = None
+        tokenizer=None,
+        tool_registry: Optional["ToolRegistry"] = None,
     ):
         self.logger = logging.getLogger(__name__)
         self.tool_registry = tool_registry
         self.conversation: List[Message] = []
         self._lock = asyncio.Lock()
-        self.system_message = "[System prompt not yet initialized. Call async_initialize()]"
-        
+        self.system_message = (
+            "[System prompt not yet initialized. Call async_initialize()]"
+        )
+
         # Instantiate components
         self.accountant = TokenAccountant(max_tokens=max_tokens, tokenizer=tokenizer)
         self.tracker = FileTracker(working_dir=working_dir or Path.cwd())
         self.pruner = ContextPruner(max_tokens=max_tokens)
-        
+
         # Initialize NeuralSym integration if available
         if NEURALSYM_AVAILABLE:
-            self.neural_sym = NeuralSymContextManager(working_dir=working_dir or Path.cwd())
+            self.neural_sym = NeuralSymContextManager(
+                working_dir=working_dir or Path.cwd()
+            )
         else:
             self.neural_sym = None
 
@@ -56,7 +69,7 @@ class ContextManager:
             raise ContextValidationError(
                 "System message failed to initialize properly",
                 validation_type="system_message_initialization",
-                invalid_value=self.system_message
+                invalid_value=self.system_message,
             )
         self.accountant.recalculate(self.system_message, self.conversation)
 
@@ -65,16 +78,22 @@ class ContextManager:
         try:
             # Run file I/O in a separate thread to avoid blocking
             prompt_template = await asyncio.to_thread(
-                settings.filesystem.system_prompt_file.read_text, encoding='utf-8'
+                settings.filesystem.system_prompt_file.read_text, encoding="utf-8"
             )
-            
-            if self.tool_registry and hasattr(self.tool_registry, 'get_formatted_tool_schemas'):
+
+            if self.tool_registry and hasattr(
+                self.tool_registry, "get_formatted_tool_schemas"
+            ):
                 tool_definitions = await self.tool_registry.get_formatted_tool_schemas()
             else:
-                tool_definitions = "[ERROR: Tool registry not available. Tools will not work.]"
-                
-            return prompt_template.replace("{{AVAILABLE_TOOLS_SECTION}}", tool_definitions)
-            
+                tool_definitions = (
+                    "[ERROR: Tool registry not available. Tools will not work.]"
+                )
+
+            return prompt_template.replace(
+                "{{AVAILABLE_TOOLS_SECTION}}", tool_definitions
+            )
+
         except FileNotFoundError as e:
             error_msg = f"System prompt template not found at: {settings.filesystem.system_prompt_file}."
             self.logger.critical(error_msg, exc_info=True)
@@ -83,14 +102,14 @@ class ContextManager:
             error_msg = f"Failed to build system prompt: {e}"
             self.logger.error(error_msg, exc_info=True)
             raise ContextValidationError(
-                error_msg,
-                validation_type="system_message",
-                invalid_value=None
+                error_msg, validation_type="system_message", invalid_value=None
             ) from e
 
-    async def add_message(self, role: str, content: str, importance: Optional[int] = None):
+    async def add_message(
+        self, role: str, content: str, importance: Optional[int] = None
+    ):
         """
-        Add a message to the conversation. 
+        Add a message to the conversation.
         Handles token counting, pruning, and file content management automatically.
         """
         async with self._lock:
@@ -104,7 +123,9 @@ class ContextManager:
             # 2. Prune if budget exceeded
             if not self.accountant.check_budget(new_tokens):
                 self.logger.info("Context approaching limit, pruning...")
-                self.conversation = self.pruner.prune(self.conversation, self.accountant)
+                self.conversation = self.pruner.prune(
+                    self.conversation, self.accountant
+                )
                 self.accountant.recalculate(self.system_message, self.conversation)
 
             # 3. Optimized File Check with proper validation
@@ -113,23 +134,30 @@ class ContextManager:
                 # Validate that this is actually a file path, not just a string
                 try:
                     if possible_file.exists() and possible_file.is_file():
-                        await self.tracker.replace_old_file_content(str(possible_file), self.conversation)
+                        await self.tracker.replace_old_file_content(
+                            str(possible_file), self.conversation
+                        )
                 except Exception as e:
                     # Validate file path and raise proper exception
-                    if not content or content.startswith('.') or '/' in content or '\\' in content:
+                    if (
+                        not content
+                        or content.startswith(".")
+                        or "/" in content
+                        or "\\" in content
+                    ):
                         raise ContextValidationError(
                             f"Invalid file path in content: {content}",
                             validation_type="file_path",
-                            invalid_value=content
+                            invalid_value=content,
                         ) from e
 
             # 4. Add the new message
             if importance is None:
                 importance = 5 if role == "tool" else 3
-            
+
             msg = Message(role=role, content=content, importance=importance)
             self.conversation.append(msg)
-            
+
             # 5. Update token count
             self.accountant.add(new_tokens)
 
@@ -146,20 +174,25 @@ class ContextManager:
         """
         # 1. Get the base context (System + History)
         base_context = await self._get_base_context()
-        
+
         # 2. Check if we need to enhance it (Small Model Logic)
         if model_name and self.neural_sym:
             # Check if model is small (contains size indicators like 8b, 4b, 2b, 1.7b, 0.6b, etc.)
-            is_small_model = any(x in model_name.lower() for x in ["8b", "4b", "2b", "1.7b", "0.6b", "small", "mini", "tiny"])
+            is_small_model = any(
+                x in model_name.lower()
+                for x in ["8b", "4b", "2b", "1.7b", "0.6b", "small", "mini", "tiny"]
+            )
             if is_small_model:
                 try:
-                    return await self.neural_sym.get_enhanced_context(base_context, model_name)
+                    return await self.neural_sym.get_enhanced_context(
+                        base_context, model_name
+                    )
                 except Exception as e:
                     raise NeuralSymIntegrationError(
                         f"NeuralSym enhancement failed for model {model_name}",
                         operation="get_enhanced_context",
                         model_name=model_name,
-                        original_error=e
+                        original_error=e,
                     ) from e
         return base_context
 
@@ -199,13 +232,13 @@ class ContextManager:
         if strategy in ["strict", "archive"]:
             self.conversation = self.pruner.prune(self.conversation, self.accountant)
         elif strategy == "smart":
-             if len(self.conversation) > 2:
+            if len(self.conversation) > 2:
                 self.conversation = self.conversation[-2:]
-        
+
         self.accountant.recalculate(self.system_message, self.conversation)
 
     # --- Neural Sym Passthrough Methods ---
-    
+
     def record_tool_execution_outcome(self, *args, **kwargs):
         if self.neural_sym:
             try:
@@ -214,5 +247,5 @@ class ContextManager:
                 raise NeuralSymIntegrationError(
                     "NeuralSym recording failed",
                     operation="record_interaction_outcome",
-                    original_error=e
+                    original_error=e,
                 ) from e

@@ -30,6 +30,7 @@ from agent.tools.exceptions import ToolError
 from agent.taor_loop import TAORLoop
 from agent.scratch_manager import ScratchManager
 
+
 class ProtocolAgent:
     """Core agent that handles the main interaction loop."""
 
@@ -37,29 +38,29 @@ class ProtocolAgent:
         self,
         working_dir: str = ".",
         model_name: str = settings.model.default_model,
-        tool_registry = None,
-        ui: Optional[UI] = None
+        tool_registry=None,
+        ui: Optional[UI] = None,
     ):
         self.working_dir = Path(working_dir).resolve()
         self.current_model = model_name
         self.ui = ui or PlainUI()
         self.logger = logging.getLogger(__name__)
-        
+
         self.enhanced_logger = EnhancedLogger(self.working_dir)
 
         # 1. Components
         self.context_manager = ContextManager(
             max_tokens=settings.model.context_window,
             working_dir=self.working_dir,
-            tool_registry=tool_registry
+            tool_registry=tool_registry,
         )
-        
+
         # Wiring
         if tool_registry:
             tool_registry.context_manager = self.context_manager
 
         self.model_manager = RuntimeModelManager()
-        
+
         # 2. Scratch Manager (Fixes Infinite Writes)
         self.scratch_manager = ScratchManager(self.working_dir)
 
@@ -73,21 +74,23 @@ class ProtocolAgent:
             tool_registry=tool_registry,
             working_dir=self.working_dir,
             auto_confirm=False,
-            ui_callback=self._handle_ui_event
+            ui_callback=self._handle_ui_event,
         )
 
         # 3. TAOR Loop (The Immutable Orchestrator)
         self.taor_loop = TAORLoop(self)
 
     async def async_initialize(self):
-        if hasattr(self.tool_executor.tool_registry, 'async_initialize'):
+        if hasattr(self.tool_executor.tool_registry, "async_initialize"):
             await self.tool_executor.tool_registry.async_initialize()
         await self.context_manager.async_initialize()
 
     async def _handle_ui_event(self, event: str, data: Dict[str, Any]) -> Any:
         # Pass-through to UI
         if event == "confirm":
-            return await self.ui.confirm_tool_call(data["tool_call"], data["auto_confirm"])
+            return await self.ui.confirm_tool_call(
+                data["tool_call"], data["auto_confirm"]
+            )
         elif event == "execution_start":
             await self.ui.display_execution_start(data["count"])
         elif event == "progress":
@@ -125,14 +128,16 @@ class ProtocolAgent:
         await self.ui.start_thinking()
         full_response = ""
         try:
-            async for chunk in self.model_client.get_response_async(context, stream=True):
+            async for chunk in self.model_client.get_response_async(
+                context, stream=True
+            ):
                 full_response += chunk
                 await self.ui.print_stream(chunk)
-            
+
             # Save Assistant thought
             if full_response:
                 await self.context_manager.add_message("assistant", full_response)
-            
+
             return full_response
         except KeyboardInterrupt:
             await self.ui.print_warning("\n🛑 Interrupted.")
@@ -150,13 +155,13 @@ class ProtocolAgent:
         had_failure = False
         for result in summary.results:
             await self.context_manager.add_message("tool", result.output, importance=5)
-            
+
             tool_data = getattr(result, "data", {}) or {}
             self.context_manager.record_tool_execution_outcome(
                 tool_name=result.tool_name,
                 arguments=tool_data,
                 success=result.success,
-                error_message=result.output if not result.success else None
+                error_message=result.output if not result.success else None,
             )
             if not result.success:
                 had_failure = True
@@ -166,7 +171,7 @@ class ProtocolAgent:
     async def clear_conversation(self):
         await self.context_manager.clear()
         await self.ui.print_info("✓ Cleared.")
-        
+
     async def get_status(self) -> Dict:
         context_stats = await self.context_manager.get_stats()
         return {
@@ -175,7 +180,7 @@ class ProtocolAgent:
             "conversation_length": context_stats["total_messages"],
             "estimated_tokens": context_stats["total_tokens"],
             "token_limit": self.context_manager.max_tokens,
-            "provider": self.model_client.current_provider
+            "provider": self.model_client.current_provider,
         }
 
     async def set_model(self, model_name: str):

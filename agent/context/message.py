@@ -1,6 +1,7 @@
 import time
 from dataclasses import dataclass, field
 
+
 @dataclass
 class Message:
     """
@@ -12,6 +13,7 @@ class Message:
         timestamp: When message was created
         importance: Score 1-5, higher = more important to preserve
     """
+
     role: str
     content: str
     timestamp: float = field(default_factory=time.time)

@@ -4,11 +4,13 @@ from pathlib import Path
 from typing import List, Set
 from agent.context.message import Message
 
+
 class FileTracker:
     """
     Manages file-shown state and content replacement logic.
     Ensures we don't waste context tokens on duplicate file contents.
     """
+
     def __init__(self, working_dir: Path):
         self.working_dir = working_dir
         # Changed type hint to Set for clarity
@@ -52,24 +54,29 @@ class FileTracker:
         except Exception:
             return False
 
-    async def replace_old_file_content(self, filepath: str, conversation: List[Message]):
+    async def replace_old_file_content(
+        self, filepath: str, conversation: List[Message]
+    ):
         """
         Scans conversation history. If 'filepath' appears multiple times,
         replaces older occurrences with a placeholder to save tokens.
         """
         # Validate file existence first
         if not self._validate_file_exists(filepath):
-            self.logger.warning(f"File does not exist, skipping replacement: {filepath}")
+            self.logger.warning(
+                f"File does not exist, skipping replacement: {filepath}"
+            )
             return
-        
+
         # Find indices of messages that contain this file using exact boundary matching
         candidates = [
-            (idx, msg) for idx, msg in enumerate(conversation)
+            (idx, msg)
+            for idx, msg in enumerate(conversation)
             if self._exact_path_match(filepath, msg.content)
             and len(msg.content) > 200
             and not msg.content.startswith("[File previously shown")
         ]
-        
+
         # If we don't have at least 2 copies, there is nothing to replace
         if len(candidates) <= 1:
             return

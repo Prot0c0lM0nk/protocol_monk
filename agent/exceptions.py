@@ -13,7 +13,14 @@ class MonkBaseError(Exception):
     """
     The Base Contract for all Agent errors.
     """
-    def __init__(self, message: str, original_error: Exception = None, user_hint: str = None, details: dict = None):
+
+    def __init__(
+        self,
+        message: str,
+        original_error: Exception = None,
+        user_hint: str = None,
+        details: dict = None,
+    ):
         super().__init__(message)
         self.message = message
         self.original_error = original_error
@@ -26,6 +33,7 @@ def wrap_exception(exception_class, user_hint=None):
     Decorator that catches generic exceptions and Re-Raises them
     as the specific MonkBaseError subclass.
     """
+
     def decorator(func):
         def wrapper(*args, **kwargs):
             try:
@@ -33,13 +41,13 @@ def wrap_exception(exception_class, user_hint=None):
             except Exception as e:
                 # Re-raise as the specific exception class
                 raise exception_class(
-                    message=str(e),
-                    original_error=e,
-                    user_hint=user_hint
+                    message=str(e), original_error=e, user_hint=user_hint
                 ) from e
+
         return wrapper
+
     return decorator
 
 
 # Export the base contract
-__all__ = ['MonkBaseError', 'wrap_exception']
+__all__ = ["MonkBaseError", "wrap_exception"]

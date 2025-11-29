@@ -2,28 +2,33 @@ import logging
 from typing import List, Optional, Any
 from agent.context.message import Message
 from agent.context.exceptions import ContextOverflowError
-from agent.context.exceptions_expanded import TokenEstimationError, ContextValidationError
+from agent.context.exceptions_expanded import (
+    TokenEstimationError,
+    ContextValidationError,
+)
 from agent.core_exceptions import ConfigurationError
 
 # Import the official estimator from utils
 from utils.token_estimation import SmartTokenEstimator
 
+
 class TokenAccountant:
     """
     Manages token counting and budget for the context.
-    
+
     ARCHITECTURAL STRICTNESS:
     - Delegates ALL estimation logic to SmartTokenEstimator.
     - NO fallback math (e.g., len/4) allowed.
     - If estimation fails, it is an error, not a guess.
     """
+
     def __init__(self, max_tokens: int, tokenizer: Optional[Any] = None):
         # Validate max_tokens to prevent infinite budget case
         if max_tokens <= 0:
             raise ContextValidationError(
                 f"Invalid max_tokens value: {max_tokens}. Must be positive.",
                 validation_type="max_tokens",
-                invalid_value=max_tokens
+                invalid_value=max_tokens,
             )
         self.max_tokens = max_tokens
         self.total_tokens = 0
@@ -36,7 +41,7 @@ class TokenAccountant:
         except Exception as e:
             raise ConfigurationError(
                 message=f"CRITICAL: Failed to initialize SmartTokenEstimator: {e}",
-                root_cause=e
+                root_cause=e,
             )
 
     def estimate(self, text: str) -> int:
@@ -45,18 +50,21 @@ class TokenAccountant:
         """
         if not text:
             return 0
-            
+
         try:
             return self.estimator.estimate_tokens(text)
         except Exception as e:
             # DO NOT fallback to character math.
             # We want to know if our estimator is broken.
-            self.logger.error(f"CRITICAL: Token estimation failed for text snippet: {e}", exc_info=True)
+            self.logger.error(
+                f"CRITICAL: Token estimation failed for text snippet: {e}",
+                exc_info=True,
+            )
             raise TokenEstimationError(
                 f"Token estimation failed for text: {e}",
-                estimator_name=getattr(self.estimator, '__class__.__name__', 'Unknown'),
+                estimator_name=getattr(self.estimator, "__class__.__name__", "Unknown"),
                 failed_text=text[:100] if text else "",
-                original_error=e
+                original_error=e,
             ) from e
 
     def add(self, tokens: int):
@@ -65,7 +73,7 @@ class TokenAccountant:
             raise ContextValidationError(
                 f"Invalid max_tokens value: {self.max_tokens}. Must be positive.",
                 validation_type="max_tokens",
-                invalid_value=self.max_tokens
+                invalid_value=self.max_tokens,
             )
         self.total_tokens += tokens
         self.logger.debug(f"Added {tokens} tokens. Total: {self.total_tokens}")
@@ -76,8 +84,8 @@ class TokenAccountant:
         Returns True if budget is OK, False if pruning is needed.
         """
         if self.max_tokens <= 0:
-            return True # Infinite budget or unconfigured
-            
+            return True  # Infinite budget or unconfigured
+
         pruning_threshold = int(self.max_tokens * 0.8)
         return (self.total_tokens + new_tokens) <= pruning_threshold
 
@@ -87,22 +95,24 @@ class TokenAccountant:
         This is the source of truth for the context state.
         """
         running_total = 0
-        
+
         # 1. System Prompt
         running_total += self.estimate(system_message)
-        
+
         # 2. Conversation History
         for msg in messages:
             running_total += self.estimate(msg.content)
-            
+
         self.total_tokens = running_total
         self.logger.debug(f"Recalculated total tokens: {self.total_tokens}")
 
     def get_stats(self) -> dict:
         """Get current token statistics."""
-        usage_percent = (self.total_tokens / self.max_tokens) * 100 if self.max_tokens > 0 else 0
+        usage_percent = (
+            (self.total_tokens / self.max_tokens) * 100 if self.max_tokens > 0 else 0
+        )
         return {
             "total_tokens": self.total_tokens,
             "max_tokens": self.max_tokens,
-            "usage_percent": round(usage_percent, 2)
+            "usage_percent": round(usage_percent, 2),
         }
