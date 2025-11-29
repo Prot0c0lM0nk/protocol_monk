@@ -54,7 +54,6 @@ class TAORLoop:
                     )
 
                 # 2. PARSE (Extract Intent)
-                # 2. PARSE (Extract Intent)
                 actions, has_json_content = self.agent._parse_response(response)
                 
                 # Handle case where no JSON tools were found (normal conversation)
@@ -65,7 +64,6 @@ class TAORLoop:
                     # No JSON content and no actions extracted - normal for plain text responses
                     pass
                 
-                # If no actions, the turn is done (unless ghost tool found)
                 # If no actions, the turn is done (unless ghost tool found)
                 if not actions:
                     if self._detect_ghost_tool(response):
