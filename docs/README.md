@@ -1,21 +1,21 @@
 # Protocol Monk ✠
 
-A terminal-based AI coding assistant with streaming mixed-mode responses (text + tool execution).
+A terminal-based AI assistant with streaming mixed-mode responses (text + tool execution).
 
 ## Overview
 
-Protocol Monk is an AI assistant that combines natural language interaction with precise code editing capabilities. It solves a key limitation in current AI coding tools by supporting simultaneous chat and tool execution through a streaming mixed-mode response system.
+Protocol Monk is an AI assistant that combines natural language interaction with precise editing capabilities. It solves a key limitation in current AI coding tools by supporting simultaneous chat and tool execution through a streaming mixed-mode response system.
 
-## ✨ Key Features
+## Key Features
 
 - **Streaming Mixed-Mode Responses**: Seamlessly blends conversational text with executable tool calls
 - **Line-Based File Editing**: Precise code modifications using line numbers (more reliable than string matching)
 - **Robust JSON Parsing**: Multiple fallback strategies for handling model outputs
 - **Local-First Architecture**: Runs entirely locally using Ollama models
 - **Async Architecture**: Fully asynchronous design for optimal performance
-- **Orthodox-Themed UI**: Unique terminal interface with prayer rope progress indicators
+- **Orthodox-Themed UI**: 
 
-## 🚀 Installation
+## Installation
 
 ### Prerequisites
 - Python 3.9+
@@ -39,7 +39,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 Create a `.env` file in the project root (optional):
 
@@ -57,11 +57,11 @@ Create a `.env` file in the project root (optional):
 # PROTOCOL_WORKING_DIR="$HOME/your_project"
 ```
 
-## 🛠️ Usage
+## Usage
 
 ### Basic Commands
 - Create files and directories
-- Edit specific lines of code
+- Edit specific lines of files
 - Execute shell commands
 - Run Python scripts
 
@@ -81,9 +81,9 @@ User: Run pytest on the test directory
 - `/model <name>` - Switch AI model
 - `/status` - Show token usage and current model
 
-## 🤝 AI Collaboration
+## AI Collaboration
 
-Protocol Monk is designed to work with AI models as collaborative partners. The system is built to leverage AI capabilities for code generation, analysis, and refactoring tasks.
+Protocol Monk is designed to work with AI models as collaborative partners. The system is built to leverage AI capabilities for itirative tasks with Human-in-the-Loop.
 
 ### AI Model Integration
 - Seamless integration with Ollama models
@@ -92,4 +92,4 @@ Protocol Monk is designed to work with AI models as collaborative partners. The 
 
 ---
 
-Solo Developed with ☦︎ by Nicholas Pitzarella
+Developed with ☦︎ by Nicholas Pitzarella
