@@ -1,14 +1,18 @@
-import logging
+#!/usr/bin/env python3
+"""
+Context Manager
+===============
+Manages conversation history, token budgeting, and file content tracking.
+Acts as the central memory hub for the ProtocolAgent.
+"""
+
 import asyncio
+import logging
 from pathlib import Path
 from typing import List, Dict, Optional, TYPE_CHECKING
+
 from config.static import settings
 from agent.core_exceptions import ConfigurationError
-from agent.context.exceptions import (
-    ContextError,
-    ContextOverflowError,
-    ContextCorruptionError,
-)
 from agent.context.exceptions_expanded import (
     NeuralSymIntegrationError,
     ContextValidationError,
@@ -27,6 +31,7 @@ if TYPE_CHECKING:
     from tools.registry import ToolRegistry
 
 
+# pylint: disable=too-many-instance-attributes
 class ContextManager:
     """
     Manages conversation history and coordinates token budgeting.
@@ -94,16 +99,45 @@ class ContextManager:
                 "{{AVAILABLE_TOOLS_SECTION}}", tool_definitions
             )
 
-        except FileNotFoundError as e:
-            error_msg = f"System prompt template not found at: {settings.filesystem.system_prompt_file}."
+        except FileNotFoundError:
+            error_msg = (
+                f"System prompt template not found at: "
+                f"{settings.filesystem.system_prompt_file}."
+            )
             self.logger.critical(error_msg, exc_info=True)
-            raise ConfigurationError(message=error_msg)
+            raise ConfigurationError(message=error_msg) from None
         except Exception as e:
             error_msg = f"Failed to build system prompt: {e}"
             self.logger.error(error_msg, exc_info=True)
             raise ContextValidationError(
                 error_msg, validation_type="system_message", invalid_value=None
             ) from e
+
+    async def _check_and_update_files(self, content: str):
+        """Check if content is a file path and update tracker if valid."""
+        # Quick heuristic check before expensive operations
+        if len(content) >= 256 or "\n" in content:
+            return
+
+        try:
+            possible_file = self.tracker.working_dir / content
+            if possible_file.exists() and possible_file.is_file():
+                await self.tracker.replace_old_file_content(
+                    str(possible_file), self.conversation
+                )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Validate file path and raise proper exception if it looks like a path
+            if (
+                not content
+                or content.startswith(".")
+                or "/" in content
+                or "\\" in content
+            ):
+                raise ContextValidationError(
+                    f"Invalid file path in content: {content}",
+                    validation_type="file_path",
+                    invalid_value=content,
+                ) from e
 
     async def add_message(
         self, role: str, content: str, importance: Optional[int] = None
@@ -115,7 +149,7 @@ class ContextManager:
         async with self._lock:
             # Log meaningful information about what's being added
             content_preview = content[:50] + "..." if len(content) > 50 else content
-            self.logger.debug(f"Adding {role} message: {content_preview}")
+            self.logger.debug("Adding %s message: %s", role, content_preview)
 
             # 1. Estimate tokens
             new_tokens = self.accountant.estimate(content)
@@ -128,28 +162,8 @@ class ContextManager:
                 )
                 self.accountant.recalculate(self.system_message, self.conversation)
 
-            # 3. Optimized File Check with proper validation
-            if len(content) < 256 and "\n" not in content:
-                possible_file = self.tracker.working_dir / content
-                # Validate that this is actually a file path, not just a string
-                try:
-                    if possible_file.exists() and possible_file.is_file():
-                        await self.tracker.replace_old_file_content(
-                            str(possible_file), self.conversation
-                        )
-                except Exception as e:
-                    # Validate file path and raise proper exception
-                    if (
-                        not content
-                        or content.startswith(".")
-                        or "/" in content
-                        or "\\" in content
-                    ):
-                        raise ContextValidationError(
-                            f"Invalid file path in content: {content}",
-                            validation_type="file_path",
-                            invalid_value=content,
-                        ) from e
+            # 3. Check for file updates
+            await self._check_and_update_files(content)
 
             # 4. Add the new message
             if importance is None:
@@ -162,26 +176,36 @@ class ContextManager:
             self.accountant.add(new_tokens)
 
     async def add_user_message(self, content: str, importance: int = 4):
+        """Add a message from the user."""
         await self.add_message("user", content, importance)
 
     async def add_assistant_message(self, content: str, importance: int = 3):
+        """Add a message from the assistant (AI)."""
         await self.add_message("assistant", content, importance)
 
     async def get_context(self, model_name: str = None) -> List[Dict]:
         """
         Formats the conversation for the LLM API.
-        automatically applies NeuralSym enhancement if the model is small/weak.
+        Automatically applies NeuralSym enhancement if the model is small/weak.
         """
         # 1. Get the base context (System + History)
         base_context = await self._get_base_context()
 
         # 2. Check if we need to enhance it (Small Model Logic)
         if model_name and self.neural_sym:
-            # Check if model is small (contains size indicators like 8b, 4b, 2b, 1.7b, 0.6b, etc.)
-            is_small_model = any(
-                x in model_name.lower()
-                for x in ["8b", "4b", "2b", "1.7b", "0.6b", "small", "mini", "tiny"]
-            )
+            # Check if model is small (contains size indicators)
+            small_identifiers = [
+                "8b",
+                "4b",
+                "2b",
+                "1.7b",
+                "0.6b",
+                "small",
+                "mini",
+                "tiny",
+            ]
+            is_small_model = any(x in model_name.lower() for x in small_identifiers)
+
             if is_small_model:
                 try:
                     return await self.neural_sym.get_enhanced_context(
@@ -213,6 +237,7 @@ class ContextManager:
 
     @property
     def max_tokens(self) -> int:
+        """Return the maximum token limit."""
         return self.accountant.max_tokens
 
     def get_total_tokens(self) -> int:
@@ -227,7 +252,7 @@ class ContextManager:
             stats["files_tracked"] = len(self.tracker.files_shown)
             return stats
 
-    def prune_context(self, strategy: str, target_limit: int):
+    def prune_context(self, strategy: str, _target_limit: int):
         """Prune context based on strategy and target limit."""
         if strategy in ["strict", "archive"]:
             self.conversation = self.pruner.prune(self.conversation, self.accountant)
@@ -240,6 +265,7 @@ class ContextManager:
     # --- Neural Sym Passthrough Methods ---
 
     def record_tool_execution_outcome(self, *args, **kwargs):
+        """Forward tool execution results to NeuralSym for learning."""
         if self.neural_sym:
             try:
                 self.neural_sym.record_interaction_outcome(*args, **kwargs)
