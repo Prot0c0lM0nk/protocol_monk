@@ -11,22 +11,17 @@ from pathlib import Path
 from typing import Dict, Optional, Any, List, Tuple
 
 from config.static import settings
-from agent.context import ContextManager
-from agent.model_client import ModelClient
-from agent.tool_executor import ToolExecutor, ExecutionSummary
-from agent.model.exceptions import ModelConfigurationError
-from agent.model_manager import RuntimeModelManager
 from ui.base import UI
 from ui.plain import PlainUI
 from utils.json_parser import extract_json_with_feedback
 from utils.enhanced_logger import EnhancedLogger
 
-# NEW IMPORTS
-from agent.taor_loop import TAORLoop
-from agent.scratch_manager import ScratchManager
-from agent.core_exceptions import OrchestrationError, AgentCoreError
-from agent.model.exceptions import ModelError
-from agent.tools.exceptions import ToolError
+# Agent Components
+from agent.context import ContextManager
+from agent.model_client import ModelClient
+from agent.tool_executor import ToolExecutor, ExecutionSummary
+from agent.model.exceptions import ModelConfigurationError
+from agent.model_manager import RuntimeModelManager
 from agent.taor_loop import TAORLoop
 from agent.scratch_manager import ScratchManager
 
@@ -81,17 +76,21 @@ class ProtocolAgent:
         self.taor_loop = TAORLoop(self)
 
     async def async_initialize(self):
+        """Initialize async components like tool registry and context manager."""
         if hasattr(self.tool_executor.tool_registry, "async_initialize"):
             await self.tool_executor.tool_registry.async_initialize()
         await self.context_manager.async_initialize()
 
     async def _handle_ui_event(self, event: str, data: Dict[str, Any]) -> Any:
+        """Handle UI events triggered by tool execution."""
         # Pass-through to UI
         if event == "confirm":
             return await self.ui.confirm_tool_call(
                 data["tool_call"], data["auto_confirm"]
             )
-        elif event == "execution_start":
+
+        # Events that do not return a value
+        if event == "execution_start":
             await self.ui.display_execution_start(data["count"])
         elif event == "progress":
             await self.ui.display_progress(data["current"], data["total"])
@@ -115,16 +114,18 @@ class ProtocolAgent:
 
     # --- Helpers called by TAOR Loop ---
 
-    async def _prepare_context(self) -> List[Dict]:
+    async def _prepare_context(self) -> Optional[List[Dict]]:
+        """Retrieve and log the current context for the model."""
         try:
             context = await self.context_manager.get_context(self.current_model)
             self.enhanced_logger.log_context_snapshot(context)
             return context
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             await self.ui.print_error(f"Error getting context: {e}")
             return None
 
     async def _get_model_response(self, context: List[Dict]):
+        """Stream the model response and handle errors."""
         await self.ui.start_thinking()
         full_response = ""
         try:
@@ -142,7 +143,7 @@ class ProtocolAgent:
         except KeyboardInterrupt:
             await self.ui.print_warning("\n🛑 Interrupted.")
             return None
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             await self.ui.print_error(f"Streaming Error: {e}")
             return False
 
@@ -169,10 +170,12 @@ class ProtocolAgent:
 
     # --- Legacy Support Methods ---
     async def clear_conversation(self):
+        """Reset the context manager and UI."""
         await self.context_manager.clear()
         await self.ui.print_info("✓ Cleared.")
 
     async def get_status(self) -> Dict:
+        """Return the current status of the agent, context, and model."""
         context_stats = await self.context_manager.get_stats()
         return {
             "working_dir": str(self.working_dir),
@@ -184,6 +187,7 @@ class ProtocolAgent:
         }
 
     async def set_model(self, model_name: str):
+        """Switch the current model and update context limits."""
         self.current_model = model_name
         self.model_client.set_model(model_name)
         model_manager = RuntimeModelManager()
@@ -191,3 +195,4 @@ class ProtocolAgent:
         if model_info:
             self.context_manager.accountant.max_tokens = model_info.context_window
             self.context_manager.pruner.max_tokens = model_info.context_window
+            
