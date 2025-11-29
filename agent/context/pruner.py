@@ -2,7 +2,7 @@ import logging
 from typing import List
 from agent.context.message import Message
 from agent.context.token_accountant import TokenAccountant
-
+from agent.context.exceptions_expanded import TokenEstimationError
 class ContextPruner:
     """Handles pruning logic when token limits are exceeded."""
     def __init__(self, max_tokens: int):
@@ -16,7 +16,12 @@ class ContextPruner:
         """
         self.logger.info(f"Pruning conversation. Start count: {len(conversation)}")
         
+        # Enhanced minimum conversation logic that considers token budget constraints
         if len(conversation) <= 4:  # Keep minimum viable conversation
+            # But still validate that we're within token budget
+            current_tokens = sum(accountant.estimate(msg.content) for msg in conversation)
+            if current_tokens > self.max_tokens:
+                self.logger.warning(f"Minimum conversation ({len(conversation)} messages) exceeds token budget ({current_tokens} > {self.max_tokens})")
             return conversation
 
         # 1. Run scoring
@@ -47,7 +52,20 @@ class ContextPruner:
 
         for score, original_index, msg in scored_messages:
             # Use the TokenAccountant for accurate token estimation
-            msg_tokens = accountant.estimate(msg.content)
+            # Use the TokenAccountant for accurate token estimation
+            try:
+                msg_tokens = accountant.estimate(msg.content)
+            except TokenEstimationError:
+                # Re-raise token estimation errors with context about pruning
+                raise
+            except Exception as e:
+                # Handle any other estimation failures
+                raise TokenEstimationError(
+                    f"Token estimation failed during pruning for message: {e}",
+                    estimator_name=getattr(accountant.estimator, '__class__.__name__', 'Unknown'),
+                    failed_text=msg.content[:100] if msg.content else "",
+                    original_error=e
+                ) from e
             
             if current_tokens + msg_tokens <= target_tokens:
                 kept_messages.append((original_index, msg))

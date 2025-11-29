@@ -112,6 +112,16 @@ class ToolExecutor:
                 summary.results.append(result)
                 await self.ui_callback("tool_error", {"error": error_msg})
                 continue
+            
+            # Validate that the normalized action has required fields
+            if 'action' not in normalized or not normalized['action']:
+                error_msg = f"Tool call missing required 'action' field: {str(tool_call)[:100]}..."
+                self.logger.warning(error_msg)
+                
+                result = ToolResult(success=False, output=error_msg)
+                summary.results.append(result)
+                await self.ui_callback("tool_error", {"error": error_msg})
+                continue
 
             # Check for finish tool
             if normalized["action"] == "finish":

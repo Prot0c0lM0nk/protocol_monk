@@ -72,6 +72,7 @@ tests/
 # Local configuration
 *.local
 config/local_*
+Code_Planning.txt
 
 # Markdown files (mostly fluid working documents)
 *.md

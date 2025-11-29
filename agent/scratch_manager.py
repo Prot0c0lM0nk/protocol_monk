@@ -3,7 +3,7 @@ import shutil
 import time
 from pathlib import Path
 from typing import Optional
-
+from agent.context.exceptions_expanded import ScratchManagerError
 class ScratchManager:
     """
     Manages temporary 'scratch' files for large content.
@@ -27,15 +27,22 @@ class ScratchManager:
                 shutil.rmtree(self.scratch_dir)
                 self.logger.info("Cleaned up old scratch files.")
             except Exception as e:
-                self.logger.warning(f"Failed to cleanup scratch dir: {e}")
+                raise ScratchManagerError(
+                    f"Failed to cleanup scratch directory: {e}",
+                    operation="cleanup",
+                    file_path=self.scratch_dir,
+                    original_error=e
+                ) from e
 
-    def stage_content(self, content: str, threshold: int = 1000) -> Optional[str]:
+    def stage_content(self, content: str, threshold: int = 1000) -> str:
         """
         Auto-stage large inline content to a scratch file.
-        Returns the scratch_id if staged, None otherwise.
+        Returns the scratch_id if staged.
+        Raises ScratchManagerError on failure.
         """
         if not content or len(content) <= threshold:
-            return None
+            # Return empty string for content that doesn't need staging
+            return ""
 
         try:
             self.scratch_dir.mkdir(exist_ok=True)
@@ -50,15 +57,30 @@ class ScratchManager:
             
         except Exception as e:
             self.logger.error(f"Failed to stage content: {e}")
-            return None
+            raise ScratchManagerError(
+                f"Failed to stage content: {e}",
+                operation="stage_content",
+                original_error=e
+            ) from e
 
-    def read_content(self, scratch_id: str) -> Optional[str]:
-        """Retrieve content from a scratch file."""
+    def read_content(self, scratch_id: str) -> str:
+        """Retrieve content from a scratch file. Raises ScratchManagerError on failure."""
         try:
             file_path = self.scratch_dir / f"{scratch_id}.txt"
             if file_path.exists():
                 return file_path.read_text(encoding='utf-8')
-            return None
+            else:
+                raise ScratchManagerError(
+                    f"Scratch file not found: {scratch_id}",
+                    operation="read_content",
+                    scratch_id=scratch_id,
+                    file_path=file_path
+                )
         except Exception as e:
             self.logger.error(f"Failed to read scratch {scratch_id}: {e}")
-            return None
+            raise ScratchManagerError(
+                f"Failed to read scratch {scratch_id}: {e}",
+                operation="read_content",
+                scratch_id=scratch_id,
+                original_error=e
+            ) from e

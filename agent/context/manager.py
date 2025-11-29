@@ -5,6 +5,7 @@ from typing import List, Dict, Optional, TYPE_CHECKING
 from config.static import settings
 from agent.core_exceptions import ConfigurationError
 from agent.context.exceptions import ContextError, ContextOverflowError, ContextCorruptionError
+from agent.context.exceptions_expanded import NeuralSymIntegrationError, ContextValidationError
 
 # Component imports
 from .message import Message
@@ -50,6 +51,13 @@ class ContextManager:
     async def async_initialize(self):
         """Initialize async components and load the system prompt from disk."""
         self.system_message = await self._build_system_message()
+        # Validate that system message was successfully built
+        if not self.system_message or "[ERROR]" in self.system_message:
+            raise ContextValidationError(
+                "System message failed to initialize properly",
+                validation_type="system_message_initialization",
+                invalid_value=self.system_message
+            )
         self.accountant.recalculate(self.system_message, self.conversation)
 
     async def _build_system_message(self) -> str:
@@ -74,7 +82,11 @@ class ContextManager:
         except Exception as e:
             error_msg = f"Failed to build system prompt: {e}"
             self.logger.error(error_msg, exc_info=True)
-            return f"[ERROR] {error_msg}"
+            raise ContextValidationError(
+                error_msg,
+                validation_type="system_message",
+                invalid_value=None
+            ) from e
 
     async def add_message(self, role: str, content: str, importance: Optional[int] = None):
         """
@@ -95,11 +107,21 @@ class ContextManager:
                 self.conversation = self.pruner.prune(self.conversation, self.accountant)
                 self.accountant.recalculate(self.system_message, self.conversation)
 
-            # 3. Optimized File Check
+            # 3. Optimized File Check with proper validation
             if len(content) < 256 and "\n" not in content:
                 possible_file = self.tracker.working_dir / content
-                if possible_file.exists() and possible_file.is_file():
-                    await self.tracker.replace_old_file_content(str(possible_file), self.conversation)
+                # Validate that this is actually a file path, not just a string
+                try:
+                    if possible_file.exists() and possible_file.is_file():
+                        await self.tracker.replace_old_file_content(str(possible_file), self.conversation)
+                except Exception as e:
+                    # Validate file path and raise proper exception
+                    if not content or content.startswith('.') or '/' in content or '\\' in content:
+                        raise ContextValidationError(
+                            f"Invalid file path in content: {content}",
+                            validation_type="file_path",
+                            invalid_value=content
+                        ) from e
 
             # 4. Add the new message
             if importance is None:
@@ -133,8 +155,12 @@ class ContextManager:
                 try:
                     return await self.neural_sym.get_enhanced_context(base_context, model_name)
                 except Exception as e:
-                    self.logger.warning(f"NeuralSym enhancement failed (falling back to base): {e}")
-        
+                    raise NeuralSymIntegrationError(
+                        f"NeuralSym enhancement failed for model {model_name}",
+                        operation="get_enhanced_context",
+                        model_name=model_name,
+                        original_error=e
+                    ) from e
         return base_context
 
     async def _get_base_context(self) -> List[Dict]:
@@ -184,5 +210,9 @@ class ContextManager:
         if self.neural_sym:
             try:
                 self.neural_sym.record_interaction_outcome(*args, **kwargs)
-            except Exception:
-                pass
+            except Exception as e:
+                raise NeuralSymIntegrationError(
+                    "NeuralSym recording failed",
+                    operation="record_interaction_outcome",
+                    original_error=e
+                ) from e

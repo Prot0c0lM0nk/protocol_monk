@@ -31,7 +31,7 @@ from ui.rich_ui import RichUI
 # Import Model Manager
 from agent.model_manager import RuntimeModelManager
 # Import exceptions
-from agent import exceptions
+from agent import exceptions, core_exceptions
 
 # =============================================================================
 # LOGGING SETUP
@@ -249,7 +249,7 @@ async def main():
                     print("\nReceived interrupt signal. Exiting...")
                     break
                     
-    except exceptions.ConfigurationError as e:
+    except core_exceptions.ConfigurationError as e:
         print(f"❌ Config Error: {e.message}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:

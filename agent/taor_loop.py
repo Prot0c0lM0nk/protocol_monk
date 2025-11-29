@@ -5,6 +5,7 @@ from agent.tools.exceptions import UserCancellationError
 from agent.core_exceptions import OrchestrationError, AgentCoreError
 from agent.model.exceptions import ModelError
 from agent.tools.exceptions import ToolError
+from agent.context.exceptions_expanded import ContextValidationError
 # Circular import avoidance: We type hint generically or use string forward references if needed
 # but passing 'agent' instance is standard.
 
@@ -37,11 +38,20 @@ class TAORLoop:
                 # 1. THINK (Prepare Context & Call Model)
                 context = await self.agent._prepare_context()
                 if context is None:
-                    return False
+                    raise OrchestrationError(
+                        "Failed to prepare context for model call",
+                        details={"iteration": iteration}
+                    )
                     
                 response = await self.agent._get_model_response(context)
-                if response is None: return True # Interrupted
-                if response is False: return False # Error
+                if response is None: 
+                    # Interrupted - this is a valid termination condition
+                    return True
+                if response is False:
+                    raise ModelError(
+                        "Model response generation failed",
+                        details={"iteration": iteration}
+                    )
 
                 # 2. PARSE (Extract Intent)
                 # 2. PARSE (Extract Intent)
@@ -71,8 +81,10 @@ class TAORLoop:
                 # 3. ACT (Strict Serial Execution)
                 # We only execute the FIRST action. 
                 # The model must OBSERVE the result before Acting again.
+                # Validate that the action is properly formatted before execution
+                # Get the first action (tool executor handles validation)
                 current_action = actions[0]
-                
+                           
                 try:
                     # Wrap in list because executor expects list
                     summary = await self.agent.tool_executor.execute_tool_calls([current_action])
@@ -117,5 +129,14 @@ class TAORLoop:
         pass
 
     def _detect_ghost_tool(self, response: str) -> bool:
-        """Heuristic to detect if model tried to call a tool but failed JSON parsing."""
-        return ("\"action\":" in response or "\"name\":" in response) and "{" in response
+        """Enhanced detection of malformed tool calls using JSON validation."""
+        import json
+        try:
+            # Try to parse as JSON to detect malformed tool calls
+            if "{" in response and ("action:" in response or "name:" in response):
+                json.loads(response)
+                return False  # Valid JSON, not a ghost tool
+        except json.JSONDecodeError:
+            # Malformed JSON that might contain tool calls
+            return True
+        return False
