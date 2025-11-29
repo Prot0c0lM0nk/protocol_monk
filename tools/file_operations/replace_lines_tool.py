@@ -3,12 +3,11 @@
 Replace Lines Tool - Replace specific line numbers in a file.
 """
 
-import os
 import logging
+import os
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Optional, Tuple, List
 
-from agent import exceptions
 from tools.base import BaseTool, ToolSchema, ToolResult, ExecutionStatus
 from tools.file_operations.auto_stage_large_content import auto_stage_large_content
 
@@ -25,7 +24,10 @@ class ReplaceLinesTool(BaseTool):
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name="replace_lines",
-            description="[DANGER] Deletes all lines from 'line_start' to 'line_end' (inclusive) and inserts 'new_content' in their place. Use 'read_file' to get exact line numbers first. This tool is for replacing code blocks.",
+            description=(
+                "[DANGER] Deletes all lines from 'line_start' to 'line_end' (inclusive) "
+                "and inserts 'new_content'. Use 'read_file' first."
+            ),
             parameters={
                 "filepath": {
                     "type": "string",
@@ -41,172 +43,167 @@ class ReplaceLinesTool(BaseTool):
                 },
                 "new_content": {
                     "type": "string",
-                    "description": "New content to replace the specified lines (for small content). For large content, use new_content_from_memory instead.",
+                    "description": "New content (for small updates).",
                 },
                 "new_content_from_memory": {
                     "type": "string",
-                    "description": "Memory key containing the replacement content (use 'remember' tool first to store large content)",
+                    "description": "Memory key for large content.",
                 },
                 "new_content_from_scratch": {
                     "type": "string",
-                    "description": "Scratch ID for staged code block (system auto-stages code blocks from conversational output)",
+                    "description": "Scratch ID for staged code blocks.",
                 },
             },
             required_params=["filepath", "line_start", "line_end"],
         )
 
-    def execute(self, **kwargs) -> ToolResult:
-        """Replace specific line range in a file."""
-        filepath = kwargs.get("filepath")
-        line_start = kwargs.get("line_start")
-        line_end = kwargs.get("line_end")
+    def _resolve_content(self, **kwargs) -> Tuple[Optional[str], Optional[ToolResult]]:
+        """Resolve content from scratch, memory, or inline."""
         new_content = kwargs.get("new_content")
         new_content_from_memory = kwargs.get("new_content_from_memory")
         new_content_from_scratch = kwargs.get("new_content_from_scratch")
 
-        # Validate required parameters
-        if not filepath:
-            return ToolResult.invalid_params(
-                "❌ Missing required parameter: 'filepath'", missing_params=["filepath"]
-            )
-        if not line_start:
-            return ToolResult.invalid_params(
-                "❌ Missing required parameter: 'line_start'",
-                missing_params=["line_start"],
-            )
-        if not line_end:
-            return ToolResult.invalid_params(
-                "❌ Missing required parameter: 'line_end'", missing_params=["line_end"]
-            )
-
-        # AUTO-STAGING: If inline content is too large, auto-stage it
+        # Auto-stage if inline content is too large
         if new_content:
             staged_id = auto_stage_large_content(new_content, self.working_dir)
             if staged_id:
                 new_content_from_scratch = staged_id
                 new_content = None
 
-        # Get content from scratch, memory, or inline parameter
+        # 1. From Scratch
         if new_content_from_scratch:
             scratch_path = (
                 self.working_dir / ".scratch" / f"{new_content_from_scratch}.txt"
             )
             if not scratch_path.exists():
-                return ToolResult(
+                return None, ToolResult(
                     ExecutionStatus.INVALID_PARAMS,
                     f"❌ Scratch file '{new_content_from_scratch}' not found.",
                 )
             try:
-                new_content = scratch_path.read_text(encoding="utf-8")
-            except Exception as e:
-                return ToolResult(
+                return scratch_path.read_text(encoding="utf-8"), None
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                return None, ToolResult(
                     ExecutionStatus.INTERNAL_ERROR,
                     f"❌ Failed to read scratch file: {e}",
                 )
-        elif new_content_from_memory:
+
+        # 2. From Memory
+        if new_content_from_memory:
             if not self.context_manager:
-                return ToolResult(
+                return None, ToolResult(
                     ExecutionStatus.INTERNAL_ERROR,
-                    "❌ Memory system not available. Cannot retrieve content from memory.",
+                    "❌ Memory system not available.",
                 )
-
-            # Retrieve content from working memory
             if new_content_from_memory not in self.context_manager.working_memory:
-                return ToolResult(
+                return None, ToolResult(
                     ExecutionStatus.INVALID_PARAMS,
-                    f"❌ Memory key '{new_content_from_memory}' not found. Use 'remember' tool first to store content.",
+                    f"❌ Memory key '{new_content_from_memory}' not found.",
                 )
+            return self.context_manager.working_memory[new_content_from_memory], None
 
-            new_content = self.context_manager.working_memory[new_content_from_memory]
-        elif not new_content:
+        # 3. Inline
+        if new_content is not None:
+            return new_content, None
+
+        return None, ToolResult.invalid_params(
+            "❌ Must provide content source (inline, memory, or scratch).",
+            missing_params=["new_content"],
+        )
+
+    def _generate_diff(
+        self,
+        filepath: str,
+        line_start: int,
+        line_end: int,
+        old_lines: List[str],
+        new_lines: List[str],
+    ) -> str:
+        """Create a visual diff of the changes."""
+        msg = f"✅ Replaced lines {line_start}-{line_end} in {filepath}\n"
+        msg += f"📝 Changes ({len(old_lines)} → {len(new_lines)} lines):\n"
+        msg += "─" * 50 + "\n"
+
+        for i, line in enumerate(old_lines):
+            msg += f"-{line_start + i:3}│ {line}\n"
+
+        for i, line in enumerate(new_lines):
+            msg += f"+{line_start + i:3}│ {line}\n"
+
+        msg += "─" * 50
+        return msg
+
+    def _perform_write(self, path: Path, content: str):
+        """Perform atomic write to file."""
+        temp_path = path.with_suffix(f"{path.suffix}.tmp")
+        temp_path.write_text(content, encoding="utf-8")
+        with temp_path.open("r") as f:
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+        with path.open("r") as f:
+            os.fsync(f.fileno())
+
+    def execute(self, **kwargs) -> ToolResult:
+        """Replace specific line range in a file."""
+        filepath = kwargs.get("filepath")
+        line_start = kwargs.get("line_start")
+        line_end = kwargs.get("line_end")
+
+        if not filepath or not line_start or not line_end:
             return ToolResult.invalid_params(
-                "❌ Must provide 'new_content', 'new_content_from_memory', or 'new_content_from_scratch' parameter",
-                missing_params=[
-                    "new_content",
-                    "new_content_from_memory",
-                    "new_content_from_scratch",
-                ],
+                "❌ Missing required params.",
+                missing_params=["filepath", "line_start", "line_end"],
             )
 
-        # Security validation
+        # 1. Resolve Content
+        new_content, error = self._resolve_content(**kwargs)
+        if error:
+            return error
+
+        # 2. Security Check
         if not self._is_safe_file_path(filepath):
             return ToolResult.security_blocked(
-                f"🔒 File path blocked due to security policy: {filepath}",
-                reason="Unsafe file path",
+                f"🔒 File path blocked: {filepath} (Unsafe path)"
             )
 
         full_path = self.working_dir / filepath
 
         try:
-            # Read existing content
+            # 3. Read & Validate
             lines = full_path.read_text(encoding="utf-8").splitlines()
-
-            # Validate line range (convert to 0-based indexing)
             start_idx = line_start - 1
-            end_idx = (
-                line_end  # This becomes exclusive in slicing, making line_end inclusive
-            )
+            end_idx = line_end  # Inclusive in user mind, exclusive in slice
 
             if start_idx < 0 or end_idx > len(lines) or start_idx >= end_idx:
                 return ToolResult(
                     ExecutionStatus.COMMAND_FAILED,
-                    f"❌ Invalid line range: {line_start}-{line_end}. File has {len(lines)} lines.",
+                    f"❌ Invalid range: {line_start}-{line_end} (File: {len(lines)} lines)",
                 )
 
-            # Get old content for diff display
+            # 4. Replace
             old_lines = lines[start_idx:end_idx]
             new_lines = new_content.splitlines()
-
-            # Replace the lines
             updated_lines = lines[:start_idx] + new_lines + lines[end_idx:]
             new_content_full = "\n".join(updated_lines)
 
-            # Preserve trailing newline if original file had one
-            original_content = full_path.read_text(encoding="utf-8")
-            if original_content and original_content.endswith("\n"):
+            # Preserve trailing newline
+            original_text = full_path.read_text(encoding="utf-8")
+            if original_text.endswith("\n"):
                 new_content_full += "\n"
 
-            # Atomic write
-            temp_path = full_path.with_suffix(f"{full_path.suffix}.tmp")
-            temp_path.write_text(new_content_full, encoding="utf-8")
+            # 5. Atomic Write
+            self._perform_write(full_path, new_content_full)
 
-            with temp_path.open("r") as f:
-                os.fsync(f.fileno())
-
-            os.replace(temp_path, full_path)
-
-            with full_path.open("r") as f:
-                os.fsync(f.fileno())
-
-            # Show rich diff
-            result_message = (
-                f"✅ Replaced lines {line_start}-{line_end} in {filepath}\n"
+            # 6. Result
+            result_msg = self._generate_diff(
+                filepath, line_start, line_end, old_lines, new_lines
             )
-            result_message += (
-                f"📝 Changes ({len(old_lines)} → {len(new_lines)} lines):\n"
-            )
-            result_message += "─" * 50 + "\n"
-
-            # Show removed lines
-            for i, line in enumerate(old_lines):
-                line_num = line_start + i
-                result_message += f"-{line_num:3}│ {line}\n"
-
-            # Show added lines
-            for i, line in enumerate(new_lines):
-                line_num = line_start + i
-                result_message += f"+{line_num:3}│ {line}\n"
-
-            result_message += "─" * 50
-
             return ToolResult.success_result(
-                result_message,
+                result_msg,
                 data={
                     "filepath": filepath,
                     "line_start": line_start,
                     "line_end": line_end,
-                    "old_line_count": len(old_lines),
-                    "new_line_count": len(new_lines),
                     "old_content": "\n".join(old_lines),
                     "new_content": new_content,
                 },
@@ -216,26 +213,9 @@ class ReplaceLinesTool(BaseTool):
             return ToolResult.command_failed(
                 f"❌ File not found: {filepath}", exit_code=1
             )
-        except PermissionError as e:
-            self.logger.warning(f"Permission denied for {filepath}: {e}", exc_info=True)
-            return ToolResult.security_blocked(
-                f"🔒 Permission denied: Cannot write to {filepath}.", reason=str(e)
-            )
-        except UnicodeDecodeError as e:
-            return ToolResult.internal_error(
-                f"❌ Encoding error: Cannot read {filepath} as 'utf-8'. It may be a binary file. Error: {e}"
-            )
-        except UnicodeEncodeError as e:
-            return ToolResult.internal_error(
-                f"❌ Encoding error: Cannot write new content to {filepath} as 'utf-8'. Error: {e}"
-            )
-        except (IOError, OSError) as e:
-            self.logger.error(
-                f"File system error replacing lines in {filepath}: {e}", exc_info=True
-            )
+        except (PermissionError, IOError, OSError) as e:
+            self.logger.error("File error in %s: %s", filepath, e, exc_info=True)
             return ToolResult.internal_error(f"❌ File system error: {e}")
-        except Exception as e:
-            self.logger.error(
-                f"Unexpected error replacing lines in {filepath}: {e}", exc_info=True
-            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.logger.error("Unexpected error in %s: %s", filepath, e, exc_info=True)
             return ToolResult.internal_error(f"❌ Unexpected error: {e}")
