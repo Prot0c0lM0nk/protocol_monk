@@ -14,17 +14,17 @@ from pathlib import Path
 from utils.exceptions import ContextError
 
 # FIXED: Pre-compile regex patterns at module level to avoid per-word compilation
-_CHINESE_CHARS_PATTERN = re.compile(r'[\u4e00-\u9fff]')
+_CHINESE_CHARS_PATTERN = re.compile(r"[\u4e00-\u9fff]")
 # FIXED: Properly escape square brackets and include both braces
-_CODE_CHARS_PATTERN = re.compile(r'[{}\(\)\[\];,.]')
-_WHITESPACE_PATTERN = re.compile(r'\s')
-_WORD_CLEANUP_PATTERN = re.compile(r'[^\w]')
-_JSON_STRUCTURE_PATTERN = re.compile(r'[{}[\],:]')
+_CODE_CHARS_PATTERN = re.compile(r"[{}\(\)\[\];,.]")
+_WHITESPACE_PATTERN = re.compile(r"\s")
+_WORD_CLEANUP_PATTERN = re.compile(r"[^\w]")
+_JSON_STRUCTURE_PATTERN = re.compile(r"[{}[\],:]")
 _JSON_STRINGS_PATTERN = re.compile(r'"([^"]*)"')
-_JSON_NUMBERS_PATTERN = re.compile(r'\b\d+\b')
-_JSON_BOOLEANS_PATTERN = re.compile(r'\b(true|false|null)\b')
-_MARKDOWN_HEADERS_PATTERN = re.compile(r'^#+\s', re.MULTILINE)
-_MARKDOWN_CODE_BLOCKS_PATTERN = re.compile(r'```[^`]*```', re.DOTALL)
+_JSON_NUMBERS_PATTERN = re.compile(r"\b\d+\b")
+_JSON_BOOLEANS_PATTERN = re.compile(r"\b(true|false|null)\b")
+_MARKDOWN_HEADERS_PATTERN = re.compile(r"^#+\s", re.MULTILINE)
+_MARKDOWN_CODE_BLOCKS_PATTERN = re.compile(r"```[^`]*```", re.DOTALL)
 
 
 class SmartTokenEstimator:
@@ -43,41 +43,51 @@ class SmartTokenEstimator:
         # Common tokenization patterns across models
         self.base_rules = {
             # Subword patterns (BPE-style)
-            'common_prefixes': ['un', 're', 'pre', 'dis', 'over', 'under', 'out'],
-            'common_suffixes': ['ing', 'ed', 'er', 'est', 'ly', 'tion', 'sion', 'ness'],
-
+            "common_prefixes": ["un", "re", "pre", "dis", "over", "under", "out"],
+            "common_suffixes": ["ing", "ed", "er", "est", "ly", "tion", "sion", "ness"],
             # Programming patterns
-            'code_tokens': {
-                'operators': ['+', '-', '*', '/', '=', '==', '!=', '<=', '>=', '&&', '||'],
-                'brackets': ['(', ')', '[', ']', '{', '}'],
-                'punctuation': ['.', ',', ';', ':', '"', "'", '`'],
+            "code_tokens": {
+                "operators": [
+                    "+",
+                    "-",
+                    "*",
+                    "/",
+                    "=",
+                    "==",
+                    "!=",
+                    "<=",
+                    ">=",
+                    "&&",
+                    "||",
+                ],
+                "brackets": ["(", ")", "[", "]", "{", "}"],
+                "punctuation": [".", ",", ";", ":", '"', "'", "`"],
             },
-
             # Special tokens
-            'special_chars': ['\n', '\t', ' '],
+            "special_chars": ["\n", "\t", " "],
         }
 
         # Model-specific rules
-        if 'qwen' in self.model_family:
+        if "qwen" in self.model_family:
             self.model_rules = {
-                'avg_chars_per_token': 3.8,  # Empirically measured for Qwen
-                'code_multiplier': 1.2,      # Code tends to tokenize more densely
-                'chinese_multiplier': 0.7,   # Chinese characters often = 1 token each
-                'whitespace_factor': 0.9,    # Whitespace compression
+                "avg_chars_per_token": 3.8,  # Empirically measured for Qwen
+                "code_multiplier": 1.2,  # Code tends to tokenize more densely
+                "chinese_multiplier": 0.7,  # Chinese characters often = 1 token each
+                "whitespace_factor": 0.9,  # Whitespace compression
             }
-        elif 'gpt' in self.model_family:
+        elif "gpt" in self.model_family:
             self.model_rules = {
-                'avg_chars_per_token': 4.0,
-                'code_multiplier': 1.15,
-                'chinese_multiplier': 0.8,
-                'whitespace_factor': 0.95,
+                "avg_chars_per_token": 4.0,
+                "code_multiplier": 1.15,
+                "chinese_multiplier": 0.8,
+                "whitespace_factor": 0.95,
             }
         else:  # Generic model
             self.model_rules = {
-                'avg_chars_per_token': 4.0,
-                'code_multiplier': 1.2,
-                'chinese_multiplier': 0.75,
-                'whitespace_factor': 0.9,
+                "avg_chars_per_token": 4.0,
+                "code_multiplier": 1.2,
+                "chinese_multiplier": 0.75,
+                "whitespace_factor": 0.9,
             }
 
     def estimate_tokens(self, text: str) -> int:
@@ -110,9 +120,7 @@ class SmartTokenEstimator:
 
         # Weighted average (character-based gets highest weight for stability)
         final_estimate = int(
-            0.5 * char_estimate +
-            0.3 * subword_estimate +
-            0.2 * content_estimate
+            0.5 * char_estimate + 0.3 * subword_estimate + 0.2 * content_estimate
         )
 
         return max(1, final_estimate)  # Ensure at least 1 token
@@ -132,19 +140,21 @@ class SmartTokenEstimator:
             whitespace_chars = len(_WHITESPACE_PATTERN.findall(text))
 
             # Base calculation
-            base_tokens = char_count / self.model_rules['avg_chars_per_token']
+            base_tokens = char_count / self.model_rules["avg_chars_per_token"]
 
             # Adjustments
             if chinese_chars > char_count * 0.1:  # >10% Chinese
-                chinese_adjustment = chinese_chars * self.model_rules['chinese_multiplier']
+                chinese_adjustment = (
+                    chinese_chars * self.model_rules["chinese_multiplier"]
+                )
                 base_tokens = base_tokens - chinese_chars + chinese_adjustment
 
             if code_chars > char_count * 0.05:  # >5% code-like
-                base_tokens *= self.model_rules['code_multiplier']
+                base_tokens *= self.model_rules["code_multiplier"]
 
             # Whitespace compression
             if whitespace_chars > 0:
-                base_tokens *= self.model_rules['whitespace_factor']
+                base_tokens *= self.model_rules["whitespace_factor"]
 
             return base_tokens
         except ZeroDivisionError as e:
@@ -152,16 +162,15 @@ class SmartTokenEstimator:
             self.logger.error(
                 "Token estimation failed due to ZeroDivisionError. "
                 "Model rules may be misconfigured.",
-                exc_info=True
+                exc_info=True,
             )
             raise ContextError(
                 message="Token estimation failed due to invalid configuration.",
-                root_cause=e
+                root_cause=e,
             )
         except Exception as e:
             self.logger.error(
-                f"Unhandled error in token character estimation: {e}",
-                exc_info=True
+                f"Unhandled error in token character estimation: {e}", exc_info=True
             )
             return len(text) / 4.0  # Fallback to simple char count
 
@@ -176,7 +185,7 @@ class SmartTokenEstimator:
         for word in words:
             # FIXED: Use pre-compiled pattern instead of re.sub with string pattern
             # Clean word (remove punctuation for analysis)
-            clean_word = _WORD_CLEANUP_PATTERN.sub('', word)
+            clean_word = _WORD_CLEANUP_PATTERN.sub("", word)
 
             if not clean_word:
                 token_count += 1  # Punctuation-only = 1 token
@@ -205,17 +214,17 @@ class SmartTokenEstimator:
         tokens = 1.0
 
         # Check for prefixes
-        for prefix in self.base_rules['common_prefixes']:
+        for prefix in self.base_rules["common_prefixes"]:
             if word.startswith(prefix):
                 tokens += 0.3
-                word = word[len(prefix):]
+                word = word[len(prefix) :]
                 break
 
         # Check for suffixes
-        for suffix in self.base_rules['common_suffixes']:
+        for suffix in self.base_rules["common_suffixes"]:
             if word.endswith(suffix):
                 tokens += 0.4
-                word = word[:-len(suffix)]
+                word = word[: -len(suffix)]
                 break
 
         # Remaining length
@@ -229,11 +238,11 @@ class SmartTokenEstimator:
         # Detect content type
         content_type = self._detect_content_type(text)
 
-        if content_type == 'code':
+        if content_type == "code":
             return self._estimate_code_tokens(text)
-        elif content_type == 'json':
+        elif content_type == "json":
             return self._estimate_json_tokens(text)
-        elif content_type == 'markdown':
+        elif content_type == "markdown":
             return self._estimate_markdown_tokens(text)
         else:
             return self._estimate_natural_language_tokens(text)
@@ -242,28 +251,29 @@ class SmartTokenEstimator:
         """Detect the type of content for specialized estimation."""
         # JSON detection
         if self._looks_like_json(text):
-            return 'json'
+            return "json"
 
         # Code detection
-        code_indicators = ['def ', 'function ', 'class ', 'import ', 'from ', '#!/']
+        code_indicators = ["def ", "function ", "class ", "import ", "from ", "#!/"]
         if any(indicator in text for indicator in code_indicators):
-            return 'code'
+            return "code"
 
         # Markdown detection
-        if re.search(r'^#+ ', text, re.MULTILINE) or '```' in text:
-            return 'markdown'
+        if re.search(r"^#+ ", text, re.MULTILINE) or "```" in text:
+            return "markdown"
 
-        return 'natural'
+        return "natural"
 
     def _looks_like_json(self, text: str) -> bool:
         """Quick check if text looks like JSON."""
         stripped = text.strip()
-        return (stripped.startswith('{') and stripped.endswith('}')) or \
-               (stripped.startswith('[') and stripped.endswith(']'))
+        return (stripped.startswith("{") and stripped.endswith("}")) or (
+            stripped.startswith("[") and stripped.endswith("]")
+        )
 
     def _estimate_code_tokens(self, text: str) -> float:
         """Specialized estimation for code content."""
-        lines = text.split('\n')
+        lines = text.split("\n")
         total_tokens = 0
 
         for line in lines:
@@ -280,11 +290,20 @@ class SmartTokenEstimator:
             code_content = line.strip()
 
             # Keywords and operators get special treatment
-            keywords = ['def', 'class', 'if', 'for', 'while', 'import', 'from', 'return']
+            keywords = [
+                "def",
+                "class",
+                "if",
+                "for",
+                "while",
+                "import",
+                "from",
+                "return",
+            ]
             for keyword in keywords:
                 if keyword in code_content:
                     total_tokens += 1
-                    code_content = code_content.replace(keyword, '', 1)
+                    code_content = code_content.replace(keyword, "", 1)
 
             # Remaining content
             remaining_chars = len(code_content)
@@ -325,7 +344,7 @@ class SmartTokenEstimator:
         code_tokens = sum(self._estimate_code_tokens(block) for block in code_blocks)
 
         # Regular text (remove code blocks for counting)
-        text_without_code = _MARKDOWN_CODE_BLOCKS_PATTERN.sub('', text)
+        text_without_code = _MARKDOWN_CODE_BLOCKS_PATTERN.sub("", text)
         text_tokens = self._estimate_natural_language_tokens(text_without_code)
 
         return headers * 2 + code_tokens + text_tokens
@@ -359,6 +378,7 @@ class BetterTokenizerManager:
         """Check if heavy ML dependencies are available."""
         try:
             import transformers
+
             return True
         except ImportError:
             # HEALTHCHECK FIX: Catches silent tokenizer import failures
@@ -381,11 +401,14 @@ class BetterTokenizerManager:
             # Try to load real tokenizer
             try:
                 from transformers import AutoTokenizer
+
                 # Load model mapping
                 model_map = await self._load_model_map()
                 hub_id = model_map.get(model_name, model_map.get("DEFAULT", "gpt2"))
 
-                tokenizer = await asyncio.to_thread(AutoTokenizer.from_pretrained, hub_id)
+                tokenizer = await asyncio.to_thread(
+                    AutoTokenizer.from_pretrained, hub_id
+                )
                 self._tokenizers[model_name] = tokenizer
                 self.logger.info(f"Loaded precise tokenizer for {model_name}")
                 return
@@ -393,7 +416,7 @@ class BetterTokenizerManager:
                 self.logger.warning(
                     f"Failed to load precise tokenizer for {model_name}: {e}. "
                     "Falling back to smart estimation.",
-                    exc_info=True
+                    exc_info=True,
                 )
 
         # Fallback to smart estimation
@@ -420,21 +443,21 @@ class BetterTokenizerManager:
         """Detect model family from name."""
         name_lower = model_name.lower()
 
-        if 'qwen' in name_lower:
-            return 'qwen'
-        elif 'gpt' in name_lower:
-            return 'gpt'
-        elif 'claude' in name_lower:
-            return 'claude'
-        elif 'gemma' in name_lower:
-            return 'gemma'
+        if "qwen" in name_lower:
+            return "qwen"
+        elif "gpt" in name_lower:
+            return "gpt"
+        elif "claude" in name_lower:
+            return "claude"
+        elif "gemma" in name_lower:
+            return "gemma"
         else:
-            return 'generic'
+            return "generic"
 
     async def _load_model_map(self) -> Dict[str, str]:
         if self._model_map is not None:
             return self._model_map
-        async with self._model_map_lock:        
+        async with self._model_map_lock:
             if self._model_map is not None:
                 return self._model_map
 
@@ -450,7 +473,7 @@ class BetterTokenizerManager:
                     "Falling back to default tokenizer 'gpt2'."
                 )
                 self._model_map = {"DEFAULT": "gpt2"}
-            
+
             return self._model_map
 
 
@@ -479,7 +502,7 @@ def create_file(filepath: str, content: str) -> bool:
         ]
 
         print("🧪 Testing Token Estimation Accuracy:")
-        print("="*60)
+        print("=" * 60)
 
         for text in test_cases:
             estimated = estimator.estimate_tokens(text)
@@ -490,7 +513,9 @@ def create_file(filepath: str, content: str) -> bool:
             print(f"Text: {text[:50]}{'...' if len(text) > 50 else ''}")
             print(f"  Smart estimate: {estimated} tokens")
             print(f"  Simple estimate: {simple_estimate} tokens")
-            print(f"  Improvement: {abs(estimated - simple_estimate)} tokens difference")
+            print(
+                f"  Improvement: {abs(estimated - simple_estimate)} tokens difference"
+            )
             print()
 
     except Exception as e:

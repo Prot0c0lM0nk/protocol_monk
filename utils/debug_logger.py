@@ -36,11 +36,11 @@ class DebugLogger:
         """Initialize the debug log file and start the worker thread"""
         self._log_queue = Queue()
         self._stop_event = threading.Event()
-        
+
         # The default state is "disabled"
         self.is_file_logging_enabled = False
         self._file_handle = None
-        
+
         # Start the worker thread
         self._worker_thread = threading.Thread(target=self._log_worker, daemon=True)
         self._worker_thread.start()
@@ -55,15 +55,17 @@ class DebugLogger:
             return
 
         try:
-            self._file_handle = open(log_file_path, 'w', encoding='utf-8')
+            self._file_handle = open(log_file_path, "w", encoding="utf-8")
             self.is_file_logging_enabled = True
             self._write_line("--- Log Session Started ---")
         except Exception as e:
             # This is a fatal startup error, similar to config.
-            print(f"⚠️ [DebugLogger] CRITICAL: Failed to open log file: {e}", file=sys.stderr)
+            print(
+                f"⚠️ [DebugLogger] CRITICAL: Failed to open log file: {e}",
+                file=sys.stderr,
+            )
             raise ConfigurationError(
-                message=f"Failed to open debug log file: {log_file_path}",
-                root_cause=e
+                message=f"Failed to open debug log file: {log_file_path}", root_cause=e
             )
 
     def _log_worker(self):
@@ -76,25 +78,31 @@ class DebugLogger:
                     # Write to file if file handle exists
                     if self._file_handle:
                         try:
-                            self._file_handle.write(message + '\n')
+                            self._file_handle.write(message + "\n")
                             self._file_handle.flush()
                         except Exception as e:
-                            print(f"[CRITICAL DEBUG_LOGGER ERROR] Failed to write to log: {e}", file=sys.stderr)
+                            print(
+                                f"[CRITICAL DEBUG_LOGGER ERROR] Failed to write to log: {e}",
+                                file=sys.stderr,
+                            )
                     self._log_queue.task_done()
                 except Empty:
                     # Timeout occurred, continue checking stop event
                     continue
-            
+
             # Flush any remaining messages in the queue
             while not self._log_queue.empty():
                 try:
                     message = self._log_queue.get_nowait()
                     if self._file_handle:
                         try:
-                            self._file_handle.write(message + '\n')
+                            self._file_handle.write(message + "\n")
                             self._file_handle.flush()
                         except Exception as e:
-                            print(f"[CRITICAL DEBUG_LOGGER ERROR] Failed to flush log on exit: {e}", file=sys.stderr)
+                            print(
+                                f"[CRITICAL DEBUG_LOGGER ERROR] Failed to flush log on exit: {e}",
+                                file=sys.stderr,
+                            )
                     self._log_queue.task_done()
                 except Empty:
                     break
@@ -108,10 +116,10 @@ class DebugLogger:
 
         # Always add to queue if file logging is enabled
         if self.is_file_logging_enabled:
-            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
             self._log_queue.put(f"[{timestamp}] {text}")
 
-    def _write_separator(self, char='=', length=80):
+    def _write_separator(self, char="=", length=80):
         """Write a separator line"""
         self._write_line(char * length)
 
@@ -127,7 +135,7 @@ class DebugLogger:
         if not self.is_file_logging_enabled:
             return
 
-        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
         self._write_line("")
         self._write_separator(separator)
@@ -146,18 +154,20 @@ class DebugLogger:
         self.log("CONTEXT WINDOW", separator="=")
 
         for i, msg in enumerate(messages):
-            role = msg.get('role', 'unknown')
-            content = msg.get('content', '')
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
 
             self._write_line(f"\n--- Message {i}: {role.upper()} ---")
             self._write_line(f"Length: {len(content)} chars")
 
             # Show full content for system messages (prompts), truncate user/assistant
-            if role == 'system':
+            if role == "system":
                 self._write_line(f"\n{content}")
             else:
                 if len(content) > 500:
-                    self._write_line(f"\n{content[:250]}\n...[truncated]...\n{content[-250:]}")
+                    self._write_line(
+                        f"\n{content[:250]}\n...[truncated]...\n{content[-250:]}"
+                    )
                 else:
                     self._write_line(f"\n{content}")
 
@@ -177,26 +187,32 @@ class DebugLogger:
             for i, call in enumerate(tool_calls):
                 self._write_line(f"\nTool {i+1}:")
                 import json
+
                 self._write_line(json.dumps(call, indent=2))
 
         self._write_separator("=")
 
     def close(self):
         """Close the debug log file by stopping the worker thread"""
-        if hasattr(self, '_stop_event'):
+        if hasattr(self, "_stop_event"):
             self._stop_event.set()
-            if hasattr(self, '_worker_thread'):
+            if hasattr(self, "_worker_thread"):
                 self._worker_thread.join(timeout=5)  # Wait up to 5 seconds
-        
+
         # Close file handle in main thread if still open
         if self._file_handle:
             try:
                 self._write_separator()
-                self._write_line(f"Debug session ended: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                self._write_line(
+                    f"Debug session ended: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                )
                 self._write_separator()
                 self._file_handle.close()
             except Exception as e:
-                print(f"[CRITICAL DEBUG_LOGGER ERROR] Failed to close log handle: {e}", file=sys.stderr)
+                print(
+                    f"[CRITICAL DEBUG_LOGGER ERROR] Failed to close log handle: {e}",
+                    file=sys.stderr,
+                )
             finally:
                 self._file_handle = None
 

@@ -71,10 +71,12 @@ class SensitiveStr:
             "sk-ant-DEV-KEY",
             "REPLACEME",
             "PLACEHOLDER",
-            "INSERT_KEY_HERE"
+            "INSERT_KEY_HERE",
         ]
 
-        return not any(placeholder.lower() in self._value.lower() for placeholder in placeholders)
+        return not any(
+            placeholder.lower() in self._value.lower() for placeholder in placeholders
+        )
 
     def startswith(self, prefix: str) -> bool:
         """Allow prefix checks (e.g., checking if it starts with 'sk-ant-')"""
@@ -112,15 +114,15 @@ def sanitize_for_logging(data: any, max_depth: int = 10) -> any:
         Sanitized version safe for logging
     """
     # Entry point: Set up the visited set for *this thread only*
-    if not hasattr(_thread_local_storage, 'visited'):
+    if not hasattr(_thread_local_storage, "visited"):
         _thread_local_storage.visited = set()
-    
+
     try:
         # Call the recursive worker
         return _recursive_sanitize(data, max_depth)
     finally:
         # Clean up this thread's set to prevent memory leaks
-        if hasattr(_thread_local_storage, 'visited'):
+        if hasattr(_thread_local_storage, "visited"):
             del _thread_local_storage.visited
 
 
@@ -134,11 +136,13 @@ def _recursive_sanitize(value: any, max_depth: int) -> any:
         return "<max depth reached>"
 
     _visited = _thread_local_storage.visited
-    
+
     value_id = id(value)
     if isinstance(value, (dict, list, tuple)) and value_id in _visited:
         # HEALTHCHECK FIX: Catches silent circular reference failures
-        logger.warning(f"Circular reference detected in sanitize_for_logging. Value ID: {value_id}")
+        logger.warning(
+            f"Circular reference detected in sanitize_for_logging. Value ID: {value_id}"
+        )
         return "<circular reference>"
 
     if isinstance(value, SensitiveStr):
@@ -159,7 +163,9 @@ def _recursive_sanitize(value: any, max_depth: int) -> any:
     if isinstance(value, (list, tuple)):
         _visited.add(value_id)
         try:
-            return type(value)(_recursive_sanitize(item, max_depth - 1) for item in value)
+            return type(value)(
+                _recursive_sanitize(item, max_depth - 1) for item in value
+            )
         finally:
             _visited.discard(value_id)
 
@@ -178,15 +184,15 @@ def _looks_like_secret(value: str) -> bool:
         # Known API key patterns
         secret_patterns = [
             "sk-ant-api",  # Anthropic
-            "sk-proj-",    # OpenAI project keys
-            "sk-",         # Generic OpenAI
-            "ghp_",        # GitHub personal token
-            "gho_",        # GitHub OAuth token
-            "glpat-",      # GitLab personal token
-            "xoxb-",       # Slack bot token
-            "xoxp-",       # Slack user token
-            "AKIA",        # AWS access key
-            "AIza",        # Google API key
+            "sk-proj-",  # OpenAI project keys
+            "sk-",  # Generic OpenAI
+            "ghp_",  # GitHub personal token
+            "gho_",  # GitHub OAuth token
+            "glpat-",  # GitLab personal token
+            "xoxb-",  # Slack bot token
+            "xoxp-",  # Slack user token
+            "AKIA",  # AWS access key
+            "AIza",  # Google API key
         ]
 
         for pattern in secret_patterns:
@@ -207,10 +213,7 @@ def _looks_like_secret(value: str) -> bool:
         return False
     except Exception as e:
         # HEALTHCHECK FIX: Catches missing exception handling
-        logger.error(
-            f"Error in _looks_like_secret heuristic: {e}", 
-            exc_info=True
-        )
+        logger.error(f"Error in _looks_like_secret heuristic: {e}", exc_info=True)
         return False  # Fail safe
 
 
