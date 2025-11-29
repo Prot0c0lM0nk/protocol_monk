@@ -67,6 +67,9 @@ class TokenAccountant:
                 validation_type="max_tokens",
                 invalid_value=self.max_tokens
             )
+        self.total_tokens += tokens
+        self.logger.debug(f"Added {tokens} tokens. Total: {self.total_tokens}")
+
     def check_budget(self, new_tokens: int) -> bool:
         """
         Check if adding new_tokens would exceed the 80% pruning threshold.
