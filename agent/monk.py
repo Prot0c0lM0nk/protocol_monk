@@ -195,4 +195,3 @@ class ProtocolAgent:
         if model_info:
             self.context_manager.accountant.max_tokens = model_info.context_window
             self.context_manager.pruner.max_tokens = model_info.context_window
-            
