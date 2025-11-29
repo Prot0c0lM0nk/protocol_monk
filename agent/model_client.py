@@ -115,19 +115,23 @@ class ModelClient:
                 # Check for HTTP errors
                 if response.status >= 500:
                     error_text = await response.text()
-                    raise ModelError(  # ✅ Correct: parentheses, single raise
-                        provider="ollama",
-                        model=self.model_name,
-                        status_code=response.status,
-                        message=f"Ollama client error: {response.status} - {error_text}"
+                    raise ModelError(
+                        message=f"Ollama client error: {response.status} - {error_text}",
+                        details={
+                            "provider": "ollama",
+                            "model": self.model_name,
+                            "status_code": response.status
+                        }
                     )
                 elif response.status >= 400:
                     error_text = await response.text()
                     raise ModelError(
-                        provider="ollama",
-                        model=self.model_name,
-                        status_code=response.status,
-                        message=f"Ollama client error: {response.status} - {error_text}"
+                        message=f"Ollama client error: {response.status} - {error_text}",
+                        details={
+                            "provider": "ollama",
+                            "model": self.model_name,
+                            "status_code": response.status
+                        }
                     )
 
                 # Continue with response processing
@@ -190,20 +194,28 @@ class ModelClient:
                         yield content
                     else:
                         raise EmptyResponseError(
-                            provider="ollama",
-                            model=self.model_name
+                            message="Model returned an empty response",
+                            details={
+                                "provider": "ollama",
+                                "model": self.model_name
+                            }
                         )
         except asyncio.TimeoutError:
             raise ModelTimeoutError(
-                provider="ollama",
-                model=self.model_name,
-                timeout_seconds=self.timeout
+                message="Model request timed out",
+                timeout_seconds=self.timeout,
+                details={
+                    "provider": "ollama",
+                    "model": self.model_name
+                }
             )
         except aiohttp.ClientError as e:
             raise ModelError(
-                provider="ollama",
-                model=self.model_name,
-                message=f"Connection error: {str(e)}"
+                message=f"Connection error: {str(e)}",
+                details={
+                    "provider": "ollama",
+                    "model": self.model_name
+                }
             )
 
     def _prepare_payload(self, conversation_context: list, stream: bool) -> Dict[str, Any]:

@@ -6,8 +6,8 @@ class ModelError(MonkBaseError):
 
 class ModelTimeoutError(ModelError):
     """Raised when model API request times out."""
-    def __init__(self, message, timeout_seconds=None):
-        super().__init__(message)
+    def __init__(self, message, timeout_seconds=None, details=None):
+        super().__init__(message, details=details)
         self.timeout_seconds = timeout_seconds
 
 class ModelConfigurationError(ModelError):
