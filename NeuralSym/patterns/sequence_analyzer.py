@@ -83,10 +83,18 @@ class SequenceAnalyzer:
                 context_key = f"complexity:{interaction.context.complexity.value}"
                 pattern["context_conditions"][context_key] += 1
 
-    def optimize_approach(
-        self, current_plan: List[str], context: ContextSnapshot, goal: str
-    ) -> Dict[str, Any]:
-        """Optimize action plan based on learned patterns"""
+    def _optimize_sequence_patterns(
+        self, current_plan: List[str], context: ContextSnapshot
+    ) -> Tuple[List[str], List[Dict]]:
+        """Optimize plan based on sequence patterns.
+
+        Args:
+            current_plan: Current action plan
+            context: Context snapshot
+
+        Returns:
+            Tuple of (optimized_plan, optimizations)
+        """
         optimized_plan = current_plan.copy()
         optimizations = []
 
@@ -115,6 +123,22 @@ class SequenceAnalyzer:
                                     "reason": f"Low success sequence: {success_rate:.1%}",
                                 }
                             )
+        return optimized_plan, optimizations
+
+    def _optimize_tool_substitutions(
+        self, optimized_plan: List[str], context: ContextSnapshot, goal: str
+    ) -> Tuple[List[str], List[Dict]]:
+        """Optimize plan based on tool substitution.
+
+        Args:
+            optimized_plan: Current optimized plan
+            context: Context snapshot
+            goal: Goal string
+
+        Returns:
+            Tuple of (optimized_plan, optimizations)
+        """
+        optimizations = []
 
         # Tool substitution optimization
         for i, tool in enumerate(optimized_plan):
@@ -132,11 +156,37 @@ class SequenceAnalyzer:
                                 "reason": f"Low success tool: {profile.success_rate:.1%}",
                             }
                         )
+        return optimized_plan, optimizations
+
+    def optimize_approach(
+        self, current_plan: List[str], context: ContextSnapshot, goal: str
+    ) -> Dict[str, Any]:
+        """Optimize action plan based on learned patterns.
+
+        Args:
+            current_plan: Current action plan
+            context: Context snapshot
+            goal: Goal string
+
+        Returns:
+            Dictionary containing optimized plan and optimizations
+        """
+        # Sequence optimization
+        optimized_plan, sequence_optimizations = self._optimize_sequence_patterns(
+            current_plan, context
+        )
+
+        # Tool substitution optimization
+        optimized_plan, tool_optimizations = self._optimize_tool_substitutions(
+            optimized_plan, context, goal
+        )
+
+        all_optimizations = sequence_optimizations + tool_optimizations
 
         return {
             "optimized_plan": optimized_plan,
-            "optimizations": optimizations,
-            "confidence": self._calculate_optimization_confidence(optimizations),
+            "optimizations": all_optimizations,
+            "confidence": self._calculate_optimization_confidence(all_optimizations),
         }
 
     def _suggest_sequence_alternative(

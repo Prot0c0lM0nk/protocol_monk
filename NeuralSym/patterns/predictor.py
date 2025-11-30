@@ -85,19 +85,33 @@ class PatternPredictor:
 
         return recommendations
 
-    def identify_common_mistakes(self, intent: str) -> List[str]:
-        """Identify common mistakes for given intent"""
-        mistakes = []
+    def _get_intent_tools(self, intent: str) -> List[str]:
+        """Get tools relevant to the given intent.
 
-        # Map intent to likely tools
+        Args:
+            intent: Intent string
+
+        Returns:
+            List of relevant tools
+        """
         intent_to_tools = {
             "FILE_READ_INTENT": ["show_file", "read_file", "execute_command"],
             "FILE_WRITE_INTENT": ["create_file", "edit_file"],
             "FILE_SEARCH_INTENT": ["execute_command", "search_files"],
             "COMMAND_EXECUTION_INTENT": ["execute_command", "run_python"],
         }
+        return intent_to_tools.get(intent, [])
 
-        relevant_tools = intent_to_tools.get(intent, [])
+    def _analyze_tool_failures(self, relevant_tools: List[str]) -> List[str]:
+        """Analyze common failure modes for relevant tools.
+
+        Args:
+            relevant_tools: List of relevant tools
+
+        Returns:
+            List of failure descriptions
+        """
+        mistakes = []
 
         # Analyze common failure modes for each tool
         for tool_name in relevant_tools:
@@ -113,6 +127,18 @@ class PatternPredictor:
                             mistakes.append(
                                 f"{error_type} with {tool_name} ({failure_rate:.0%} failure rate)"
                             )
+        return mistakes
+
+    def _analyze_general_patterns(self, intent: str) -> List[str]:
+        """Analyze general pattern-based mistakes.
+
+        Args:
+            intent: Intent string
+
+        Returns:
+            List of pattern-based mistake descriptions
+        """
+        mistakes = []
 
         # Add general pattern-based mistakes
         if intent == "FILE_READ_INTENT":
@@ -129,7 +155,23 @@ class PatternPredictor:
                     f"File not found errors ({not_found_count} occurrences)"
                 )
 
-        return mistakes[:5]  # Top 5 mistakes
+        return mistakes
+
+    def identify_common_mistakes(self, intent: str) -> List[str]:
+        """Identify common mistakes for given intent.
+
+        Args:
+            intent: Intent string
+
+        Returns:
+            List of common mistakes
+        """
+        relevant_tools = self._get_intent_tools(intent)
+        tool_mistakes = self._analyze_tool_failures(relevant_tools)
+        pattern_mistakes = self._analyze_general_patterns(intent)
+
+        all_mistakes = tool_mistakes + pattern_mistakes
+        return all_mistakes[:5]  # Top 5 mistakes
 
     def get_success_sequence(self, goal: str) -> List[str]:
         """Get successful tool sequence for goal"""
