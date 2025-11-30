@@ -44,6 +44,7 @@ class PersistenceManager:
             return self._convert_loaded(data.get("facts", {}))
         except Exception as e:
             import logging
+
             logging.getLogger(__name__).warning("Knowledge graph load failed: %s", e)
             return None
 

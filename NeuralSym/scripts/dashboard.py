@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from collections import Counter
 
+
 class DashboardGenerator:
     def __init__(self, analyzer, knowledge_graph, guidance_system):
         self.analyzer = analyzer
@@ -18,34 +19,40 @@ class DashboardGenerator:
     def _gather_stats(self):
         # Gather interactions
         interactions = list(self.analyzer.interactions.values())
-        
+
         # 1. Pattern Metrics
         outcomes = Counter([i.outcome.value for i in interactions])
-        
+
         # 2. Knowledge Metrics (Failures)
         failures = [
-            {"tool": f.value.get("tool"), "reason": f.value.get("reason"), "time": f.updated_at}
+            {
+                "tool": f.value.get("tool"),
+                "reason": f.value.get("reason"),
+                "time": f.updated_at,
+            }
             for f in self.kg.get_facts_by_type("tool_rejection")
             if f.status.name == "REFUTED" and isinstance(f.value, dict)
         ]
-        failures.sort(key=lambda x: x['time'], reverse=True)
+        failures.sort(key=lambda x: x["time"], reverse=True)
 
         # 3. Guidance Decisions (The new part)
-        decisions = self.guidance.decision_log[-10:] # Get last 10 decisions
+        decisions = self.guidance.decision_log[-10:]  # Get last 10 decisions
         # Reverse to show newest first
         decisions = decisions[::-1]
 
         return {
             "total_interactions": len(interactions),
-            "success_rate": round((outcomes.get("success", 0) / (len(interactions) or 1)) * 100, 1),
+            "success_rate": round(
+                (outcomes.get("success", 0) / (len(interactions) or 1)) * 100, 1
+            ),
             "outcomes": dict(outcomes),
             "recent_failures": failures[:10],
-            "decisions": decisions
+            "decisions": decisions,
         }
 
     def _build_html(self, stats: dict) -> str:
         stats_json = json.dumps(stats)
-        
+
         return f"""
         <!DOCTYPE html>
         <html>

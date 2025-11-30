@@ -9,9 +9,10 @@ from rich.panel import Panel
 from rich.text import Text
 from rich import box
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
-from rich.console import Group 
+from rich.console import Group
 
 from ui.styles import console
+
 
 def render_tool_call_pretty(action: str, params: dict):
     """
@@ -28,31 +29,32 @@ def render_tool_call_pretty(action: str, params: dict):
             val_str = "✅ Yes" if value else "❌ No"
         else:
             val_str = str(value)
-        
+
         param_table.add_row(f"• {key.replace('_', ' ').title()}", val_str)
 
     # 3. Stack the content
     content = Group(
         Text(f"I must invoke the machine: {action}", style="monk.text"),
-        Text(""), 
+        Text(""),
         param_table,
-        Text(""), 
-        Text("Authorize this action? [Y/n]", style="holy.gold")
+        Text(""),
+        Text("Authorize this action? [Y/n]", style="holy.gold"),
     )
-    
+
     panel = Panel(
         content,
         title="[tech.cyan]🛠 Sacred Action[/]",
         border_style="tech.cyan",
         box=box.ROUNDED,
-        padding=(1, 2)
+        padding=(1, 2),
     )
     console.print()
     console.print(panel)
 
+
 def render_tool_result(tool_name, success, output):
     """
-    The 'Results' Screen. 
+    The 'Results' Screen.
     (This was missing, causing the 2 vs 3 arguments error).
     """
     console.print()
@@ -69,6 +71,7 @@ def render_tool_result(tool_name, success, output):
             console.print(f"    [error]{output}[/]")
     console.print()
 
+
 def render_status_bar_simulation():
     """
     The Loading Bar.
@@ -81,7 +84,7 @@ def render_status_bar_simulation():
         BarColumn(bar_width=40, style="monk.border", complete_style="monk.text"),
         TextColumn("[monk.text]{task.percentage:>3.0f}%"),
         console=console,
-        transient=True 
+        transient=True,
     ) as progress:
         task1 = progress.add_task("Parsing file structure...", total=100)
         # Simulation loop

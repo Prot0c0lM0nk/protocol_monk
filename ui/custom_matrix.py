@@ -7,10 +7,12 @@ import atexit
 from dataclasses import dataclass
 from typing import Optional
 
+
 # Configuration dataclass for magic numbers
 @dataclass
 class AnimationConfig:
     """Configuration constants for matrix animations"""
+
     # Timing constants
     BASE_REVEAL_TIME: float = 3.5
     CHAR_REVEAL_DELAY: float = 0.15
@@ -36,11 +38,14 @@ class AnimationConfig:
     CHAOS_WEIGHT_MULTIPLIER: int = 4
     ILLUMINATION_WEIGHT_MULTIPLIER: int = 12
 
+
 CONFIG = AnimationConfig()
+
 
 # Terminal control utility class
 class Term:
     """Utility class for ANSI terminal sequences"""
+
     BLANK = " "
     CLEAR = "\x1b[H"
     RESET = "\x1b[0m"
@@ -62,6 +67,7 @@ class Term:
         """Create 256-color code"""
         return f"\x1b[38;5;{code}m"
 
+
 # Legacy constants for backwards compatibility
 BLANK_CHAR = Term.BLANK
 CLEAR_CHAR = Term.CLEAR
@@ -69,9 +75,11 @@ RESET = Term.RESET
 HIDE_CURSOR = Term.HIDE_CURSOR
 SHOW_CURSOR = Term.SHOW_CURSOR
 
+
 # Emergency cursor restoration on exit
 def _restore_cursor():
     print(Term.SHOW_CURSOR, end="", flush=True)
+
 
 atexit.register(_restore_cursor)
 
@@ -150,7 +158,15 @@ class Matrix(list):
     def get_random_char(self):
         return random.choice(self.char_set)
 
-    def update_cell(self, r: int, c: int, *, char: Optional[str] = None, state: Optional[int] = None, length: Optional[int] = None) -> None:
+    def update_cell(
+        self,
+        r: int,
+        c: int,
+        *,
+        char: Optional[str] = None,
+        state: Optional[int] = None,
+        length: Optional[int] = None,
+    ) -> None:
         if char is not None:
             self[r][c][0] = char
         if state is not None:
@@ -201,13 +217,17 @@ class Matrix(list):
         dropped = sum(self.drop_col(c) for c in range(self.cols))
         total = self.cols * self.rows * self.drop_freq
         # Prevent negative missing when dropped > total
-        missing = max(0, math.ceil((total - dropped) / self.cols)) if self.cols > 0 else 0
+        missing = (
+            max(0, math.ceil((total - dropped) / self.cols)) if self.cols > 0 else 0
+        )
         for _ in range(missing):
             col = random.randint(0, self.cols - 1)
             length = random.randint(MIN_LEN, MAX_LEN)
             self.add_drop(0, col, length)
 
-    def start(self, duration: Optional[float] = None, show_protocol_monk: bool = False) -> None:
+    def start(
+        self, duration: Optional[float] = None, show_protocol_monk: bool = False
+    ) -> None:
         start_time = time.time()
         initial_drop_freq = self.drop_freq
         print(HIDE_CURSOR, end="", flush=True)
@@ -218,7 +238,13 @@ class Matrix(list):
         if show_protocol_monk:
             protocol_monk_len = len(protocol_monk_text)
             for i in range(protocol_monk_len):
-                reveal_time = CONFIG.BASE_REVEAL_TIME + (i * CONFIG.CHAR_REVEAL_DELAY) + random.uniform(-CONFIG.CHAR_REVEAL_JITTER, CONFIG.CHAR_REVEAL_JITTER)
+                reveal_time = (
+                    CONFIG.BASE_REVEAL_TIME
+                    + (i * CONFIG.CHAR_REVEAL_DELAY)
+                    + random.uniform(
+                        -CONFIG.CHAR_REVEAL_JITTER, CONFIG.CHAR_REVEAL_JITTER
+                    )
+                )
                 char_reveal_times.append(reveal_time)
 
         try:
@@ -229,16 +255,25 @@ class Matrix(list):
                 self.screen_check()
                 print(self, end="", flush=True)
 
-                if show_protocol_monk and duration and current_time > CONFIG.PROTOCOL_TEXT_START:
+                if (
+                    show_protocol_monk
+                    and duration
+                    and current_time > CONFIG.PROTOCOL_TEXT_START
+                ):
                     try:
                         size = os.get_terminal_size()
                         center_row = size.lines // 2
-                        center_col = max(0, size.columns // 2 - len(protocol_monk_text) // 2)
+                        center_col = max(
+                            0, size.columns // 2 - len(protocol_monk_text) // 2
+                        )
 
                         revealed_text = ""
                         for i, char in enumerate(protocol_monk_text):
                             if current_time >= char_reveal_times[i]:
-                                if current_time - char_reveal_times[i] < CONFIG.GLITCH_DURING_REVEAL:
+                                if (
+                                    current_time - char_reveal_times[i]
+                                    < CONFIG.GLITCH_DURING_REVEAL
+                                ):
                                     if random.random() < CONFIG.GLITCH_DURING_REVEAL:
                                         glitch_char = self.get_random_char()
                                         revealed_text += glitch_char
@@ -247,7 +282,10 @@ class Matrix(list):
                                 else:
                                     revealed_text += char
                             else:
-                                if current_time > CONFIG.PROTOCOL_TEXT_START and random.random() < CONFIG.GLITCH_BEFORE_REVEAL:
+                                if (
+                                    current_time > CONFIG.PROTOCOL_TEXT_START
+                                    and random.random() < CONFIG.GLITCH_BEFORE_REVEAL
+                                ):
                                     revealed_text += self.get_random_char()
                                 else:
                                     revealed_text += " "
@@ -259,9 +297,12 @@ class Matrix(list):
 
                 # Fix: Allow fade even when duration is None or 0
                 if show_protocol_monk and current_time > CONFIG.FADE_START_TIME:
-                    fade_progress = min(1.0, (current_time - CONFIG.FADE_START_TIME) / CONFIG.FADE_DURATION)
+                    fade_progress = min(
+                        1.0,
+                        (current_time - CONFIG.FADE_START_TIME) / CONFIG.FADE_DURATION,
+                    )
                     self.drop_freq = initial_drop_freq * (1 - fade_progress)
-                    self.glitch_freq *= (1 - fade_progress * 0.8)
+                    self.glitch_freq *= 1 - fade_progress * 0.8
 
                 self.apply_glitch()
                 self.update()
@@ -277,7 +318,9 @@ class Matrix(list):
             self.drop_freq = initial_drop_freq
 
 
-def blink_protocol_monk_text(text: str = "PROTOCOL MONK", blink_duration: float = 3) -> None:
+def blink_protocol_monk_text(
+    text: str = "PROTOCOL MONK", blink_duration: float = 3
+) -> None:
     start_time = time.time()
     try:
         size = os.get_terminal_size()
@@ -295,9 +338,15 @@ def blink_protocol_monk_text(text: str = "PROTOCOL MONK", blink_duration: float 
         while time.time() - start_time < blink_duration:
             progress = (time.time() - start_time) / blink_duration
             blink_speed = 0.8 * (1 - progress) + 0.05
-            print(f"\x1b[{center_row};{center_col}H{FRONT_CLR}{text}{RESET}", end="", flush=True)
+            print(
+                f"\x1b[{center_row};{center_col}H{FRONT_CLR}{text}{RESET}",
+                end="",
+                flush=True,
+            )
             time.sleep(blink_speed / 2)
-            print(f"\x1b[{center_row};{center_col}H{' ' * len(text)}", end="", flush=True)
+            print(
+                f"\x1b[{center_row};{center_col}H{' ' * len(text)}", end="", flush=True
+            )
             time.sleep(blink_speed / 2)
         print(CLEAR_CHAR, end="")
     except KeyboardInterrupt:
@@ -308,7 +357,9 @@ def blink_protocol_monk_text(text: str = "PROTOCOL MONK", blink_duration: float 
 
 def run_sanctified_transition(duration: float = 6.0) -> None:
     """Enhanced Orthodox transition: Chaos → Illumination → Prayer"""
-    matrix = Matrix(wait=150, glitch_freq=199, drop_freq=150, char_set=CHAOS_CHARS)  # Start with chaos
+    matrix = Matrix(
+        wait=150, glitch_freq=199, drop_freq=150, char_set=CHAOS_CHARS
+    )  # Start with chaos
     start_time = time.time()
     initial_wait = matrix.wait
     initial_glitch = matrix.glitch_freq
@@ -320,9 +371,15 @@ def run_sanctified_transition(duration: float = 6.0) -> None:
 
             # Orthodox progression: Chaos → Illumination → Prayer
             if current_time > CONFIG.SANCTIFIED_TRANSITION_START:
-                progress = min(1.0, (current_time - CONFIG.SANCTIFIED_TRANSITION_START) / CONFIG.SANCTIFIED_TRANSITION_DURATION)
+                progress = min(
+                    1.0,
+                    (current_time - CONFIG.SANCTIFIED_TRANSITION_START)
+                    / CONFIG.SANCTIFIED_TRANSITION_DURATION,
+                )
                 matrix.wait = initial_wait / (0.5 + 0.5 * progress)
-                matrix.glitch_freq = initial_glitch * (1.2 - progress * 0.8)  # Reduce chaos over time
+                matrix.glitch_freq = initial_glitch * (
+                    1.2 - progress * 0.8
+                )  # Reduce chaos over time
 
                 # Store old char set to detect changes
                 old_char_set = matrix.char_set
@@ -336,10 +393,12 @@ def run_sanctified_transition(duration: float = 6.0) -> None:
                 elif progress > 0.0:
                     # Transition phase: Blend chaos with illumination
                     chaos_weight = int((1 - progress) * CONFIG.CHAOS_WEIGHT_MULTIPLIER)
-                    illumination_weight = int(progress * CONFIG.ILLUMINATION_WEIGHT_MULTIPLIER)
+                    illumination_weight = int(
+                        progress * CONFIG.ILLUMINATION_WEIGHT_MULTIPLIER
+                    )
                     blended_set = (
-                        CHAOS_CHARS * chaos_weight +
-                        ILLUMINATION_CHARS * illumination_weight
+                        CHAOS_CHARS * chaos_weight
+                        + ILLUMINATION_CHARS * illumination_weight
                     )
                     matrix.char_set = blended_set if blended_set else ILLUMINATION_CHARS
 
@@ -349,7 +408,9 @@ def run_sanctified_transition(duration: float = 6.0) -> None:
                     for row in range(matrix.rows):
                         for col in range(matrix.cols):
                             if matrix[row][col][1] != STATE_NONE:  # If cell is active
-                                matrix.update_cell(row, col, char=matrix.get_random_char())
+                                matrix.update_cell(
+                                    row, col, char=matrix.get_random_char()
+                                )
 
             matrix.screen_check()
             print(CLEAR_CHAR, end="")
@@ -361,8 +422,14 @@ def run_sanctified_transition(duration: float = 6.0) -> None:
                 try:
                     size = os.get_terminal_size()
                     center_row = size.lines // 2
-                    center_col = max(0, size.columns // 2 - len(protocol_monk_text) // 2)
-                    reveal_progress = min(1.0, (current_time - CONFIG.PROTOCOL_REVEAL_START) / CONFIG.PROTOCOL_REVEAL_DURATION)
+                    center_col = max(
+                        0, size.columns // 2 - len(protocol_monk_text) // 2
+                    )
+                    reveal_progress = min(
+                        1.0,
+                        (current_time - CONFIG.PROTOCOL_REVEAL_START)
+                        / CONFIG.PROTOCOL_REVEAL_DURATION,
+                    )
                     reveal_point = int(reveal_progress * len(protocol_monk_text))
                     displayed_text = protocol_monk_text[:reveal_point]
 
@@ -370,14 +437,21 @@ def run_sanctified_transition(duration: float = 6.0) -> None:
                     if reveal_progress < 1.0:
                         final_chars = ""
                         for i, char in enumerate(displayed_text):
-                            if i >= len(displayed_text) - 2 and random.random() < CONFIG.SACRED_CHAR_GLITCH_PROB:
+                            if (
+                                i >= len(displayed_text) - 2
+                                and random.random() < CONFIG.SACRED_CHAR_GLITCH_PROB
+                            ):
                                 # Gentle sacred character glitch
                                 final_chars += random.choice("☦♱†✠")
                             else:
                                 final_chars += char
                         displayed_text = final_chars
 
-                    print(f"\x1b[{center_row};{center_col}H{FRONT_CLR}{displayed_text}{RESET}", end="", flush=True)
+                    print(
+                        f"\x1b[{center_row};{center_col}H{FRONT_CLR}{displayed_text}{RESET}",
+                        end="",
+                        flush=True,
+                    )
                 except (OSError, AttributeError):
                     pass
 
@@ -399,9 +473,13 @@ def run_enhanced_matrix_intro() -> None:
     blink_protocol_monk_text("PROTOCOL.MONK//v0.1", blink_duration=3)
 
 
-def run_animation(duration: float = 10, speed: int = 100, glitches: int = 100, frequency: int = 100) -> None:
+def run_animation(
+    duration: float = 10, speed: int = 100, glitches: int = 100, frequency: int = 100
+) -> None:
     for arg in (speed, glitches, frequency):
         if not 0 <= arg <= 1000:
-            raise ValueError("Speed, glitches, and frequency must be between 1 and 1000")
+            raise ValueError(
+                "Speed, glitches, and frequency must be between 1 and 1000"
+            )
     matrix = Matrix(speed, glitches, frequency)  # ✅ FIXED: lowercase 'matrix'
     matrix.start(duration=duration)

@@ -13,7 +13,9 @@ from .base import Outcome, Interaction
 class TemporalAnalyzer:
     """Time-based patterns and learning analysis"""
 
-    def __init__(self, interactions: Dict, learning_curve: List, temporal_patterns: Dict):
+    def __init__(
+        self, interactions: Dict, learning_curve: List, temporal_patterns: Dict
+    ):
         self.interactions = interactions
         self.learning_curve = learning_curve
         self.temporal_patterns = temporal_patterns

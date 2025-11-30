@@ -11,6 +11,7 @@ from agent.monk import ProtocolAgent
 
 class MonkCodeTUI(App):
     """Main application for Textual TUI."""
+
     CSS_PATH = "styles.tcss"
     SCREENS = {
         "chat": ChatScreen,

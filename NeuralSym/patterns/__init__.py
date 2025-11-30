@@ -13,7 +13,7 @@ from .base import (
     Interaction,
     ToolProfile,
     PredictiveRecommendation,
-    calculate_confidence_interval
+    calculate_confidence_interval,
 )
 
 from .analyzer import AdvancedPatternAnalyzer
@@ -26,5 +26,5 @@ __all__ = [
     "ToolProfile",
     "PredictiveRecommendation",
     "calculate_confidence_interval",
-    "AdvancedPatternAnalyzer"
+    "AdvancedPatternAnalyzer",
 ]

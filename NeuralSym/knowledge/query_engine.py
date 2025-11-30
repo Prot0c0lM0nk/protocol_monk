@@ -33,6 +33,7 @@ COMMON_GAPS = {
     "api_operations": ["rate_limits", "response_format", "error_patterns"],
 }
 
+
 class QueryEngine:
     """Read-only query and planning operations on the knowledge graph."""
 
@@ -41,19 +42,26 @@ class QueryEngine:
         self._fact_index = fact_index
         self._context_index = context_index
 
-
     def by_type(self, fact_type: str, min_confidence: float = 0.0) -> List[Fact]:
         ids = self._fact_index.get(fact_type, [])
-        facts = [self._facts[fid] for fid in ids if self._facts[fid].confidence >= min_confidence]
+        facts = [
+            self._facts[fid]
+            for fid in ids
+            if self._facts[fid].confidence >= min_confidence
+        ]
         return sorted(facts, key=lambda f: f.confidence, reverse=True)
 
-
-    def by_context(self, context_tags: Set[str], min_confidence: float = 0.0) -> List[Fact]:
+    def by_context(
+        self, context_tags: Set[str], min_confidence: float = 0.0
+    ) -> List[Fact]:
         relevant = set()
         for tag in context_tags:
             relevant.update(self._context_index.get(tag, []))
-        return [self._facts[fid] for fid in relevant if self._facts[fid].confidence >= min_confidence]
-
+        return [
+            self._facts[fid]
+            for fid in relevant
+            if self._facts[fid].confidence >= min_confidence
+        ]
 
     def build_action_plan(self, goal: str, context_tags: Set[str]) -> ActionPlan:
         relevant = self.by_context(context_tags, min_confidence=0.7)
@@ -65,6 +73,7 @@ class QueryEngine:
         tools = self._suggest_tools(missing)
         reasoning = self._generate_reasoning(goal, known_types, missing)
         from .base import ActionPlan
+
         return ActionPlan(
             goal=goal,
             required_facts=required,
@@ -73,7 +82,6 @@ class QueryEngine:
             reasoning=reasoning,
             suggested_tools=tools,
         )
-
 
     def context_summary(self, context_tags: Set[str]) -> Dict[str, Any]:
         relevant = self.by_context(context_tags)
@@ -88,16 +96,18 @@ class QueryEngine:
             "total_relevant_facts": len(relevant),
             "verified_facts": len(verified),
             "assumed_facts": len(assumed),
-            "average_confidence": sum(f.confidence for f in relevant) / len(relevant) if relevant else 0,
+            "average_confidence": (
+                sum(f.confidence for f in relevant) / len(relevant) if relevant else 0
+            ),
             "knowledge_gaps": self._identify_gaps(context_tags),
             "strongest_evidence": strongest,
         }
-
 
     # ---------- Internal ----------
     def _infer_required_facts(self, goal: str, known: Set[str]) -> List[str]:
         """Infer required facts using token-based scoring for better matching."""
         import re
+
         goal_tokens = set(re.findall(r"[a-z]+", goal.lower()))
         best_match = ["environment_ready", "permissions_available"]
         best_score = 0
@@ -122,7 +132,9 @@ class QueryEngine:
             return 0.0
         return sum(f.confidence for f in verified) / len(verified)
 
-    def _generate_reasoning(self, goal: str, known: Set[str], missing: List[str]) -> str:
+    def _generate_reasoning(
+        self, goal: str, known: Set[str], missing: List[str]
+    ) -> str:
         if not missing:
             return f"All required facts for '{goal}' are verified. Ready to proceed."
         return (
@@ -138,4 +150,3 @@ class QueryEngine:
                     if not self.by_type(gap):
                         gaps.append(gap)
         return gaps
-

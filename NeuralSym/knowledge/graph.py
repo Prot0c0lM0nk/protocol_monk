@@ -19,6 +19,7 @@ _logger = logging.getLogger(__name__)
 
 class GraphManagerError(Exception):
     """Raised for internal graph consistency or I/O problems."""
+
     pass
 
 
@@ -29,10 +30,11 @@ class KnowledgeGraph:
 
     Supports telemetry callback for integration with PatternAnalyzer.
     """
+
     def __init__(
         self,
         persistence_path: Optional[Path] = None,
-        telemetry_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+        telemetry_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ):
         # Legacy failure tracking (for backward compatibility)
         self.failures = []
@@ -66,7 +68,6 @@ class KnowledgeGraph:
         """Read-only access to facts dictionary for backward compatibility."""
         return self._facts
 
-
     # ---------- Public CRUD API ----------
     def add_fact(
         self,
@@ -90,18 +91,19 @@ class KnowledgeGraph:
 
         # Emit telemetry for Pattern Analyzer
         if self.telemetry_callback:
-            self.telemetry_callback({
-                "event_type": "fact_added",
-                "fact_id": fact.id,
-                "fact_type": fact_type,
-                "value": value,
-                "status": status.name,
-                "context_tags": list(context_tags) if context_tags else []
-            })
+            self.telemetry_callback(
+                {
+                    "event_type": "fact_added",
+                    "fact_id": fact.id,
+                    "fact_type": fact_type,
+                    "value": value,
+                    "status": status.name,
+                    "context_tags": list(context_tags) if context_tags else [],
+                }
+            )
 
         self._persist()
         return fact.id
-
 
     def add_evidence(self, fact_id: str, evidence: Evidence) -> None:
         fact = self._get_fact(fact_id)
@@ -117,31 +119,38 @@ class KnowledgeGraph:
         # Check if status should change based on evidence
         new_status = self._infer_status_from_evidence(fact)
         if new_status != old_status:
-            _logger.info(f"Fact {fact_id} status changed: {old_status.name} → {new_status.name}")
+            _logger.info(
+                f"Fact {fact_id} status changed: {old_status.name} → {new_status.name}"
+            )
             fact.status = new_status
             self._cascade_status_change(fact_id, old_status, new_status)
 
         # Emit telemetry for Pattern Analyzer
         if self.telemetry_callback:
-            self.telemetry_callback({
-                "event_type": "evidence_added",
-                "fact_id": fact_id,
-                "evidence": {
-                    "content": evidence.content,
-                    "strength": evidence.strength.name,
-                    "timestamp": evidence.timestamp
-                },
-                "old_status": old_status.name,
-                "new_status": new_status.name
-            })
+            self.telemetry_callback(
+                {
+                    "event_type": "evidence_added",
+                    "fact_id": fact_id,
+                    "evidence": {
+                        "content": evidence.content,
+                        "strength": evidence.strength.name,
+                        "timestamp": evidence.timestamp,
+                    },
+                    "old_status": old_status.name,
+                    "new_status": new_status.name,
+                }
+            )
 
         self._persist()
 
-
-    def get_facts_by_type(self, fact_type: str, min_confidence: float = 0.0) -> List[Fact]:
+    def get_facts_by_type(
+        self, fact_type: str, min_confidence: float = 0.0
+    ) -> List[Fact]:
         return self._query.by_type(fact_type, min_confidence)
 
-    def get_facts_by_context(self, context_tags: Set[str], min_confidence: float = 0.0) -> List[Fact]:
+    def get_facts_by_context(
+        self, context_tags: Set[str], min_confidence: float = 0.0
+    ) -> List[Fact]:
         return self._query.by_context(context_tags, min_confidence)
 
     # ---------- Dependency Management ----------
@@ -206,16 +215,23 @@ class KnowledgeGraph:
         return [f for f in self.failures if f["tool_name"] == tool_name]
 
     # ---------- Backward Compatibility Shims ----------
-    def mark_verified(self, fact_type, value, evidence, source="tool_execution", confidence=1.0):
+    def mark_verified(
+        self, fact_type, value, evidence, source="tool_execution", confidence=1.0
+    ):
         from .base import EvidenceStrength
+
         strength = (
             EvidenceStrength.CONCLUSIVE
             if confidence >= 1.0
-            else EvidenceStrength.STRONG
-            if confidence >= 0.9
-            else EvidenceStrength.MODERATE
-            if confidence >= 0.7
-            else EvidenceStrength.WEAK
+            else (
+                EvidenceStrength.STRONG
+                if confidence >= 0.9
+                else (
+                    EvidenceStrength.MODERATE
+                    if confidence >= 0.7
+                    else EvidenceStrength.WEAK
+                )
+            )
         )
         ev = Evidence.new(source=source, content=evidence, strength=strength)
         self.add_fact(
@@ -230,7 +246,6 @@ class KnowledgeGraph:
         return any(
             f.status == FactStatus.VERIFIED for f in self.get_facts_by_type(fact_type)
         )
-
 
     def to_prompt_context(self) -> str:
         verified = [f for f in self._facts.values() if f.status == FactStatus.VERIFIED]
@@ -314,7 +329,6 @@ class KnowledgeGraph:
                     lines.append(f"  • {f.value['tool']}: {reason}")
         return "\n".join(lines)
 
-
     # ---------- Persistence API ----------
     def save(self):
         """Explicitly save the knowledge graph to disk."""
@@ -335,7 +349,6 @@ class KnowledgeGraph:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
         return False
-
 
     # ---------- Internal Helpers ----------
     def _get_fact(self, fact_id: str) -> Fact:
@@ -389,7 +402,9 @@ class KnowledgeGraph:
         else:
             return FactStatus.UNCERTAIN
 
-    def _cascade_status_change(self, fact_id: str, old_status: FactStatus, new_status: FactStatus) -> None:
+    def _cascade_status_change(
+        self, fact_id: str, old_status: FactStatus, new_status: FactStatus
+    ) -> None:
         """Cascade status changes to dependent facts."""
         # If a fact is refuted, mark all facts that depend on it as uncertain
         if new_status == FactStatus.REFUTED:
@@ -397,7 +412,11 @@ class KnowledgeGraph:
             for dependent_id in fact.required_for:
                 dependent = self._facts.get(dependent_id)
                 if dependent and dependent.status != FactStatus.REFUTED:
-                    _logger.info(f"Cascading refutation: {dependent_id} → UNCERTAIN (dependency {fact_id} was refuted)")
+                    _logger.info(
+                        f"Cascading refutation: {dependent_id} → UNCERTAIN (dependency {fact_id} was refuted)"
+                    )
                     dependent.status = FactStatus.UNCERTAIN
                     # Could recursively cascade further, but keeping it shallow for now
-                    self._cascade_status_change(dependent_id, dependent.status, FactStatus.UNCERTAIN)
+                    self._cascade_status_change(
+                        dependent_id, dependent.status, FactStatus.UNCERTAIN
+                    )

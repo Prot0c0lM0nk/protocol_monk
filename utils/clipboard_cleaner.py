@@ -8,10 +8,10 @@ import subprocess
 import re
 import unicodedata
 import logging
-from typing import Optional
 import asyncio
+import shlex
+from typing import Dict
 
-# No exception imports needed
 from config.static import settings
 
 logger = logging.getLogger(__name__)
@@ -23,35 +23,47 @@ def clean_text(text: str) -> str:
     if not text:
         return text
 
-    # Step 1: Normalize Unicode to decomposed form, then recompose
+    text = _normalize_unicode(text)
+    text = _filter_invisible_chars(text)
+    text = _apply_replacements(text)
+    text = _normalize_newlines(text)
+
+    return text
+
+
+def _normalize_unicode(text: str) -> str:
+    """Normalize Unicode to decomposed form, then recompose."""
     try:
-        text = unicodedata.normalize("NFKC", text)
-    except Exception as e:
-        # HEALTHCHECK FIX: Catches silent Unicode normalization failures
+        return unicodedata.normalize("NFKC", text)
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.warning(
-            f"Unicode normalization failed: {e}. Proceeding with un-normalized text.",
+            "Unicode normalization failed: %s. Proceeding with un-normalized text.",
+            e,
             exc_info=True,
         )
+        return text
 
-    # Step 2: Remove invisible/control characters except essential ones
-    # Keep: \t (tab), \n (newline), \r (carriage return), space (32), printable ASCII (33-126)
-    cleaned = "".join(
+
+def _filter_invisible_chars(text: str) -> str:
+    """Remove invisible/control characters except essential ones."""
+    # Keep: \t (9), \n (10), \r (13), space (32), printable ASCII (33-126)
+    allowed_control_codes = {9, 10, 13, 32}
+
+    return "".join(
         char
         for char in text
         if (
-            ord(char) == 9  # Tab
-            or ord(char) == 10  # Newline
-            or ord(char) == 13  # Carriage return
-            or ord(char) == 32  # Space
+            ord(char) in allowed_control_codes
             or (33 <= ord(char) <= 126)  # Printable ASCII
-            or (
-                ord(char) > 126 and unicodedata.category(char)[0] not in ["C", "Z"]
-            )  # Allow valid non-ASCII but not control/separator
+            # Allow valid non-ASCII but not control/separator
+            or (ord(char) > 126 and unicodedata.category(char)[0] not in ["C", "Z"])
         )
     )
 
-    # Step 3: Fix common Apple clipboard issues
-    replacements = {
+
+def _apply_replacements(text: str) -> str:
+    """Fix common Apple clipboard issues."""
+    replacements: Dict[str, str] = {
         "\u2018": "'",  # Left single quotation mark
         "\u2019": "'",  # Right single quotation mark
         "\u201c": '"',  # Left double quotation mark
@@ -66,22 +78,33 @@ def clean_text(text: str) -> str:
     }
 
     for bad_char, replacement in replacements.items():
-        cleaned = cleaned.replace(bad_char, replacement)
+        text = text.replace(bad_char, replacement)
+    return text
 
-    # Step 4: Normalize whitespace
-    cleaned = re.sub(r"\r\n", "\n", cleaned)  # Windows line endings
-    cleaned = re.sub(r"\r", "\n", cleaned)  # Mac line endings
+
+def _normalize_newlines(text: str) -> str:
+    """Normalize whitespace and line endings."""
+    text = re.sub(r"\r\n", "\n", text)
+    text = re.sub(r"\r", "\n", text)
+    return text
+
+
+def _get_command_args(command_str: str) -> list:
+    """Safely parse command string into list for subprocess."""
+    return shlex.split(command_str)
 
 
 def _unsafe_read_clipboard() -> str:
     """Reads from the system clipboard without locking."""
+    cmd = settings.security.clipboard_paste_cmd
     try:
+        # SECURITY FIX: Use shell=False with parsed arguments
         result = subprocess.run(
-            settings.security.clipboard_paste_cmd,
-            shell=True,
+            _get_command_args(cmd),
+            shell=False,
             capture_output=True,
             text=True,
-            check=True,  # Will raise CalledProcessError on failure
+            check=True,
             timeout=2,
         )
         return result.stdout
@@ -90,53 +113,51 @@ def _unsafe_read_clipboard() -> str:
         raise IOError("Clipboard paste command timed out.") from e
     except subprocess.CalledProcessError as e:
         logger.error(
-            f"Clipboard read failed with code {e.returncode}: {e.stderr}", exc_info=True
+            "Clipboard read failed with code %s: %s",
+            e.returncode,
+            e.stderr,
+            exc_info=True,
         )
         raise IOError(f"Clipboard paste failed: {e.stderr}") from e
     except FileNotFoundError as e:
-        logger.error(
-            f"Clipboard command not found: {settings.security.clipboard_paste_cmd}",
-            exc_info=True,
-        )
-        raise IOError(
-            f"Clipboard command not found: {settings.security.clipboard_paste_cmd}"
-        ) from e
+        logger.error("Clipboard command not found: %s", cmd, exc_info=True)
+        raise IOError(f"Clipboard command not found: {cmd}") from e
     except Exception as e:
-        logger.error(f"Unexpected clipboard read error: {e}", exc_info=True)
+        logger.error("Unexpected clipboard read error: %s", e, exc_info=True)
         raise IOError(f"Unexpected clipboard read error: {e}") from e
 
 
 def _unsafe_write_clipboard(text: str):
     """Writes to the system clipboard without locking."""
+    cmd = settings.security.clipboard_copy_cmd
     try:
-        process = subprocess.Popen(
-            settings.security.clipboard_copy_cmd,
-            shell=True,
+        # SECURITY FIX: Use 'with' context manager and shell=False
+        with subprocess.Popen(
+            _get_command_args(cmd),
+            shell=False,
             stdin=subprocess.PIPE,
             text=True,
             stderr=subprocess.PIPE,
-        )
-        stdout, stderr = process.communicate(input=text, timeout=2)
+        ) as process:
+            _, stderr = process.communicate(input=text, timeout=2)
 
-        if process.returncode != 0:
-            logger.error(
-                f"Clipboard write failed with code {process.returncode}: {stderr}"
-            )
-            raise IOError(f"Clipboard copy failed: {stderr}")
+            if process.returncode != 0:
+                logger.error(
+                    "Clipboard write failed with code %s: %s",
+                    process.returncode,
+                    stderr,
+                )
+                raise IOError(f"Clipboard copy failed: {stderr}")
+
     except subprocess.TimeoutExpired as e:
         logger.error("Clipboard write timed out.", exc_info=True)
-        process.kill()  # Ensure process is cleaned up
+        # Process is cleaned up by context manager mostly, but good to be explicit if stuck
         raise IOError("Clipboard copy command timed out.") from e
     except FileNotFoundError as e:
-        logger.error(
-            f"Clipboard command not found: {settings.security.clipboard_copy_cmd}",
-            exc_info=True,
-        )
-        raise IOError(
-            f"Clipboard command not found: {settings.security.clipboard_copy_cmd}"
-        ) from e
+        logger.error("Clipboard command not found: %s", cmd, exc_info=True)
+        raise IOError(f"Clipboard command not found: {cmd}") from e
     except Exception as e:
-        logger.error(f"Unexpected clipboard write error: {e}", exc_info=True)
+        logger.error("Unexpected clipboard write error: %s", e, exc_info=True)
         raise IOError(f"Unexpected clipboard write error: {e}") from e
 
 
@@ -149,12 +170,11 @@ async def clean_clipboard_in() -> str:
 
         if original != cleaned:
             hidden_chars = len(original) - len(cleaned)
-            logger.info(f"🧹 Cleaned {hidden_chars} hidden characters from clipboard")
+            logger.info("🧹 Cleaned %d hidden characters from clipboard", hidden_chars)
 
         return cleaned
-    except (IOError, Exception) as e:
-        # HEALTHCHECK FIX: Catches silent subprocess failures
-        logger.error(f"Error cleaning clipboard: {str(e)}", exc_info=True)
+    except (IOError, Exception) as e:  # pylint: disable=broad-exception-caught
+        logger.error("Error cleaning clipboard: %s", str(e), exc_info=True)
         return f"Error cleaning clipboard: {str(e)}"
 
 
@@ -167,10 +187,10 @@ async def clean_clipboard_out(text: str) -> bool:
 
         if text != cleaned:
             hidden_chars = len(text) - len(cleaned)
-            logger.info(f"🧹 Cleaned {hidden_chars} hidden characters before copying")
+            logger.info("🧹 Cleaned %d hidden characters before copying", hidden_chars)
         return True
-    except (IOError, Exception) as e:
-        logger.error(f"Error copying to clipboard: {str(e)}", exc_info=True)
+    except (IOError, Exception) as e:  # pylint: disable=broad-exception-caught
+        logger.error("Error copying to clipboard: %s", str(e), exc_info=True)
         return False
 
 
@@ -186,16 +206,16 @@ async def clean_clipboard_round_trip() -> str:
 
             await asyncio.to_thread(_unsafe_write_clipboard, cleaned)
             return "✅ Clipboard cleaned and updated"
-        except (IOError, Exception) as e:
+        except (IOError, Exception) as e:  # pylint: disable=broad-exception-caught
             return f"Error: {str(e)}"
 
 
 if __name__ == "__main__":
-    # Command-line usage
     import sys
 
+    # Quick CLI for testing
     if len(sys.argv) > 1 and sys.argv[1] == "clean":
-        print(clean_clipboard_round_trip())
+        print(asyncio.run(clean_clipboard_round_trip()))
     else:
         print("Clipboard Cleaner Utility")
         print("Usage:")

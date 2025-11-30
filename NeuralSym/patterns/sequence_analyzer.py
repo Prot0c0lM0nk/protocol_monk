@@ -12,7 +12,9 @@ from .base import Outcome, ContextSnapshot, Interaction
 class SequenceAnalyzer:
     """Tool sequence analysis and optimization"""
 
-    def __init__(self, interactions: Dict, sequence_patterns: Dict, tool_profiles: Dict):
+    def __init__(
+        self, interactions: Dict, sequence_patterns: Dict, tool_profiles: Dict
+    ):
         self.interactions = interactions
         self.sequence_patterns = sequence_patterns
         self.tool_profiles = tool_profiles
@@ -31,7 +33,7 @@ class SequenceAnalyzer:
             self.sequence_patterns[sequence] = {
                 "successes": 0,
                 "failures": 0,
-                "total_count": 0
+                "total_count": 0,
             }
 
         # Update counts for the sequence
@@ -64,7 +66,7 @@ class SequenceAnalyzer:
                         "successes": 0,
                         "failures": 0,
                         "total_count": 0,
-                        "context_conditions": defaultdict(int)
+                        "context_conditions": defaultdict(int),
                     }
 
                 # Update pattern with current interaction outcome
@@ -81,10 +83,7 @@ class SequenceAnalyzer:
                 pattern["context_conditions"][context_key] += 1
 
     def optimize_approach(
-        self,
-        current_plan: List[str],
-        context: ContextSnapshot,
-        goal: str
+        self, current_plan: List[str], context: ContextSnapshot, goal: str
     ) -> Dict[str, Any]:
         """Optimize action plan based on learned patterns"""
         optimized_plan = current_plan.copy()
@@ -102,15 +101,19 @@ class SequenceAnalyzer:
 
                     if success_rate < 0.3:
                         # Suggest alternative for problematic sequence
-                        alternative = self._suggest_sequence_alternative(tool_pair, context)
+                        alternative = self._suggest_sequence_alternative(
+                            tool_pair, context
+                        )
                         if alternative:
                             optimized_plan[i + 1] = alternative
-                            optimizations.append({
-                                "position": i + 1,
-                                "original": tool_pair[1],
-                                "replacement": alternative,
-                                "reason": f"Low success sequence: {success_rate:.1%}"
-                            })
+                            optimizations.append(
+                                {
+                                    "position": i + 1,
+                                    "original": tool_pair[1],
+                                    "replacement": alternative,
+                                    "reason": f"Low success sequence: {success_rate:.1%}",
+                                }
+                            )
 
         # Tool substitution optimization
         for i, tool in enumerate(optimized_plan):
@@ -120,23 +123,23 @@ class SequenceAnalyzer:
                     alternative = self._suggest_tool_alternative(tool, context, goal)
                     if alternative and alternative != tool:
                         optimized_plan[i] = alternative
-                        optimizations.append({
-                            "position": i,
-                            "original": tool,
-                            "replacement": alternative,
-                            "reason": f"Low success tool: {profile.success_rate:.1%}"
-                        })
+                        optimizations.append(
+                            {
+                                "position": i,
+                                "original": tool,
+                                "replacement": alternative,
+                                "reason": f"Low success tool: {profile.success_rate:.1%}",
+                            }
+                        )
 
         return {
             "optimized_plan": optimized_plan,
             "optimizations": optimizations,
-            "confidence": self._calculate_optimization_confidence(optimizations)
+            "confidence": self._calculate_optimization_confidence(optimizations),
         }
 
     def _suggest_sequence_alternative(
-        self,
-        problematic_sequence: Tuple[str, str],
-        context: ContextSnapshot
+        self, problematic_sequence: Tuple[str, str], context: ContextSnapshot
     ) -> Optional[str]:
         """Suggest alternative for problematic sequence"""
         tool1, tool2 = problematic_sequence
@@ -147,9 +150,9 @@ class SequenceAnalyzer:
         # Look for sequences starting with tool1 that have high success rates
         for sequence, pattern in self.sequence_patterns.items():
             if sequence[0] == tool1 and sequence != problematic_sequence:
-                total = pattern.get('successes', 0) + pattern.get('failures', 0)
+                total = pattern.get("successes", 0) + pattern.get("failures", 0)
                 if total >= 3:
-                    success_rate = pattern.get('successes', 0) / total
+                    success_rate = pattern.get("successes", 0) / total
                     if success_rate > 0.7:  # High success rate
                         alternatives.append((sequence[1], success_rate))
 
@@ -161,10 +164,7 @@ class SequenceAnalyzer:
         return None
 
     def _suggest_tool_alternative(
-        self,
-        problematic_tool: str,
-        context: ContextSnapshot,
-        goal: str
+        self, problematic_tool: str, context: ContextSnapshot, goal: str
     ) -> Optional[str]:
         """Suggest alternative tool for problematic tool"""
         # Find tools with similar purpose but better success rates
@@ -175,7 +175,8 @@ class SequenceAnalyzer:
                 # Simple relevance check (could be enhanced with semantic similarity)
                 if self._tools_similar(problematic_tool, tool_name):
                     total_uses = sum(
-                        1 for i in self.interactions.values()
+                        1
+                        for i in self.interactions.values()
                         if i.tool_name == tool_name
                     )
                     if total_uses >= 3 and profile.success_rate > 0.7:

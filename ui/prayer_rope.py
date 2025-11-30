@@ -67,6 +67,7 @@ class PrayerRope:
 
         return result
 
+
 class ThinkingSpinner:
     """Simple Orthodox cross spinner for contemplation"""
 
@@ -92,19 +93,24 @@ class ThinkingSpinner:
 class ProtocolSpinner:
     def __init__(self):
         # Create a custom spinner pattern using the cross symbols
-        self.frames = ["[bold green]☦ contemplating...[/bold green]", "[bold green]† contemplating...[/bold green]", "[bold green]✠ contemplating...[/bold green]", "[bold green]☩ contemplating...[/bold green]"]
+        self.frames = [
+            "[bold green]☦ contemplating...[/bold green]",
+            "[bold green]† contemplating...[/bold green]",
+            "[bold green]✠ contemplating...[/bold green]",
+            "[bold green]☩ contemplating...[/bold green]",
+        ]
         self.frame_index = 0
-    
+
     def render(self, style=None):
         """Render the current frame of the spinner"""
         return self.frames[self.frame_index % len(self.frames)]
-    
+
     def next_frame(self):
         """Advance to the next frame"""
         self.frame_index += 1
 
 
-#class GreekLetterSpinner:
+# class GreekLetterSpinner:
 class ThinkingSpinner:
     """Simple Orthodox cross spinner for contemplation"""
 
@@ -218,6 +224,7 @@ def thinking_spinner(console: Optional[Console] = None, message: str = "contempl
 
     # Update spinner in background
     import threading
+
     stop_event = threading.Event()
 
     def update_loop():
@@ -262,6 +269,7 @@ def greek_letter_spinner(console: Optional[Console] = None):
 
     # Update spinner in background
     import threading
+
     stop_event = threading.Event()
 
     def update_loop():
@@ -291,7 +299,9 @@ def demo_prayer_rope():
     rope = PrayerRope()
 
     # Show progressive filling: 0% → 100% (6 states for 5 knots)
-    console.print(f"[dim]Showing {rope.total_knots} knots in {rope.total_knots + 1} states (0% → 100%):[/dim]\n")
+    console.print(
+        f"[dim]Showing {rope.total_knots} knots in {rope.total_knots + 1} states (0% → 100%):[/dim]\n"
+    )
     for i in range(rope.total_knots + 1):
         percent = int((i / rope.total_knots) * 100)
         console.print(f"[dim]{percent:3d}%[/dim] ", end="")

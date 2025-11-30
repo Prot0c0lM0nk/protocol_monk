@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Set
 
 class FactStatus(Enum):
     """Status of a fact in the knowledge graph."""
+
     VERIFIED = "verified"
     ASSUMED = "assumed"
     REFUTED = "refuted"
@@ -23,6 +24,7 @@ class FactStatus(Enum):
 
 class EvidenceStrength(Enum):
     """Strength of evidence supporting a fact."""
+
     WEAK = 0.3
     MODERATE = 0.7
     STRONG = 0.9
@@ -32,6 +34,7 @@ class EvidenceStrength(Enum):
 @dataclass
 class Evidence:
     """Evidence supporting or refuting a fact."""
+
     id: str
     source: str
     content: str
@@ -45,7 +48,7 @@ class Evidence:
         """Serialize Evidence to dictionary."""
         data = asdict(self)
         # Convert enum to its name for JSON serialization
-        data['strength'] = self.strength.name
+        data["strength"] = self.strength.name
         return data
 
     @classmethod
@@ -101,6 +104,7 @@ class Evidence:
 @dataclass
 class Fact:
     """Enhanced fact with evidence chain and relationships."""
+
     id: str
     fact_type: str
     value: Any
@@ -117,17 +121,19 @@ class Fact:
         """Serialize Fact to dictionary."""
         # Manually serialize to ensure proper enum handling
         return {
-            'id': self.id,
-            'fact_type': self.fact_type,
-            'value': self.value,
-            'status': self.status.name,  # Serialize enum as name
-            'confidence': self.confidence,
-            'created_at': self.created_at,
-            'updated_at': self.updated_at,
-            'evidences': [ev.to_dict() for ev in self.evidences],  # Use Evidence.to_dict()
-            'depends_on': self.depends_on,
-            'required_for': self.required_for,
-            'context_tags': list(self.context_tags),  # Convert set to list
+            "id": self.id,
+            "fact_type": self.fact_type,
+            "value": self.value,
+            "status": self.status.name,  # Serialize enum as name
+            "confidence": self.confidence,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "evidences": [
+                ev.to_dict() for ev in self.evidences
+            ],  # Use Evidence.to_dict()
+            "depends_on": self.depends_on,
+            "required_for": self.required_for,
+            "context_tags": list(self.context_tags),  # Convert set to list
         }
 
     @classmethod
@@ -193,6 +199,7 @@ class Fact:
 @dataclass
 class ActionPlan:
     """Plan derived from knowledge state."""
+
     goal: str
     required_facts: List[str]
     missing_facts: List[str]

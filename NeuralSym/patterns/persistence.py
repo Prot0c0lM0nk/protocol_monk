@@ -35,7 +35,7 @@ class PatternPersistence:
         tool_profiles: Dict,
         causal_patterns: Dict,
         learning_curve: List,
-        persistence_path: Optional[Path] = None
+        persistence_path: Optional[Path] = None,
     ):
         self.interactions = interactions
         self.tool_profiles = tool_profiles
@@ -76,11 +76,11 @@ class PatternPersistence:
 
             # Write to temp file first, then atomic replace
             with tempfile.NamedTemporaryFile(
-                mode='w',
-                encoding='utf-8',
+                mode="w",
+                encoding="utf-8",
                 dir=self.persistence_path.parent,
                 delete=False,
-                suffix='.tmp'
+                suffix=".tmp",
             ) as tmp_file:
                 json.dump(data, tmp_file, indent=2, cls=EnumEncoder)
                 tmp_path = tmp_file.name
@@ -92,6 +92,7 @@ class PatternPersistence:
 
         except Exception as e:
             import sys
+
             print(f"[ERROR] Pattern analyzer persistence failed: {e}", file=sys.stderr)
 
     def _prepare_data(self) -> Dict:
@@ -107,7 +108,7 @@ class PatternPersistence:
             },
             "causal_patterns": {},  # Will be implemented later
             "learning_curve": self.learning_curve,
-            "version": "2.0"
+            "version": "2.0",
         }
 
     def _tool_profile_to_dict(self, profile: ToolProfile) -> Dict:
@@ -120,7 +121,7 @@ class PatternPersistence:
             "context_preferences": profile.context_preferences,
             "common_failure_modes": profile.common_failure_modes,
             "prerequisite_sensitivity": profile.prerequisite_sensitivity,
-            "learning_curve": profile.learning_curve
+            "learning_curve": profile.learning_curve,
         }
 
     def load(self) -> None:
@@ -129,7 +130,7 @@ class PatternPersistence:
             return
 
         try:
-            with open(self.persistence_path, 'r', encoding='utf-8') as f:
+            with open(self.persistence_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             # Load interactions
@@ -148,7 +149,10 @@ class PatternPersistence:
 
         except Exception as e:
             import sys
-            print(f"[ERROR] Failed to load pattern analyzer state: {e}", file=sys.stderr)
+
+            print(
+                f"[ERROR] Failed to load pattern analyzer state: {e}", file=sys.stderr
+            )
 
     def _dict_to_interaction(self, data: Dict) -> Interaction:
         """Convert dictionary to Interaction object"""
@@ -163,7 +167,7 @@ class PatternPersistence:
             time_of_day=context_data["time_of_day"],
             working_memory_usage=context_data["working_memory_usage"],
             emotional_tone=context_data.get("emotional_tone"),
-            urgency_level=context_data.get("urgency_level", 1)
+            urgency_level=context_data.get("urgency_level", 1),
         )
 
         # Reconstruct interaction
@@ -177,11 +181,21 @@ class PatternPersistence:
             context=context,
             error_message=data.get("error_message"),
             result=data.get("result"),
-            pre_conditions=set(data.get("pre_conditions", [])) if data.get("pre_conditions") else None,
-            post_conditions=set(data.get("post_conditions", [])) if data.get("post_conditions") else None,
+            pre_conditions=(
+                set(data.get("pre_conditions", []))
+                if data.get("pre_conditions")
+                else None
+            ),
+            post_conditions=(
+                set(data.get("post_conditions", []))
+                if data.get("post_conditions")
+                else None
+            ),
             confidence=data.get("confidence", 1.0),
             retry_count=data.get("retry_count", 0),
-            alternative_approaches_considered=data.get("alternative_approaches_considered")
+            alternative_approaches_considered=data.get(
+                "alternative_approaches_considered"
+            ),
         )
 
     def _dict_to_tool_profile(self, data: Dict) -> ToolProfile:
@@ -194,7 +208,7 @@ class PatternPersistence:
             context_preferences=data["context_preferences"],
             common_failure_modes=data["common_failure_modes"],
             prerequisite_sensitivity=data["prerequisite_sensitivity"],
-            learning_curve=data["learning_curve"]
+            learning_curve=data["learning_curve"],
         )
 
     def close(self) -> None:

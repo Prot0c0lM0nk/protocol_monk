@@ -5,6 +5,7 @@ from typing import Literal
 
 class ChatMessage(Widget):
     """Display individual chat messages."""
+
     def __init__(self, role: Literal["user", "assistant", "tool"], content: str):
         super().__init__()
         self.role = role
@@ -29,7 +30,9 @@ class ChatMessage(Widget):
     def append_text(self, text: str):
         """Update message content (if Markdown widget exists)."""
         self.content += text
-        if hasattr(self, 'content_widget') and isinstance(self.content_widget, Markdown):
+        if hasattr(self, "content_widget") and isinstance(
+            self.content_widget, Markdown
+        ):
             self.content_widget.update(self.content)
         else:
             self.update(self.content)

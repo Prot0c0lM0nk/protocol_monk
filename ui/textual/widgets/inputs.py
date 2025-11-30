@@ -6,9 +6,10 @@ from textual.events import Key
 
 class InputPanel(Widget):
     """Handle user input via text area and send button."""
-    
+
     class Submit(Message):
         """Event sent when user submits input."""
+
         def __init__(self, text: str):
             super().__init__()
             self.text = text
@@ -17,7 +18,7 @@ class InputPanel(Widget):
         super().__init__()
         self.mount(
             TextArea(id="input", placeholder="Type your message..."),
-            Button("Send", variant="primary", id="send")
+            Button("Send", variant="primary", id="send"),
         )
 
     def on_mount(self):

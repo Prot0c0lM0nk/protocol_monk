@@ -12,6 +12,7 @@ from enum import Enum
 # Optional dependencies - fall back to basic implementations if not available
 try:
     from scipy import stats
+
     SCIPY_AVAILABLE = True
 except ImportError:
     SCIPY_AVAILABLE = False
@@ -19,6 +20,7 @@ except ImportError:
 
 class Outcome(Enum):
     """Enumeration of possible tool execution outcomes"""
+
     SUCCESS = "success"
     FAILURE = "failure"
     PARTIAL_SUCCESS = "partial_success"
@@ -29,6 +31,7 @@ class Outcome(Enum):
 
 class ComplexityLevel(Enum):
     """Enumeration of task complexity levels"""
+
     SIMPLE = "simple"
     MODERATE = "moderate"
     COMPLEX = "complex"
@@ -38,6 +41,7 @@ class ComplexityLevel(Enum):
 @dataclass
 class ContextSnapshot:
     """Comprehensive context capture for pattern analysis"""
+
     conversation_length: int
     recent_tools: List[str]
     task_type: str
@@ -52,6 +56,7 @@ class ContextSnapshot:
 @dataclass
 class Interaction:
     """Enhanced interaction recording with causal analysis"""
+
     id: str
     tool_name: str
     arguments: Dict[str, Any]
@@ -75,6 +80,7 @@ class Interaction:
 @dataclass
 class ToolProfile:
     """Comprehensive tool performance profile"""
+
     name: str
     success_rate: float
     average_execution_time: float
@@ -88,6 +94,7 @@ class ToolProfile:
 @dataclass
 class PredictiveRecommendation:
     """Predictive recommendation with risk assessment"""
+
     action: str
     reasoning: str
     confidence: float
@@ -100,7 +107,9 @@ class PredictiveRecommendation:
     similar_failure_cases: List[str]  # IDs of similar failed interactions
 
 
-def calculate_confidence_interval(successes: int, total: int, confidence: float = 0.95) -> Tuple[float, float]:
+def calculate_confidence_interval(
+    successes: int, total: int, confidence: float = 0.95
+) -> Tuple[float, float]:
     """
     Calculate Wilson score interval for binomial proportion
 

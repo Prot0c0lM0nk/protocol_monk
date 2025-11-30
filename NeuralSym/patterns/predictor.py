@@ -7,14 +7,20 @@ from typing import Dict, List, Optional, Any
 from collections import defaultdict
 
 from .base import (
-    Outcome, ComplexityLevel, ContextSnapshot, PredictiveRecommendation, ToolProfile
+    Outcome,
+    ComplexityLevel,
+    ContextSnapshot,
+    PredictiveRecommendation,
+    ToolProfile,
 )
 
 
 class PatternPredictor:
     """Predictive recommendations and risk assessment engine"""
 
-    def __init__(self, interactions: Dict, tool_profiles: Dict, sequence_patterns: Dict):
+    def __init__(
+        self, interactions: Dict, tool_profiles: Dict, sequence_patterns: Dict
+    ):
         self.interactions = interactions
         self.tool_profiles = tool_profiles
         self.sequence_patterns = sequence_patterns
@@ -44,7 +50,9 @@ class PatternPredictor:
 
                 # Check if we have context-specific performance data
                 context_key = self._extract_context_key_from_dict(context)
-                context_score = profile.context_preferences.get(context_key, success_rate)
+                context_score = profile.context_preferences.get(
+                    context_key, success_rate
+                )
 
                 recommendation = (
                     f"{tool_name}: {context_score:.1%} success rate "
@@ -55,13 +63,13 @@ class PatternPredictor:
         # Add sequence recommendations if we have pattern data
         if len(relevant_tools) >= 2:
             for i, tool1 in enumerate(relevant_tools):
-                for tool2 in relevant_tools[i+1:]:
+                for tool2 in relevant_tools[i + 1 :]:
                     sequence = (tool1, tool2)
                     if sequence in self.sequence_patterns:
                         pattern = self.sequence_patterns[sequence]
-                        total = pattern.get('successes', 0) + pattern.get('failures', 0)
+                        total = pattern.get("successes", 0) + pattern.get("failures", 0)
                         if total >= 3:
-                            success_rate = pattern.get('successes', 0) / total
+                            success_rate = pattern.get("successes", 0) / total
                             if success_rate > 0.7:
                                 recommendations.append(
                                     f"Sequence pattern: {tool1} → {tool2} = {success_rate:.1%} "
@@ -70,7 +78,9 @@ class PatternPredictor:
 
         # If no data, provide general guidance
         if not recommendations:
-            recommendations.append(f"No historical data for {intent}, proceed with caution")
+            recommendations.append(
+                f"No historical data for {intent}, proceed with caution"
+            )
 
         return recommendations
 
@@ -107,13 +117,16 @@ class PatternPredictor:
         if intent == "FILE_READ_INTENT":
             # Check if files are often not found
             not_found_count = sum(
-                1 for i in self.interactions.values()
+                1
+                for i in self.interactions.values()
                 if i.tool_name in ["show_file", "read_file", "execute_command"]
                 and i.outcome == Outcome.FAILURE
                 and "not found" in (i.error_message or "").lower()
             )
             if not_found_count >= 3:
-                mistakes.append(f"File not found errors ({not_found_count} occurrences)")
+                mistakes.append(
+                    f"File not found errors ({not_found_count} occurrences)"
+                )
 
         return mistakes[:5]  # Top 5 mistakes
 
@@ -125,27 +138,29 @@ class PatternPredictor:
         successful_sequences = []
 
         for sequence, pattern in self.sequence_patterns.items():
-            total = pattern.get('successes', 0) + pattern.get('failures', 0)
+            total = pattern.get("successes", 0) + pattern.get("failures", 0)
             if total >= 3:  # Minimum sample size
-                success_rate = pattern.get('successes', 0) / total
+                success_rate = pattern.get("successes", 0) / total
                 if success_rate >= 0.7:  # High success rate
-                    successful_sequences.append({
-                        'sequence': sequence,
-                        'success_rate': success_rate,
-                        'count': total
-                    })
+                    successful_sequences.append(
+                        {
+                            "sequence": sequence,
+                            "success_rate": success_rate,
+                            "count": total,
+                        }
+                    )
 
         # Sort by success rate
-        successful_sequences.sort(key=lambda x: x['success_rate'], reverse=True)
+        successful_sequences.sort(key=lambda x: x["success_rate"], reverse=True)
 
         # Build recommended sequence
         if successful_sequences:
             best = successful_sequences[0]
-            tool1, tool2 = best['sequence']
+            tool1, tool2 = best["sequence"]
             return [
                 f"1. {tool1} - initial step",
                 f"2. {tool2} - follow-up",
-                f"Confidence: {best['success_rate']:.0%} (based on {best['count']} uses)"
+                f"Confidence: {best['success_rate']:.0%} (based on {best['count']} uses)",
             ]
 
         # Fallback: provide generic best practices based on goal
@@ -153,13 +168,13 @@ class PatternPredictor:
             return [
                 "1. list_files - verify location",
                 "2. read_file - read content",
-                "Confidence: 50% (general best practice)"
+                "Confidence: 50% (general best practice)",
             ]
         elif "create" in goal_lower or "write" in goal_lower:
             return [
                 "1. list_files - verify location",
                 "2. create_file - create new file",
-                "Confidence: 50% (general best practice)"
+                "Confidence: 50% (general best practice)",
             ]
         else:
             return ["No specific sequence pattern identified for this goal"]
@@ -169,7 +184,7 @@ class PatternPredictor:
         current_context: Dict,
         available_tools: List[str],
         goal: str,
-        constraints: Dict[str, Any] = None
+        constraints: Dict[str, Any] = None,
     ) -> List[PredictiveRecommendation]:
         """Get predictive recommendations with risk assessment"""
         recommendations = []
@@ -186,7 +201,10 @@ class PatternPredictor:
 
                 # Check constraints
                 if constraints.get("max_execution_time"):
-                    if profile.average_execution_time > constraints["max_execution_time"]:
+                    if (
+                        profile.average_execution_time
+                        > constraints["max_execution_time"]
+                    ):
                         continue
 
                 # Build risk factors
@@ -208,11 +226,13 @@ class PatternPredictor:
                     prerequisites=[],
                     fallback_strategies=[],
                     similar_success_cases=[],
-                    similar_failure_cases=[]
+                    similar_failure_cases=[],
                 )
                 recommendations.append(recommendation)
 
-        return sorted(recommendations, key=lambda r: r.expected_success_probability, reverse=True)[:5]
+        return sorted(
+            recommendations, key=lambda r: r.expected_success_probability, reverse=True
+        )[:5]
 
     # Helper methods
 
@@ -227,6 +247,7 @@ class PatternPredictor:
     def _create_context_snapshot(self, context: Dict) -> ContextSnapshot:
         """Create ContextSnapshot from dictionary"""
         import time
+
         return ContextSnapshot(
             conversation_length=context.get("conversation_length", 0),
             recent_tools=context.get("recent_tools", [])[-5:],
@@ -236,5 +257,5 @@ class PatternPredictor:
             time_of_day=time.strftime("%H:%M"),
             working_memory_usage=context.get("working_memory_usage", 0.5),
             emotional_tone=context.get("emotional_tone"),
-            urgency_level=context.get("urgency_level", 1)
+            urgency_level=context.get("urgency_level", 1),
         )

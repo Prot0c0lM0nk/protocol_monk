@@ -8,6 +8,7 @@ from ui.textual.widgets.inputs import InputPanel
 
 class ChatScreen(Screen):
     """Main chat screen."""
+
     def __init__(self):
         super().__init__()
         self.mount(
@@ -15,7 +16,7 @@ class ChatScreen(Screen):
                 Label("Status: Waiting for input...", id="status"),
                 VerticalScroll(id="messages"),
                 InputPanel(id="input"),
-                id="main"
+                id="main",
             )
         )
 

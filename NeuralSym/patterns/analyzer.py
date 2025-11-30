@@ -15,8 +15,12 @@ from collections import defaultdict, Counter
 from threading import Lock
 
 from .base import (
-    Outcome, ComplexityLevel, ContextSnapshot, Interaction,
-    ToolProfile, PredictiveRecommendation
+    Outcome,
+    ComplexityLevel,
+    ContextSnapshot,
+    Interaction,
+    ToolProfile,
+    PredictiveRecommendation,
 )
 from .predictor import PatternPredictor
 from .sequence_analyzer import SequenceAnalyzer
@@ -64,33 +68,26 @@ class AdvancedPatternAnalyzer:
 
         # Initialize component analyzers
         self.predictor = PatternPredictor(
-            self.interactions,
-            self.tool_profiles,
-            self.sequence_patterns
+            self.interactions, self.tool_profiles, self.sequence_patterns
         )
         self.sequence_analyzer = SequenceAnalyzer(
-            self.interactions,
-            self.sequence_patterns,
-            self.tool_profiles
+            self.interactions, self.sequence_patterns, self.tool_profiles
         )
         self.temporal_analyzer = TemporalAnalyzer(
-            self.interactions,
-            self.learning_curve,
-            self.temporal_patterns
+            self.interactions, self.learning_curve, self.temporal_patterns
         )
         self.persistence = PatternPersistence(
             self.interactions,
             self.tool_profiles,
             self.causal_patterns,
             self.learning_curve,
-            persistence_path
+            persistence_path,
         )
         self.persistence.set_lock(self._lock)
 
         # Start debounce worker thread
         self._debounce_thread = threading.Thread(
-            target=self._debounce_worker,
-            daemon=True
+            target=self._debounce_worker, daemon=True
         )
         self._debounce_thread.start()
 
@@ -110,7 +107,7 @@ class AdvancedPatternAnalyzer:
         pre_conditions: Optional[Set[str]] = None,
         post_conditions: Optional[Set[str]] = None,
         confidence: float = 1.0,
-        retry_count: int = 0
+        retry_count: int = 0,
     ) -> str:
         """
         Record interaction with comprehensive analysis
@@ -138,7 +135,7 @@ class AdvancedPatternAnalyzer:
             arguments = {
                 "_truncated": True,
                 "_original_size": len(str(arguments)),
-                "_summary": f"Large arguments truncated (original size: {len(str(arguments))} chars)"
+                "_summary": f"Large arguments truncated (original size: {len(str(arguments))} chars)",
             }
 
         # Convert context dict to ContextSnapshot
@@ -157,7 +154,7 @@ class AdvancedPatternAnalyzer:
             pre_conditions=pre_conditions or set(),
             post_conditions=post_conditions or set(),
             confidence=confidence,
-            retry_count=retry_count
+            retry_count=retry_count,
         )
 
         with self._lock:
@@ -179,8 +176,8 @@ class AdvancedPatternAnalyzer:
             if len(self.sequence_patterns) > 10_000:
                 top = sorted(
                     self.sequence_patterns.items(),
-                    key=lambda kv: kv[1].get('total_count', 0),
-                    reverse=True
+                    key=lambda kv: kv[1].get("total_count", 0),
+                    reverse=True,
                 )[:5000]
                 self.sequence_patterns.clear()
                 self.sequence_patterns.update(top)
@@ -241,7 +238,7 @@ class AdvancedPatternAnalyzer:
                     outcome=Outcome.SUCCESS,
                     execution_time=value.get("execution_time", 0),
                     context=context,
-                    result=result
+                    result=result,
                 )
 
         elif fact_type == "tool_rejection" and isinstance(value, dict):
@@ -258,7 +255,7 @@ class AdvancedPatternAnalyzer:
                     outcome=Outcome.FAILURE,
                     execution_time=0,
                     context=context,
-                    error_message=reason
+                    error_message=reason,
                 )
 
     def _handle_evidence_added(self, event: Dict[str, Any]) -> None:
@@ -283,7 +280,7 @@ class AdvancedPatternAnalyzer:
             time_of_day=time.strftime("%H:%M"),
             working_memory_usage=context.get("working_memory_usage", 0.5),
             emotional_tone=context.get("emotional_tone"),
-            urgency_level=context.get("urgency_level", 1)
+            urgency_level=context.get("urgency_level", 1),
         )
 
     def _update_tool_profiles(self, interaction: Interaction) -> None:
@@ -299,18 +296,18 @@ class AdvancedPatternAnalyzer:
                 context_preferences={},
                 common_failure_modes={},
                 prerequisite_sensitivity=0.5,
-                learning_curve=0.5
+                learning_curve=0.5,
             )
 
         profile = self.tool_profiles[tool_name]
 
         # Update success rate with Bayesian smoothing
         total_uses = sum(
-            1 for i in self.interactions.values()
-            if i.tool_name == tool_name
+            1 for i in self.interactions.values() if i.tool_name == tool_name
         )
         successes = sum(
-            1 for i in self.interactions.values()
+            1
+            for i in self.interactions.values()
             if i.tool_name == tool_name and i.outcome == Outcome.SUCCESS
         )
 
@@ -320,8 +317,8 @@ class AdvancedPatternAnalyzer:
         # Update execution time with exponential moving average
         alpha = 0.1
         profile.average_execution_time = (
-            alpha * interaction.execution_time +
-            (1 - alpha) * profile.average_execution_time
+            alpha * interaction.execution_time
+            + (1 - alpha) * profile.average_execution_time
         )
 
         # Update context preferences
@@ -329,8 +326,7 @@ class AdvancedPatternAnalyzer:
         current_score = profile.context_preferences.get(context_key, 0.5)
         success_bonus = 0.1 if interaction.outcome == Outcome.SUCCESS else -0.05
         profile.context_preferences[context_key] = max(
-            0.1,
-            min(0.9, current_score + success_bonus)
+            0.1, min(0.9, current_score + success_bonus)
         )
 
         # Update failure modes
@@ -368,7 +364,7 @@ class AdvancedPatternAnalyzer:
             f"len_{context.conversation_length}",
             f"complex_{context.complexity.value}",
             f"expert_{context.user_expertise}",
-            f"urg_{context.urgency_level}"
+            f"urg_{context.urgency_level}",
         ]
 
         if context.recent_tools:
@@ -427,7 +423,7 @@ class AdvancedPatternAnalyzer:
             ComplexityLevel.SIMPLE: 0.5,
             ComplexityLevel.MODERATE: 1.0,
             ComplexityLevel.COMPLEX: 1.5,
-            ComplexityLevel.VERY_COMPLEX: 2.0
+            ComplexityLevel.VERY_COMPLEX: 2.0,
         }.get(interaction.context.complexity, 1.0)
 
         # Recent interactions are more valuable (exponential decay)
@@ -466,14 +462,11 @@ class AdvancedPatternAnalyzer:
         current_context: Dict,
         available_tools: List[str],
         goal: str,
-        constraints: Dict[str, Any] = None
+        constraints: Dict[str, Any] = None,
     ) -> List[PredictiveRecommendation]:
         """Get predictive recommendations with risk assessment"""
         return self.predictor.get_predictive_recommendations(
-            current_context,
-            available_tools,
-            goal,
-            constraints
+            current_context, available_tools, goal, constraints
         )
 
     def get_comprehensive_insights(self) -> Dict[str, Any]:
@@ -485,7 +478,7 @@ class AdvancedPatternAnalyzer:
                 "learning_progress": self.temporal_analyzer.analyze_learning_progress(),
                 "context_sensitivity": self._analyze_context_sensitivity(),
                 "risk_landscape": self._analyze_risk_landscape(),
-                "optimization_opportunities": self._identify_optimization_opportunities()
+                "optimization_opportunities": self._identify_optimization_opportunities(),
             }
 
     def _calculate_performance_metrics(self) -> Dict[str, float]:
@@ -495,8 +488,7 @@ class AdvancedPatternAnalyzer:
             return {}
 
         successes = sum(
-            1 for i in self.interactions.values()
-            if i.outcome == Outcome.SUCCESS
+            1 for i in self.interactions.values() if i.outcome == Outcome.SUCCESS
         )
 
         return {
@@ -505,7 +497,7 @@ class AdvancedPatternAnalyzer:
             "adaptation_efficiency": self._calculate_adaptation_efficiency(),
             "tool_diversity_index": self._calculate_tool_diversity(),
             "context_adaptation_score": self._calculate_context_adaptation(),
-            "learning_velocity": self.temporal_analyzer.calculate_learning_velocity()
+            "learning_velocity": self.temporal_analyzer.calculate_learning_velocity(),
         }
 
     def _calculate_weighted_success_rate(self) -> float:
@@ -527,7 +519,7 @@ class AdvancedPatternAnalyzer:
             ComplexityLevel.SIMPLE: 0.5,
             ComplexityLevel.MODERATE: 1.0,
             ComplexityLevel.COMPLEX: 1.5,
-            ComplexityLevel.VERY_COMPLEX: 2.0
+            ComplexityLevel.VERY_COMPLEX: 2.0,
         }
 
         base_weight = complexity_weights.get(interaction.context.complexity, 1.0)
@@ -537,10 +529,7 @@ class AdvancedPatternAnalyzer:
         return base_weight * urgency_factor * time_factor
 
     def optimize_approach(
-        self,
-        current_plan: List[str],
-        context: ContextSnapshot,
-        goal: str
+        self, current_plan: List[str], context: ContextSnapshot, goal: str
     ) -> Dict[str, Any]:
         """Optimize action plan based on learned patterns"""
         return self.sequence_analyzer.optimize_approach(current_plan, context, goal)

@@ -13,13 +13,16 @@ import datetime
 
 # --- NEW STARTUP SEQUENCE ---
 
+
 def play_startup_sequence(duration: float = 10) -> None:
     """Plays the custom Matrix rain animation for a set duration."""
     print("Initializing custom startup sequence...")
     run_animation(duration=duration)
     print("Sequence complete.")
 
+
 # --- CINEMATIC "DESCENT OF THE LOGOS" SEQUENCE ---
+
 
 def display_logos_intro() -> None:
     """Phase 0: Void - 'In the beginning was the Logos' - Rich version"""
@@ -30,7 +33,7 @@ def display_logos_intro() -> None:
     verses = [
         "In the beginning was the Logos...",
         "and the Logos was with God...",
-        "and the Logos is God."
+        "and the Logos is God.",
     ]
 
     try:
@@ -89,13 +92,17 @@ def monk_challenge() -> None:
                 cursor_sym = symbols[int(elapsed // 0.7) % 2]
 
                 lines = []
-                for i in range(console.size.height if hasattr(console, 'size') else 24):
+                for i in range(console.size.height if hasattr(console, "size") else 24):
                     if i == center_y:
-                        pad = " " * max(0, (console.size.width - len(challenge_text)) // 2)
+                        pad = " " * max(
+                            0, (console.size.width - len(challenge_text)) // 2
+                        )
                         lines.append(pad + challenge_text)  # ← PLAIN TEXT
                     elif i == center_y + 1:
                         # Show timeout notification
-                        timeout_pad = " " * max(0, (console.size.width - len(timeout_text)) // 2)
+                        timeout_pad = " " * max(
+                            0, (console.size.width - len(timeout_text)) // 2
+                        )
                         lines.append(timeout_pad + timeout_text)
                     elif i == center_y + 2:
                         cursor_line = " " * (center_x - 1) + f" {cursor_sym} "
@@ -107,13 +114,16 @@ def monk_challenge() -> None:
 
                 # Check for input
                 import sys
+
                 if sys.platform == "win32":
                     import msvcrt
+
                     if msvcrt.kbhit():
                         msvcrt.getch()
                         break
                 else:
                     import select
+
                     if select.select([sys.stdin], [], [], 0.1)[0]:
                         sys.stdin.readline()
                         break
@@ -211,6 +221,7 @@ def smooth_transition(duration: float = 1.0) -> None:
 
     console.clear()
 
+
 def play_complete_intro_sequence() -> None:
     """
     Play the complete 4-screen intro sequence with smooth transitions.
@@ -245,19 +256,24 @@ def play_complete_intro_sequence() -> None:
         console.print("[yellow]Continuing to main application...[/yellow]")
         time.sleep(1)
 
+
 # --- YOUR OTHER UI FUNCTIONS (UNCHANGED) ---
 # This function remains the same
 def typewriter_print(text: str, delay: float = 0.03) -> None:
     for char in text:
-        print(char, end='', flush=True)
+        print(char, end="", flush=True)
         time.sleep(delay)
     print()
 
-def scramble_text_in(text: str, scramble_chars: int = 2, char_delay: float = 0.02) -> None:
+
+def scramble_text_in(
+    text: str, scramble_chars: int = 2, char_delay: float = 0.02
+) -> None:
     """
     Display text with a scrambling effect that reveals characters from left to right.
     """
     from rich.live import Live
+
     console = Console()
     scramble_set = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;:,.<>?"
     lines = text.splitlines()
@@ -272,15 +288,17 @@ def scramble_text_in(text: str, scramble_chars: int = 2, char_delay: float = 0.0
 
         with Live(revealed_text, console=console, refresh_per_second=4) as live:
             for char in line:
-                if char == ' ':
-                    revealed_text.append(' ')
+                if char == " ":
+                    revealed_text.append(" ")
                     live.update(revealed_text)
                     continue
 
                 # Scramble effect
                 for _ in range(scramble_chars):
                     scramble_display = revealed_text.copy()
-                    scramble_display.append(random.choice(scramble_set), style="rgb(100,100,100)")
+                    scramble_display.append(
+                        random.choice(scramble_set), style="rgb(100,100,100)"
+                    )
                     live.update(scramble_display)
                     time.sleep(char_delay)
 
@@ -292,7 +310,10 @@ def scramble_text_in(text: str, scramble_chars: int = 2, char_delay: float = 0.0
         # Print final line to move cursor to next line
         console.print()
 
-def scramble_panel(title: str, content_markup: str, border_style: str = "green") -> None:
+
+def scramble_panel(
+    title: str, content_markup: str, border_style: str = "green"
+) -> None:
     """
     Displays a Rich Panel by typing its content in, line by line.
     """
@@ -301,7 +322,12 @@ def scramble_panel(title: str, content_markup: str, border_style: str = "green")
     revealed_lines = [""] * len(content_lines)
     panel_height = len(content_lines) + 2
 
-    panel = Panel("\n" * len(content_lines), title=title, border_style=border_style, height=panel_height)
+    panel = Panel(
+        "\n" * len(content_lines),
+        title=title,
+        border_style=border_style,
+        height=panel_height,
+    )
 
     with Live(panel, refresh_per_second=15, transient=False) as live:
         for i, line in enumerate(content_lines):
@@ -309,14 +335,29 @@ def scramble_panel(title: str, content_markup: str, border_style: str = "green")
             for char_idx, char in enumerate(line):
                 revealed_line_content += char
                 revealed_lines[i] = revealed_line_content
-                
-                current_content = "\n".join(revealed_lines)
-                live.update(Panel(current_content, title=title, border_style=border_style, height=panel_height))
 
-                if char == ' ' or char_idx == len(line) - 1:
+                current_content = "\n".join(revealed_lines)
+                live.update(
+                    Panel(
+                        current_content,
+                        title=title,
+                        border_style=border_style,
+                        height=panel_height,
+                    )
+                )
+
+                if char == " " or char_idx == len(line) - 1:
                     time.sleep(0.1)
 
-        live.update(Panel(content_markup, title=title, border_style=border_style, height=panel_height))
+        live.update(
+            Panel(
+                content_markup,
+                title=title,
+                border_style=border_style,
+                height=panel_height,
+            )
+        )
+
 
 def typewriter_prompt(text: str, delay: float = 0.05, show_cursor: bool = True) -> None:
     """Display text with typewriter effect and optional blinking cursor."""
@@ -361,7 +402,9 @@ def typewriter_prompt(text: str, delay: float = 0.05, show_cursor: bool = True) 
     # Final newline
     console.print()
 
+
 # Add this entire function to the end of ui/animations.py
+
 
 def display_monks_illumination() -> None:
     """
@@ -402,7 +445,7 @@ def display_monks_illumination() -> None:
     proclamation_pairs = [
         ("Χριστὸς φῶς...", "Christ is the Light..."),
         ("τὸ φῶς τοῦ κόσμου", "the Light of the world..."),
-        ("φωτίζει πάντα ἄνθρωπον", "illumines every person...")
+        ("φωτίζει πάντα ἄνθρωπον", "illumines every person..."),
     ]
 
     try:
@@ -445,13 +488,7 @@ def display_monks_illumination() -> None:
     console.clear()
 
     # Progressive cross illumination
-    cross_stages = [
-        "✦",
-        "✦✧✦",
-        "✧✦☦✦✧",
-        "✦✧☦✧✦",
-        "☦"
-    ]
+    cross_stages = ["✦", "✦✧✦", "✧✦☦✦✧", "✦✧☦✧✦", "☦"]
 
     cross_text = Text("", style="#44ff44")
 
@@ -516,7 +553,7 @@ def wait_for_enter() -> None:
         for cycle in range(3):  # 3 complete cycles
             for i in range(len(blink_chars) + 2):  # +2 for full display and pause
                 if i < len(blink_chars):
-                    visible_text = "".join(blink_chars[:i+1])
+                    visible_text = "".join(blink_chars[: i + 1])
                 else:
                     visible_text = "Enter-->"
 
@@ -556,7 +593,7 @@ def display_protocol_message() -> None:
     consecrations = [
         "Through the Cross, joy came into all the world...",
         "Christ sanctifies this digital realm...",
-        "The machine serves the Logos..."
+        "The machine serves the Logos...",
     ]
 
     for consecration in consecrations:
@@ -569,7 +606,7 @@ def display_protocol_message() -> None:
     typewriter_prompt(
         "Through the prayers of our holy Fathers, O Lord Jesus Christ our God, bless this work and save us. Amen.",
         delay=0.04,
-        show_cursor=True
+        show_cursor=True,
     )
     time.sleep(1.8)
 
@@ -616,7 +653,7 @@ def display_welcome_panel() -> None:
         "Ask about files, request changes, seek understanding",
         "The monk serves through conversation and tools alike",
         "",
-        "[#44ff44]✠ The workspace is blessed. Speak your intention, faithful servant. ✠[/]"
+        "[#44ff44]✠ The workspace is blessed. Speak your intention, faithful servant. ✠[/]",
     ]
 
     for line in welcome_lines:
