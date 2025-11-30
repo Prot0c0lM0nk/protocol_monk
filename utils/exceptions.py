@@ -1,7 +1,10 @@
+"""
+MonkCode Utilities Exception Definitions.
+"""
+
+
 class MonkUtilError(Exception):
     """Base exception for utility modules. No dependency on Agent."""
-
-    pass
 
 
 class JsonParsingError(MonkUtilError):
@@ -18,10 +21,6 @@ class JsonParsingError(MonkUtilError):
 class ContextError(MonkUtilError):
     """Raised when context-related operations fail."""
 
-    pass
-
 
 class ConfigurationError(MonkUtilError):
     """Raised when configuration is invalid or missing."""
-
-    pass

@@ -71,6 +71,8 @@ class _BracketParser:
     Encapsulates state to avoid passing 7+ arguments between functions.
     """
 
+    # pylint: disable=too-few-public-methods
+
     def __init__(self, text: str):
         self.text = text
         self.objects: List[Any] = []
