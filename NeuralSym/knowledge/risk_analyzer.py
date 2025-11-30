@@ -314,12 +314,33 @@ class RiskAnalyzer:
         Returns:
             List of verification steps as strings
         """
-        steps = []
         parts = self._parse_action(proposed_action)
         tool_name = parts.get("tool", "")
         args = parts.get("args", {})
 
-        # File verifications
+        # Generate verification steps based on action type
+        steps = []
+        steps.extend(self._generate_file_verification_steps(args))
+        steps.extend(self._generate_directory_verification_steps(args))
+        steps.extend(self._generate_command_verification_steps(tool_name, args))
+        
+        # Add default steps if no specific ones were generated
+        if not steps:
+            steps.extend(self._generate_default_verification_steps())
+
+        return steps
+
+    def _generate_file_verification_steps(self, args: Dict[str, Any]) -> List[str]:
+        """Generate verification steps for file-related actions.
+
+        Args:
+            args: Arguments that may contain file paths
+
+        Returns:
+            List of file verification steps
+        """
+        steps = []
+
         if "filepath" in args or "file" in args:
             filepath = args.get("filepath") or args.get("file", "")
             steps.append(f"1. Verify file exists: execute_command('ls {filepath}')")
@@ -331,13 +352,38 @@ class RiskAnalyzer:
                 directory = "/".join(filepath.split("/")[:-1])
                 steps.append(f"2. Verify directory: execute_command('ls {directory}')")
 
-        # Directory checks
+        return steps
+
+    def _generate_directory_verification_steps(self, args: Dict[str, Any]) -> List[str]:
+        """Generate verification steps for directory-related actions.
+
+        Args:
+            args: Arguments that may contain directory paths
+
+        Returns:
+            List of directory verification steps
+        """
+        steps = []
+
         if "directory" in args or "dir" in args:
             directory = args.get("directory") or args.get("dir", "")
             steps.append(f"1. Verify directory: execute_command('ls {directory}')")
             steps.append(f"2. Check permissions: execute_command('ls -ld {directory}')")
 
-        # Command checks
+        return steps
+
+    def _generate_command_verification_steps(self, tool_name: str, args: Dict[str, Any]) -> List[str]:
+        """Generate verification steps for command execution actions.
+
+        Args:
+            tool_name: Name of the tool being executed
+            args: Arguments for the tool
+
+        Returns:
+            List of command verification steps
+        """
+        steps = []
+
         if tool_name == "execute_command":
             command = args.get("command", "") or args.get("filepath", "")
             cmd_name = command.split()[0] if command.split() else command
@@ -346,11 +392,18 @@ class RiskAnalyzer:
                     f"1. Verify command available: execute_command('which {cmd_name}')"
                 )
 
-        if not steps:
-            steps.append("1. Verify current directory: execute_command('pwd')")
-            steps.append("2. Review verified facts")
-
         return steps
+
+    def _generate_default_verification_steps(self) -> List[str]:
+        """Generate default verification steps.
+
+        Returns:
+            List of default verification steps
+        """
+        return [
+            "1. Verify current directory: execute_command('pwd')",
+            "2. Review verified facts"
+        ]
 
     # ---------- Internal ----------
     def _parse_action(self, action_str: str) -> Dict[str, Any]:

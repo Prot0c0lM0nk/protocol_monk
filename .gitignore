@@ -69,6 +69,8 @@ context_snapshots/
 *.py.bak
 tests/
 .pytest_cache
+NeuralSym/docs/SeniorRefactorArchitect.txt
+
 # Local configuration
 *.local
 config/local_*
