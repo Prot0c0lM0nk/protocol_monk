@@ -61,23 +61,15 @@ class RiskAnalyzer:
         }
         self._failure_embeddings.append(failure_vec)
 
-    def relevant_context(self, intent: str) -> Dict[str, Any]:
-        """Extract relevant context information based on the intent.
-
-        Maps intents to relevant fact types and returns current state,
-        potential issues, known failures, and verified assumptions.
+    def _get_relevant_fact_types(self, intent: str) -> List[str]:
+        """Get relevant fact types based on the intent.
 
         Args:
             intent: The intent string to analyze
 
         Returns:
-            Dictionary containing context information with keys:
-            - current_state: Verified facts relevant to the intent
-            - potential_issues: Assumed/uncertain facts
-            - known_failures: Recent refuted facts
-            - verified_assumptions: High-confidence verified facts
+            List of relevant fact types
         """
-        # Map intent to relevant fact types
         intent_map = {
             "FILE_READ_INTENT": ["file_exists", "file_permissions", "file_location"],
             "FILE_WRITE_INTENT": [
@@ -113,15 +105,35 @@ class RiskAnalyzer:
                 "network_available",
             ],
         }
-        relevant_types = intent_map.get(intent, [])
+        return intent_map.get(intent, [])
+
+    def relevant_context(self, intent: str) -> Dict[str, Any]:
+        """Extract relevant context information based on the intent.
+
+        Maps intents to relevant fact types and returns current state,
+        potential issues, known failures, and verified assumptions.
+
+        Args:
+            intent: The intent string to analyze
+
+        Returns:
+            Dictionary containing context information with keys:
+            - current_state: Verified facts relevant to the intent
+            - potential_issues: Assumed/uncertain facts
+            - known_failures: Recent refuted facts
+            - verified_assumptions: High-confidence verified facts
+        """
+        relevant_types = self._get_relevant_fact_types(intent)
+        
+        # Initialize context
         context = {
             "current_state": {},
             "potential_issues": [],
             "known_failures": [],
             "verified_assumptions": [],
         }
-
-        # Current verified state
+        
+        # Populate current verified state
         for ft in relevant_types:
             facts = [
                 f
@@ -131,8 +143,8 @@ class RiskAnalyzer:
             if facts:
                 latest = max(facts, key=lambda f: f.updated_at)
                 context["current_state"][ft] = latest.value
-
-        # Potential issues (assumed/uncertain)
+        
+        # Populate potential issues (assumed/uncertain)
         for fact in self._facts.values():
             if fact.status in (FactStatus.ASSUMED, FactStatus.UNCERTAIN):
                 context["potential_issues"].append(
@@ -143,8 +155,8 @@ class RiskAnalyzer:
                         "warning": f"Unverified: {fact.fact_type}",
                     }
                 )
-
-        # Recent failures
+        
+        # Populate recent failures
         refuted = [f for f in self._facts.values() if f.status == FactStatus.REFUTED]
         refuted.sort(key=lambda f: f.updated_at, reverse=True)
         for fact in refuted[:5]:
@@ -156,8 +168,8 @@ class RiskAnalyzer:
                         "args": fact.value.get("args", {}),
                     }
                 )
-
-        # Verified assumptions (high-confidence)
+        
+        # Populate verified assumptions (high-confidence)
         verified = [f for f in self._facts.values() if f.status == FactStatus.VERIFIED]
         verified.sort(key=lambda f: f.confidence, reverse=True)
         for fact in verified[:3]:
@@ -168,7 +180,7 @@ class RiskAnalyzer:
                     "confidence": fact.confidence,
                 }
             )
-
+        
         return context
 
     def _analyze_file_path_risks(
