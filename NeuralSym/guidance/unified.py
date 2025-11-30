@@ -1,8 +1,6 @@
-import logging
 import re
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Dict, Literal, Tuple
 
 
 @dataclass
@@ -71,9 +69,11 @@ class UnifiedGuidanceSystem:
         if style == "direct":
             return f"CRITICAL: Avoid {', '.join(risks)}. Do {', '.join(facts)}."
         elif style == "structured":
-            return f"Context: {intent}\nRisks: {', '.join(risks)}\nPlan: {', '.join(facts)}"
+            return (f"Context: {intent}\nRisks: {', '.join(risks)}\n"
+                    f"Plan: {', '.join(facts)}")
         else:  # "verbose"
-            return f"Model: {model_name}\nContext: {intent}\nRisks: {', '.join(risks)}\nPlan: {', '.join(facts)}"
+            return (f"Model: {model_name}\nContext: {intent}\n"
+                    f"Risks: {', '.join(risks)}\nPlan: {', '.join(facts)}")
 
 
 # For testing/debugging

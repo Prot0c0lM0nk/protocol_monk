@@ -46,7 +46,11 @@ class Evidence:
     tool_result: Optional[Any] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize Evidence to dictionary."""
+        """Serialize Evidence to dictionary.
+
+        Returns:
+            Dict[str, Any]: Dictionary representation of the Evidence
+        """
         data = asdict(self)
         # Convert enum to its name for JSON serialization
         data["strength"] = self.strength.name
@@ -62,7 +66,19 @@ class Evidence:
         tool_args: Optional[Dict[str, Any]] = None,
         tool_result: Optional[Any] = None,
     ) -> Evidence:
-        """Factory helper to create Evidence with auto-generated ID and timestamp."""
+        """Factory helper to create Evidence with auto-generated ID and timestamp.
+
+        Args:
+            source: Source of the evidence
+            content: Content of the evidence
+            strength: Strength level of the evidence
+            tool_used: Name of tool that generated this evidence
+            tool_args: Arguments passed to the tool
+            tool_result: Result returned by the tool
+
+        Returns:
+            Evidence: New Evidence instance with auto-generated ID and timestamp
+        """
         return cls(
             id=str(uuid.uuid4()),
             source=source,
@@ -76,7 +92,14 @@ class Evidence:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Evidence:
-        """Deserialize Evidence from dictionary."""
+        """Deserialize Evidence from dictionary.
+
+        Args:
+            data: Dictionary containing Evidence data
+
+        Returns:
+            Evidence: New Evidence instance from the dictionary data
+        """
         # Convert strength string back to enum
         strength = data.get("strength")
         if isinstance(strength, str):
@@ -119,7 +142,11 @@ class Fact:
     context_tags: Set[str] = field(default_factory=set)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize Fact to dictionary."""
+        """Serialize Fact to dictionary.
+
+        Returns:
+            Dict[str, Any]: Dictionary representation of the Fact
+        """
         # Manually serialize to ensure proper enum handling
         return {
             "id": self.id,
@@ -147,7 +174,19 @@ class Fact:
         context_tags: Optional[Set[str]] = None,
         depends_on: Optional[List[str]] = None,
     ) -> Fact:
-        """Factory helper to create Fact with auto-generated ID and timestamps."""
+        """Factory helper to create Fact with auto-generated ID and timestamps.
+
+        Args:
+            fact_type: Type of the fact
+            value: Value of the fact
+            evidence: Evidence supporting this fact
+            status: Status of the fact
+            context_tags: Set of context tags
+            depends_on: List of fact IDs this fact depends on
+
+        Returns:
+            Fact: New Fact instance with auto-generated ID and timestamps
+        """
         return cls(
             id=str(uuid.uuid4()),
             fact_type=fact_type,
@@ -164,11 +203,19 @@ class Fact:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> Fact:
-        """Deserialize Fact from dictionary."""
+        """Deserialize Fact from dictionary.
+
+        Args:
+            data: Dictionary containing Fact data
+
+        Returns:
+            Fact: New Fact instance from the dictionary data
+        """
         # Convert status string back to enum
         status = data.get("status")
         if isinstance(status, str):
-            # Try value first (lowercase like "verified"), then name (uppercase like "VERIFIED")
+            # Try value first (lowercase like "verified"),
+            # then name (uppercase like "VERIFIED")
             try:
                 status = FactStatus(status.lower())
             except ValueError:

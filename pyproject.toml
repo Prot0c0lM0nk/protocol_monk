@@ -24,10 +24,3 @@ multi_line_output = 3
 line_length = 88
 known_first_party = ["agent", "ui", "tools", "NeuralSym", "config"]
 known_third_party = ["abc", "ast", "asyncio", "colorama", "dataclasses", "dotenv", "groq", "importlib", "json", "logging", "numpy", "openai", "os", "pathlib", "pydantic", "pytest", "random", "re", "rich", "subprocess", "sys", "textual", "time", "torch", "tqdm", "typing", "uuid", "yaml"]
-
-[tool.flake8]
-max-line-length = 88
-extend-ignore = [
-    "E203",  # whitespace before ':'
-    "W503",  # line break before binary operator
-]
