@@ -203,14 +203,14 @@ class RiskAnalyzer:
             - verified_assumptions: High-confidence verified facts
         """
         relevant_types = self._get_relevant_fact_types(intent)
-        
+
         context = {
             "current_state": self._populate_current_state(relevant_types),
             "potential_issues": self._populate_potential_issues(),
             "known_failures": self._populate_known_failures(),
             "verified_assumptions": self._populate_verified_assumptions(),
         }
-        
+
         return context
 
     def _analyze_file_path_risks(
@@ -264,7 +264,9 @@ class RiskAnalyzer:
 
         return risks
 
-    def _check_similar_file_failures(self, tool_name: str, args: Dict[str, Any]) -> List[str]:
+    def _check_similar_file_failures(
+        self, tool_name: str, args: Dict[str, Any]
+    ) -> List[str]:
         """Check for similar file path failure patterns.
 
         Args:
@@ -365,7 +367,7 @@ class RiskAnalyzer:
         steps.extend(self._generate_file_verification_steps(args))
         steps.extend(self._generate_directory_verification_steps(args))
         steps.extend(self._generate_command_verification_steps(tool_name, args))
-        
+
         # Add default steps if no specific ones were generated
         if not steps:
             steps.extend(self._generate_default_verification_steps())
@@ -414,7 +416,9 @@ class RiskAnalyzer:
 
         return steps
 
-    def _generate_command_verification_steps(self, tool_name: str, args: Dict[str, Any]) -> List[str]:
+    def _generate_command_verification_steps(
+        self, tool_name: str, args: Dict[str, Any]
+    ) -> List[str]:
         """Generate verification steps for command execution actions.
 
         Args:
@@ -444,7 +448,7 @@ class RiskAnalyzer:
         """
         return [
             "1. Verify current directory: execute_command('pwd')",
-            "2. Review verified facts"
+            "2. Review verified facts",
         ]
 
     # ---------- Internal ----------
