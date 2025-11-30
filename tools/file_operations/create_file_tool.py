@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-Create File Tool - Tool for creating new files with content
+Create File Tool - Tool for creating new files with content.
 """
 
 import os
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Tuple, Optional
 
-from agent import exceptions
-from tools.base import BaseTool, ToolSchema, ToolResult, ExecutionStatus
+from tools.base import BaseTool, ToolSchema, ToolResult
 from tools.file_operations.auto_stage_large_content import auto_stage_large_content
 
 
@@ -24,133 +23,127 @@ class CreateFileTool(BaseTool):
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name="create_file",
-            description="Create a new file with specified content. For large files, use 'remember' tool first, then reference with content_from_memory.",
+            description=(
+                "Create a new file with specified content. For large files, "
+                "use 'remember' tool first, then reference with content_from_memory."
+            ),
             parameters={
                 "filepath": {
                     "type": "string",
-                    "description": "Path to the file to create (relative to working directory)",
+                    "description": "Path to the file (relative to working directory)",
                 },
                 "content": {
                     "type": "string",
-                    "description": "Content to write to the file (for small content). For large files, use content_from_memory instead.",
+                    "description": "Content to write (for small content).",
                 },
                 "content_from_memory": {
                     "type": "string",
-                    "description": "Memory key containing the file content (use 'remember' tool first to store large content)",
+                    "description": "Memory key containing content.",
                 },
                 "content_from_scratch": {
                     "type": "string",
-                    "description": "Scratch ID for staged code block (system auto-stages code blocks from conversational output)",
+                    "description": "Scratch ID for staged code block.",
                 },
             },
             required_params=["filepath"],
         )
 
     def execute(self, **kwargs) -> ToolResult:
-        """Create a new file with content."""
+        """Orchestrate file creation."""
         filepath = kwargs.get("filepath")
-        content = kwargs.get("content")
-        content_from_memory = kwargs.get("content_from_memory")
-        content_from_scratch = kwargs.get("content_from_scratch")
-
-        # Validate required parameters
         if not filepath:
             return ToolResult.invalid_params(
                 "❌ Missing required parameter: 'filepath'", missing_params=["filepath"]
             )
 
-        # AUTO-STAGING: If inline content is too large, auto-stage it
-        if content:
-            staged_id = auto_stage_large_content(content, self.working_dir)
-            if staged_id:
-                content_from_scratch = staged_id
-                content = None
+        # 1. Resolve Content
+        content, error = self._resolve_content(kwargs)
+        if error:
+            return error
 
-        # Get content from scratch, memory, or inline parameter (priority order)
-        if content_from_scratch:
-            # Read from scratch file
-            scratch_path = self.working_dir / ".scratch" / f"{content_from_scratch}.txt"
-            if not scratch_path.exists():
-                return ToolResult(
-                    ExecutionStatus.INVALID_PARAMS,
-                    f"❌ Scratch file '{content_from_scratch}' not found. Available scratch files: {list((self.working_dir / '.scratch').glob('*.txt'))}",
-                )
-            try:
-                content = scratch_path.read_text(encoding="utf-8")
-            except Exception as e:
-                return ToolResult(
-                    ExecutionStatus.INTERNAL_ERROR,
-                    f"❌ Failed to read scratch file '{content_from_scratch}': {e}",
-                )
-        elif content_from_memory:
-            return ToolResult.internal_error(
-                "❌ The 'content_from_memory' feature is not supported in this version."
-            )
-        elif content is None:
-            # Default to creating an empty file if no content is provided
-            content = ""
-
-        # Security validation for file path
+        # 2. Security Check
         if not self._is_safe_file_path(filepath):
             return ToolResult.security_blocked(
                 f"🔒 File path blocked due to security policy: {filepath}",
                 reason="Unsafe file path",
             )
 
+        # 3. Perform Write
+        return self._perform_atomic_write(filepath, content)
+
+    def _resolve_content(self, kwargs: dict) -> Tuple[str, Optional[ToolResult]]:
+        """Determine the final content source (Scratch vs Memory vs Inline)."""
+        content = kwargs.get("content")
+        scratch_id = kwargs.get("content_from_scratch")
+        memory_key = kwargs.get("content_from_memory")
+
+        # Auto-stage inline content if it's too large
+        if content:
+            staged_id = auto_stage_large_content(content, self.working_dir)
+            if staged_id:
+                scratch_id = staged_id
+                content = None
+
+        if scratch_id:
+            return self._read_scratch_file(scratch_id)
+
+        if memory_key:
+            return "", ToolResult.internal_error(
+                "❌ The 'content_from_memory' feature is not supported in this version."
+            )
+
+        return content if content is not None else "", None
+
+    def _read_scratch_file(self, scratch_id: str) -> Tuple[str, Optional[ToolResult]]:
+        """Read content from a staged scratch file."""
+        scratch_path = self.working_dir / ".scratch" / f"{scratch_id}.txt"
+
+        if not scratch_path.exists():
+            return "", ToolResult.invalid_params(
+                f"❌ Scratch file '{scratch_id}' not found.",
+                missing_params=["content_from_scratch"],
+            )
+
+        try:
+            return scratch_path.read_text(encoding="utf-8"), None
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            return "", ToolResult.internal_error(
+                f"❌ Failed to read scratch file '{scratch_id}': {e}"
+            )
+
+    def _perform_atomic_write(self, filepath: str, content: str) -> ToolResult:
+        """Handle the safe, atomic writing of the file."""
         full_path = self.working_dir / filepath
 
         try:
-            # Create parent directories if they don't exist
-            full_path.parent.mkdir(parents=True, exist_ok=True)
-
             if full_path.exists():
                 return ToolResult.command_failed(
                     f"❌ File already exists: {filepath}", exit_code=1
                 )
 
-            # Atomic write: write to temp file, then replace
-            temp_path = full_path.with_suffix(f"{full_path.suffix}.tmp")
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            self._write_to_disk(full_path, content)
 
-            # Write and sync in one operation
+            return ToolResult.success_result(f"✅ Created {filepath}")
+
+        except PermissionError as e:
+            self.logger.warning("Permission denied for %s: %s", filepath, e)
+            return ToolResult.security_blocked(f"🔒 Permission denied: {filepath}")
+        except OSError as e:
+            self.logger.error("File system error creating %s: %s", filepath, e)
+            return ToolResult.internal_error(f"❌ File system error: {e}")
+
+    def _write_to_disk(self, full_path: Path, content: str):
+        """Low-level atomic write operation."""
+        temp_path = full_path.with_suffix(f"{full_path.suffix}.tmp")
+        try:
             with temp_path.open("w", encoding="utf-8") as f:
                 f.write(content)
                 f.flush()
                 os.fsync(f.fileno())
-
-            # Atomic replace operation (already durable after fsync above)
             os.replace(temp_path, full_path)
-
-            # Show the created file content
-            self._show_file_content(filepath, content, "Created")
-
-            return ToolResult.success_result(f"✅ Created {filepath}")
-
-        except FileExistsError:
-            return ToolResult.command_failed(
-                f"❌ File already exists: {filepath}", exit_code=1
-            )
-        except PermissionError as e:
-            self.logger.warning(f"Permission denied for {filepath}: {e}", exc_info=True)
-            return ToolResult.security_blocked(
-                f"🔒 Permission denied: Cannot create {filepath}.", reason=str(e)
-            )
-        except UnicodeEncodeError as e:
-            return ToolResult.internal_error(
-                f"❌ Encoding error: Cannot write content to {filepath} as 'utf-8'. Error: {e}"
-            )
-        except (IOError, OSError) as e:
-            self.logger.error(
-                f"File system error creating file {filepath}: {e}", exc_info=True
-            )
-            return ToolResult.internal_error(f"❌ File system error: {e}")
-        except Exception as e:
-            self.logger.error(
-                f"Unexpected error creating file {filepath}: {e}", exc_info=True
-            )
-            return ToolResult.internal_error(f"❌ Unexpected error: {e}")
-
-    def _show_file_content(self, filepath: str, content: str, action: str):
-        """Helper to format file content for display."""
-        # This is a placeholder. In a real CLI, you might use a pager or truncate.
-        header = f"📄 {action} file: {filepath}"
-        # self.console.print(f"\n{header}\n{'─' * len(header)}\n{content}\n{'─' * len(header)}\n")
+        except Exception:
+            # Clean up temp file on failure
+            if temp_path.exists():
+                os.remove(temp_path)
+            raise

@@ -6,7 +6,7 @@ Run Python Tool - Execute Python code by leveraging the ExecuteCommandTool.
 import sys
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Optional, Tuple
 
 from tools.base import BaseTool, ToolSchema, ToolResult, ExecutionStatus
 from tools.shell_operations.execute_command_tool import ExecuteCommandTool
@@ -24,7 +24,7 @@ class RunPythonTool(BaseTool):
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name="run_python",
-            description="Execute Python code in a temporary script. The code should be self-contained.",
+            description="Execute Python code in a temporary script.",
             parameters={
                 "script_content": {
                     "type": "string",
@@ -40,107 +40,67 @@ class RunPythonTool(BaseTool):
         )
 
     def execute(self, **kwargs) -> ToolResult:
-        """
-        Writes Python code to a temporary file and uses ExecuteCommandTool to run it.
-        """
-        script_content = kwargs.get("script_content")
-        script_name = kwargs.get("script_name", "temp_python_script.py")
+        """Orchestrate the python execution."""
+        content = kwargs.get("script_content")
+        name = kwargs.get("script_name", "temp_python_script.py")
 
-        if not script_content:
+        if not content:
             return ToolResult.invalid_params(
-                "❌ Missing required parameter: 'script_content'",
+                "❌ Missing parameter: 'script_content'",
                 missing_params=["script_content"],
             )
 
-        temp_file_path = self.working_dir / script_name
+        # 1. Write Script
+        file_path, error = self._write_temp_script(name, content)
+        if error:
+            return error
 
-        # Ensure the file path is safe (within working directory)
-        if not self._is_safe_file_path(
-            str(temp_file_path.relative_to(self.working_dir))
-        ):
-            return ToolResult.security_blocked(
-                f"File path is outside the working directory: {script_name}"
+        # 2. Execute Script
+        try:
+            return self._run_script_execution(file_path, content)  # type: ignore
+        finally:
+            self._cleanup(file_path)  # type: ignore
+
+    def _write_temp_script(
+        self, name: str, content: str
+    ) -> Tuple[Optional[Path], Optional[ToolResult]]:
+        """Safely write the content to a temporary file."""
+        temp_path = self.working_dir / name
+
+        if not self._is_safe_file_path(str(temp_path.relative_to(self.working_dir))):
+            return None, ToolResult.security_blocked(
+                f"File path is outside the working directory: {name}"
             )
 
         try:
-            # Write the Python code to the temporary file
-            temp_file_path.write_text(script_content, encoding="utf-8")
-            self.logger.info(f"Created temporary Python script: {temp_file_path}")
+            temp_path.write_text(content, encoding="utf-8")
+            self.logger.info("Created temporary Python script: %s", temp_path)
+            return temp_path, None
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.logger.error("Failed to write temp script: %s", e)
+            return None, ToolResult.internal_error(f"❌ Failed to write script: {e}")
 
-            # Construct the command to execute the script
-            command = f"{sys.executable} {temp_file_path.name}"
-            description = "Executing temporary Python script."
+    def _run_script_execution(
+        self, file_path: Path, original_content: str
+    ) -> ToolResult:
+        """Delegate execution to ExecuteCommandTool."""
+        command = f"{sys.executable} {file_path.name}"
 
-            # Delegate execution to the ExecuteCommandTool
-            self.logger.info(f"Executing command: {command}")
-            result = self.command_executor.execute(
-                command=command, description=description
-            )
+        result = self.command_executor.execute(
+            command=command, description="Executing temporary Python script."
+        )
 
-            # Augment the result with Python-specific context
-            if hasattr(result, "data") and isinstance(result.data, dict):
-                result.data["script_content"] = script_content
-            return result
+        # Inject context
+        if hasattr(result, "data") and isinstance(result.data, dict):
+            result.data["script_content"] = original_content
 
-        except SyntaxError as e:
-            self.logger.error(f"Python syntax error: {e}", exc_info=True)
-            return ToolResult(
-                ExecutionStatus.EXTERNAL_ERROR,
-                f"Python syntax error: {str(e)}",
-                {
-                    "error_type": "SyntaxError",
-                    "script_name": script_name,
-                    "details": str(e),
-                },
-            )
-        except ImportError as e:
-            self.logger.error(f"Python import error: {e}", exc_info=True)
-            return ToolResult(
-                ExecutionStatus.EXTERNAL_ERROR,
-                f"Python import error: {str(e)}",
-                {
-                    "error_type": "ImportError",
-                    "script_name": script_name,
-                    "details": str(e),
-                },
-            )
-        except PermissionError as e:
-            self.logger.error(f"Permission denied: {e}", exc_info=True)
-            return ToolResult(
-                ExecutionStatus.EXTERNAL_ERROR,
-                f"Permission denied: {str(e)}",
-                {
-                    "error_type": "PermissionError",
-                    "script_name": script_name,
-                    "details": str(e),
-                },
-            )
-        except FileNotFoundError as e:
-            self.logger.error(f"File not found: {e}", exc_info=True)
-            return ToolResult(
-                ExecutionStatus.EXTERNAL_ERROR,
-                f"File not found: {str(e)}",
-                {
-                    "error_type": "FileNotFoundError",
-                    "script_name": script_name,
-                    "details": str(e),
-                },
-            )
-        except Exception as e:
-            self.logger.error(
-                f"An unexpected error occurred in RunPythonTool: {e}", exc_info=True
-            )
-            return ToolResult.internal_error(
-                f"❌ An unexpected error occurred while trying to run the Python script: {e}"
-            )
-        finally:
-            # Ensure the temporary file is cleaned up
-            if temp_file_path.exists():
-                try:
-                    temp_file_path.unlink()
-                    self.logger.info(f"Cleaned up temporary script: {temp_file_path}")
-                except Exception as e:
-                    self.logger.warning(
-                        f"Failed to clean up temporary script {temp_file_path}: {e}",
-                        exc_info=True,
-                    )
+        return result
+
+    def _cleanup(self, file_path: Path):
+        """Remove the temporary file."""
+        if file_path and file_path.exists():
+            try:
+                file_path.unlink()
+                self.logger.info("Cleaned up temporary script: %s", file_path)
+            except OSError as e:
+                self.logger.warning("Failed to clean up script %s: %s", file_path, e)

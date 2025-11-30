@@ -7,10 +7,10 @@ import inspect
 import logging
 import sys
 import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from pathlib import Path
 
-from .base import BaseTool, ToolResult
+from tools.base import BaseTool, ToolResult
 from agent.tools.exceptions import ToolNotFoundError
 
 
@@ -47,58 +47,78 @@ class ToolRegistry:
         tools_dir = Path(__file__).parent
 
         for file_path in tools_dir.glob("**/*.py"):
-            if file_path.stem.startswith("_") or file_path.stem in ["base", "registry"]:
+            if self._should_skip_file(file_path):
                 continue
+            self._load_module_from_path(file_path, tools_dir)
 
-            try:
-                # Calculate module path (e.g., tools.file_operations.create_file_tool)
-                relative_path = file_path.relative_to(tools_dir.parent)
-                module_name = ".".join(
-                    list(relative_path.parts[:-1]) + [file_path.stem]
-                )
+    def _should_skip_file(self, file_path: Path) -> bool:
+        """Check if file should be skipped during discovery."""
+        return file_path.stem.startswith("_") or file_path.stem in [
+            "base",
+            "registry",
+            "exceptions",
+        ]
 
-                if module_name in sys.modules:
-                    module = importlib.reload(sys.modules[module_name])
-                else:
-                    module = importlib.import_module(module_name)
+    def _load_module_from_path(self, file_path: Path, tools_dir: Path):
+        """Load a single module from a file path."""
+        try:
+            relative_path = file_path.relative_to(tools_dir.parent)
+            module_name = ".".join(list(relative_path.parts[:-1]) + [file_path.stem])
 
-                self._register_tools_from_module(module)
+            if module_name in sys.modules:
+                module = importlib.reload(sys.modules[module_name])
+            else:
+                module = importlib.import_module(module_name)
 
-            except Exception as e:
-                self.logger.error(f"Failed to load tools from {file_path.name}: {e}")
+            self._register_tools_from_module(module)
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.logger.error("Failed to load tools from %s: %s", file_path.name, e)
 
     def _register_tools_from_module(self, module):
-        """Helper to inspect a module and register valid tools."""
-        for name, obj in inspect.getmembers(module, inspect.isclass):
-            if (
-                issubclass(obj, BaseTool)
-                and obj != BaseTool
-                and not inspect.isabstract(obj)
-            ):
-                try:
-                    # Dependency Injection
-                    tool_params = inspect.signature(obj.__init__).parameters
-                    dependencies = {
-                        "working_dir": self.working_dir,
-                        "context_manager": self.context_manager,
-                        "agent_logger": self.agent_logger,
-                        "preferred_env": self.preferred_env,
-                        "venv_path": self.venv_path,
-                    }
+        """Inspect a module and register valid tools."""
+        for _, obj in inspect.getmembers(module, inspect.isclass):
+            if self._is_valid_tool_class(obj):
+                self._register_single_tool(obj)
 
-                    # Only pass what the tool asks for
-                    init_args = {
-                        k: v for k, v in dependencies.items() if k in tool_params
-                    }
+    def _is_valid_tool_class(self, obj) -> bool:
+        """Check if class is a valid BaseTool subclass."""
+        return (
+            issubclass(obj, BaseTool)
+            and obj != BaseTool
+            and not inspect.isabstract(obj)
+        )
 
-                    tool_instance = obj(**init_args)
-                    self._tools[tool_instance.schema.name] = tool_instance
-                    self.logger.debug(f"Registered tool: {tool_instance.schema.name}")
+    def _register_single_tool(self, tool_class):
+        """Instantiate and register a single tool class."""
+        try:
+            dependencies = self._get_tool_dependencies()
+            tool_params = inspect.signature(tool_class.__init__).parameters
 
-                except Exception as e:
-                    self.logger.error(
-                        f"Failed to instantiate tool class {name}: {e}", exc_info=True
-                    )
+            # Only pass what the tool asks for
+            init_args = {k: v for k, v in dependencies.items() if k in tool_params}
+
+            tool_instance = tool_class(**init_args)
+            self._tools[tool_instance.schema.name] = tool_instance
+            self.logger.debug("Registered tool: %s", tool_instance.schema.name)
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.logger.error(
+                "Failed to instantiate tool class %s: %s",
+                tool_class.__name__,
+                e,
+                exc_info=True,
+            )
+
+    def _get_tool_dependencies(self) -> Dict[str, Any]:
+        """Create dependency dictionary for injection."""
+        return {
+            "working_dir": self.working_dir,
+            "context_manager": self.context_manager,
+            "agent_logger": self.agent_logger,
+            "preferred_env": self.preferred_env,
+            "venv_path": self.venv_path,
+        }
 
     async def get_tool(self, name: str) -> Optional[BaseTool]:
         async with self._lock:
@@ -111,15 +131,23 @@ class ToolRegistry:
             available = list(self._tools.keys())
             raise ToolNotFoundError(tool_name=name, available_tools=available)
 
-        # Parameter Validation
-        required = tool.schema.required_params
-        missing = [p for p in required if p not in kwargs]
-
+        missing = self._validate_tool_params(tool, kwargs)
         if missing:
             return ToolResult.invalid_params(
                 f"Missing required parameters: {missing}", missing_params=missing
             )
 
+        return await self._run_tool_execution(tool, name, kwargs)
+
+    def _validate_tool_params(self, tool: BaseTool, kwargs: Dict) -> List[str]:
+        """Check for missing required parameters."""
+        required = tool.schema.required_params
+        return [p for p in required if p not in kwargs]
+
+    async def _run_tool_execution(
+        self, tool: BaseTool, name: str, kwargs: Dict
+    ) -> ToolResult:
+        """Handle the actual execution and logging."""
         try:
             if asyncio.iscoroutinefunction(tool.execute):
                 result = await tool.execute(**kwargs)
@@ -130,8 +158,8 @@ class ToolRegistry:
                 self.agent_logger.log_tool_result(name, kwargs, result)
             return result
 
-        except Exception as e:
-            self.logger.error(f"Tool execution error '{name}'", exc_info=True)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.logger.error("Tool execution error '%s'", name, exc_info=True)
             return ToolResult.internal_error(f"Tool execution error: {str(e)}")
 
     # --- Helper Methods ---

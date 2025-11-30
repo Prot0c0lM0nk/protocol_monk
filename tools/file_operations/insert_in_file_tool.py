@@ -39,11 +39,11 @@ class InsertInFileTool(BaseTool):
                 },
                 "content": {
                     "type": "string",
-                    "description": "Content to insert (for small content).",
+                    "description": "Content to insert.",
                 },
                 "content_from_memory": {
                     "type": "string",
-                    "description": "Memory key containing the content to insert.",
+                    "description": "Memory key containing the content.",
                 },
                 "content_from_scratch": {
                     "type": "string",
@@ -53,170 +53,199 @@ class InsertInFileTool(BaseTool):
             required_params=["filepath", "after_line"],
         )
 
+    def execute(self, **kwargs) -> ToolResult:
+        """Orchestrate the insertion."""
+        # 1. Validate & Resolve Content
+        filepath, target_line, content, error = self._validate_inputs(kwargs)
+        if error:
+            return error
+
+        # 2. Logic: Read -> Find -> Splice
+        full_path = self.working_dir / filepath
+        new_text, insert_idx, added_lines, logic_error = self._apply_insertion(
+            full_path, target_line, content  # type: ignore
+        )
+        if logic_error:
+            return logic_error
+
+        # 3. Write
+        write_error = self._perform_atomic_write(full_path, new_text)  # type: ignore
+        if write_error:
+            return write_error
+
+        # 4. Result
+        return self._format_success(
+            filepath, insert_idx, added_lines, new_text.splitlines()  # type: ignore
+        )
+
+    def _validate_inputs(
+        self, kwargs: dict
+    ) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[ToolResult]]:
+        """Validate parameters and resolve content source."""
+        filepath = kwargs.get("filepath")
+        target_line = kwargs.get("after_line")
+
+        if not filepath or not target_line:
+            return (
+                None,
+                None,
+                None,
+                ToolResult.invalid_params(
+                    "❌ Missing required params.",
+                    missing_params=["filepath", "after_line"],
+                ),
+            )
+
+        if not self._is_safe_file_path(filepath):
+            return (
+                None,
+                None,
+                None,
+                ToolResult.security_blocked(f"🔒 File path blocked: {filepath}"),
+            )
+
+        content, error = self._resolve_content(**kwargs)
+        if error:
+            return None, None, None, error
+
+        return filepath, target_line, content, None
+
     def _resolve_content(self, **kwargs) -> Tuple[Optional[str], Optional[ToolResult]]:
         """Resolve content from scratch, memory, or inline."""
         content = kwargs.get("content")
-        content_from_memory = kwargs.get("content_from_memory")
-        content_from_scratch = kwargs.get("content_from_scratch")
+        memory_key = kwargs.get("content_from_memory")
+        scratch_id = kwargs.get("content_from_scratch")
 
-        # Auto-stage if inline content is too large
         if content:
             staged_id = auto_stage_large_content(content, self.working_dir)
             if staged_id:
-                content_from_scratch = staged_id
+                scratch_id = staged_id
                 content = None
 
-        # 1. From Scratch
-        if content_from_scratch:
-            scratch_path = self.working_dir / ".scratch" / f"{content_from_scratch}.txt"
-            if not scratch_path.exists():
-                return None, ToolResult(
-                    ExecutionStatus.INVALID_PARAMS,
-                    f"❌ Scratch file '{content_from_scratch}' not found.",
-                )
-            try:
-                return scratch_path.read_text(encoding="utf-8"), None
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                return None, ToolResult(
-                    ExecutionStatus.INTERNAL_ERROR,
-                    f"❌ Failed to read scratch file: {e}",
-                )
+        if scratch_id:
+            return self._read_scratch(scratch_id)
 
-        # 2. From Memory
-        if content_from_memory:
-            if not self.context_manager:
-                return None, ToolResult(
-                    ExecutionStatus.INTERNAL_ERROR,
-                    "❌ Memory system not available.",
-                )
-            if content_from_memory not in self.context_manager.working_memory:
-                return None, ToolResult(
-                    ExecutionStatus.INVALID_PARAMS,
-                    f"❌ Memory key '{content_from_memory}' not found.",
-                )
-            return self.context_manager.working_memory[content_from_memory], None
+        if memory_key:
+            return self._read_memory(memory_key)
 
-        # 3. Inline
         if content is not None:
             return content, None
 
         return None, ToolResult.invalid_params(
-            "❌ Must provide content source (inline, memory, or scratch).",
+            "❌ Must provide content via inline, memory, or scratch.",
             missing_params=["content"],
         )
 
-    def _find_insertion_line(self, lines: List[str], target_line: str) -> int:
-        """Find the index to insert after."""
-        for i, line in enumerate(lines):
-            if line == target_line:
-                return i + 1  # Insert AFTER this line
-        return -1
+    def _read_scratch(
+        self, scratch_id: str
+    ) -> Tuple[Optional[str], Optional[ToolResult]]:
+        path = self.working_dir / ".scratch" / f"{scratch_id}.txt"
+        if not path.exists():
+            return None, ToolResult.invalid_params(
+                f"❌ Scratch file '{scratch_id}' not found."
+            )
+        try:
+            return path.read_text(encoding="utf-8"), None
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            return None, ToolResult.internal_error(f"❌ Error reading scratch: {e}")
 
-    def _perform_write(self, path: Path, content: str):
-        """Perform atomic write to file."""
+    def _read_memory(self, key: str) -> Tuple[Optional[str], Optional[ToolResult]]:
+        if not self.context_manager:
+            return None, ToolResult.internal_error("❌ Memory system unavailable.")
+        if key not in self.context_manager.working_memory:
+            return None, ToolResult.invalid_params(f"❌ Memory key '{key}' not found.")
+        return self.context_manager.working_memory[key], None
+
+    def _apply_insertion(
+        self, full_path: Path, target_line: str, content: str
+    ) -> Tuple[str, int, List[str], Optional[ToolResult]]:
+        """Read file, find line, and insert content."""
+        try:
+            original_content = full_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return (
+                "",
+                0,
+                [],
+                ToolResult.command_failed(
+                    f"❌ File not found: {full_path.name}", exit_code=1
+                ),
+            )
+        except OSError as e:
+            return "", 0, [], ToolResult.internal_error(f"❌ Error reading file: {e}")
+
+        lines = original_content.splitlines()
+
+        # Find insertion index
+        try:
+            # We add 1 because we insert AFTER the line
+            insert_idx = lines.index(target_line) + 1
+        except ValueError:
+            return (
+                "",
+                0,
+                [],
+                ToolResult(
+                    ExecutionStatus.COMMAND_FAILED,
+                    f"❌ Target line not found: '{target_line}'",
+                ),
+            )
+
+        new_lines_list = content.splitlines()
+        updated_lines = lines[:insert_idx] + new_lines_list + lines[insert_idx:]
+
+        new_text = "\n".join(updated_lines)
+        if original_content.endswith("\n"):
+            new_text += "\n"
+
+        return new_text, insert_idx, new_lines_list, None
+
+    def _perform_atomic_write(self, path: Path, content: str) -> Optional[ToolResult]:
+        """Perform robust atomic write."""
         temp_path = path.with_suffix(f"{path.suffix}.tmp")
-        with temp_path.open("w", encoding="utf-8") as f:
-            f.write(content)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(temp_path, path)
+        try:
+            with temp_path.open("w", encoding="utf-8") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, path)
+            return None
+        except OSError as e:
+            self.logger.error("Error writing %s: %s", path, e)
+            return ToolResult.internal_error(f"❌ File system error: {e}")
 
-    def _generate_insertion_view(
+    def _format_success(
         self,
         filepath: str,
-        insert_index: int,
-        content_lines: List[str],
+        insert_idx: int,
+        added_lines: List[str],
         all_lines: List[str],
-    ) -> str:
-        """Create a visual context of the insertion."""
-        msg = f"✅ Inserted {len(content_lines)} line(s) after line {insert_index} in {filepath}\n"
+    ) -> ToolResult:
+        """Create success result with context view."""
+        msg = f"✅ Inserted {len(added_lines)} line(s) after line {insert_idx} in {filepath}\n"
         msg += f"📝 Insertion context:\n{'-' * 50}\n"
 
         context_range = 2
-        start_show = max(0, insert_index - context_range)
-        # Total lines now includes inserted content
-        end_show = min(
-            len(all_lines), insert_index + len(content_lines) + context_range
-        )
+        start_show = max(0, insert_idx - context_range)
+        end_show = min(len(all_lines), insert_idx + len(added_lines) + context_range)
 
         for i in range(start_show, end_show):
             line_num = i + 1
             line_content = all_lines[i]
 
-            # Check if this index corresponds to the newly inserted block
-            # The inserted block starts at insert_index
-            if insert_index <= i < insert_index + len(content_lines):
-                msg += f"+{line_num:3}│ {line_content}\n"
-            else:
-                msg += f" {line_num:3}│ {line_content}\n"
+            # Highlight inserted lines
+            is_inserted = insert_idx <= i < insert_idx + len(added_lines)
+            prefix = "+" if is_inserted else " "
+            msg += f"{prefix}{line_num:3}│ {line_content}\n"
 
         msg += f"{'-' * 50}"
-        return msg
 
-    def execute(self, **kwargs) -> ToolResult:
-        """Insert content after a specific line in a file."""
-        filepath = kwargs.get("filepath")
-        after_line = kwargs.get("after_line")
-
-        if not filepath or not after_line:
-            return ToolResult.invalid_params(
-                "❌ Missing required params.", missing_params=["filepath", "after_line"]
-            )
-
-        # 1. Resolve Content
-        content, error = self._resolve_content(**kwargs)
-        if error:
-            return error
-
-        # 2. Security Check
-        if not self._is_safe_file_path(filepath):
-            return ToolResult.security_blocked(
-                f"🔒 File path blocked: {filepath} (Unsafe path)"
-            )
-
-        full_path = self.working_dir / filepath
-
-        try:
-            # 3. Read File
-            lines = full_path.read_text(encoding="utf-8").splitlines()
-
-            # 4. Find Location
-            insert_index = self._find_insertion_line(lines, after_line)
-            if insert_index == -1:
-                return ToolResult(
-                    ExecutionStatus.COMMAND_FAILED, f"❌ Line not found: '{after_line}'"
-                )
-
-            # 5. Modify Content
-            content_lines = content.splitlines()
-            new_lines = lines[:insert_index] + content_lines + lines[insert_index:]
-            new_content_full = "\n".join(new_lines)
-
-            # 6. Atomic Write
-            self._perform_write(full_path, new_content_full)
-
-            # 7. Generate Result
-            result_msg = self._generate_insertion_view(
-                filepath, insert_index, content_lines, new_lines
-            )
-
-            return ToolResult.success_result(
-                result_msg,
-                data={
-                    "filepath": filepath,
-                    "insert_after_line": insert_index,
-                    "lines_inserted": len(content_lines),
-                    "inserted_content": content,
-                },
-            )
-
-        except FileNotFoundError:
-            return ToolResult.command_failed(
-                f"❌ File not found: {filepath}", exit_code=1
-            )
-        except (PermissionError, IOError, OSError) as e:
-            self.logger.error("File error in %s: %s", filepath, e, exc_info=True)
-            return ToolResult.internal_error(f"❌ File system error: {e}")
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            self.logger.error("Unexpected error in %s: %s", filepath, e, exc_info=True)
-            return ToolResult.internal_error(f"❌ Unexpected error: {e}")
+        return ToolResult.success_result(
+            msg,
+            data={
+                "filepath": filepath,
+                "insert_after_line": insert_idx,
+                "lines_inserted": len(added_lines),
+                "inserted_content": "\n".join(added_lines),
+            },
+        )

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Git Operations Tool - Handle git commands for MonkCode Agent
+Git Operations Tool - Handle git commands for MonkCode Agent.
 Adapted from the original CodeAssistant class functionality.
 """
 
 import subprocess
 import logging
-from typing import Dict, Any
+from typing import List, Tuple, Optional, Dict
 from pathlib import Path
 
 from tools.base import BaseTool, ToolSchema, ToolResult, ExecutionStatus
@@ -21,7 +21,7 @@ class GitOperationTool(BaseTool):
     def __init__(self, working_dir: Path):
         super().__init__(working_dir)
         self.logger = logging.getLogger(__name__)
-        # Map of supported git operations to their command lists (for shell=False)
+        # Map of supported git operations to their command lists
         self._git_commands = {
             "status": ["git", "status"],
             "add": ["git", "add", "."],
@@ -52,35 +52,50 @@ class GitOperationTool(BaseTool):
         )
 
     def execute(self, **kwargs) -> ToolResult:
-        """Execute a git operation with confirmation."""
-        operation = kwargs.get("operation")
-        commit_message = kwargs.get("commit_message", "AI assistant changes")
+        """Orchestrate the git operation."""
+        # 1. Validate Operation
+        operation, error = self._validate_operation(kwargs.get("operation"))
+        if error:
+            return error
 
-        # Validate required parameters
+        # 2. Build Command
+        command = self._build_command(
+            operation, kwargs.get("commit_message", "AI assistant changes")  # type: ignore
+        )
+
+        # 3. Execute
+        return self._execute_git_command(operation, command)  # type: ignore
+
+    def _validate_operation(
+        self, operation: Optional[str]
+    ) -> Tuple[Optional[str], Optional[ToolResult]]:
+        """Check if operation is valid and supported."""
         if not operation:
-            return ToolResult.invalid_params(
+            return None, ToolResult.invalid_params(
                 "❌ Missing required parameter: 'operation'",
                 missing_params=["operation"],
             )
 
-        # Validate operation
         if operation not in self._git_commands:
             available_ops = ", ".join(self._git_commands.keys())
-            return ToolResult.invalid_params(
+            return None, ToolResult.invalid_params(
                 f"❌ Unknown git operation: {operation}. Available: {available_ops}",
                 missing_params=["operation"],
             )
 
-        # Get the git command list (copy to avoid mutating the original)
+        return operation, None
+
+    def _build_command(self, operation: str, commit_message: str) -> List[str]:
+        """Construct the git command list."""
         command = self._git_commands[operation].copy()
 
-        # Handle custom commit message (safely via list form)
         if operation == "commit" and commit_message != "AI assistant changes":
-            command = ["git", "commit", "-m", commit_message]
+            return ["git", "commit", "-m", commit_message]
 
-        # Set timeout
-        timeout = DEFAULT_GIT_TIMEOUT
+        return command
 
+    def _execute_git_command(self, operation: str, command: List[str]) -> ToolResult:
+        """Run the git subprocess and format output."""
         try:
             result = subprocess.run(
                 command,
@@ -88,82 +103,76 @@ class GitOperationTool(BaseTool):
                 cwd=self.working_dir,
                 capture_output=True,
                 text=True,
-                timeout=timeout,
+                timeout=DEFAULT_GIT_TIMEOUT,
             )
-
-            output = ""
-            if result.stdout:
-                output += f"STDOUT:\n{result.stdout}\n"
-            if result.stderr:
-                output += f"STDERR:\n{result.stderr}\n"
-            output += f"Exit code: {result.returncode}"
-
-            status_icon = "✅" if result.returncode == 0 else "❌"
-
-            # Provide helpful hint for credential errors
-            if result.returncode == 128 and operation in ["push", "pull"]:
-                output += "\n💡 Hint: Exit code 128 often means authentication failed. "
-                output += "Consider configuring a credential helper or using SSH keys."
-
-            # Add operation-specific success messages
-            if result.returncode == 0:
-                operation_messages = {
-                    "status": "📊 Repository status retrieved",
-                    "add": "➕ Files staged for commit",
-                    "commit": "💾 Changes committed to repository",
-                    "push": "🚀 Changes pushed to remote repository",
-                    "pull": "⬇️ Changes pulled from remote repository",
-                    "log": "📜 Recent commit history retrieved",
-                }
-                success_msg = operation_messages.get(
-                    operation, f"Git {operation} completed"
-                )
-                formatted_output = f"{status_icon} {success_msg}\n{output}"
-
-                return ToolResult.success_result(
-                    formatted_output,
-                    data={
-                        "operation": operation,
-                        "command": " ".join(
-                            command
-                        ),  # Convert list to string for display
-                        "exit_code": result.returncode,
-                        "stdout": result.stdout,
-                        "stderr": result.stderr,
-                    },
-                )
-            else:
-                formatted_output = f"{status_icon} Git {operation} failed\n{output}"
-
-                return ToolResult.command_failed(
-                    formatted_output,
-                    exit_code=result.returncode,
-                    data={
-                        "operation": operation,
-                        "command": " ".join(command),
-                        "exit_code": result.returncode,
-                        "stdout": result.stdout,
-                        "stderr": result.stderr,
-                    },
-                )
+            return self._format_result(operation, command, result)
 
         except subprocess.TimeoutExpired:
             return ToolResult.timeout(
-                f"⏰ Git {operation} timed out after {timeout} seconds"
+                f"⏰ Git {operation} timed out after {DEFAULT_GIT_TIMEOUT} seconds"
             )
         except FileNotFoundError:
-            # This occurs if 'git' is not installed or not in PATH
             return ToolResult.command_failed(
-                "❌ 'git' command not found. Is Git installed and in your PATH?",
-                exit_code=127,
+                "❌ 'git' command not found. Is Git installed?", exit_code=127
             )
-        except Exception as e:
-            self.logger.error(
-                f"Unexpected error executing git {operation}: {e}", exc_info=True
-            )
-            return ToolResult.internal_error(
-                f"❌ Unexpected error executing git {operation}: {e}"
-            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.logger.error("Git execution error: %s", e, exc_info=True)
+            return ToolResult.internal_error(f"❌ Error executing git {operation}: {e}")
+
+    def _format_result(
+        self, operation: str, command: List[str], result: subprocess.CompletedProcess
+    ) -> ToolResult:
+        """Format success or failure output."""
+        output = self._build_output_string(result, operation)
+        status_icon = "✅" if result.returncode == 0 else "❌"
+
+        data = {
+            "operation": operation,
+            "command": " ".join(command),
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+
+        if result.returncode == 0:
+            return ToolResult.success_result(f"{status_icon} {output}", data=data)
+
+        return ToolResult.command_failed(
+            f"{status_icon} {output}", exit_code=result.returncode, data=data
+        )
+
+    def _build_output_string(
+        self, result: subprocess.CompletedProcess, operation: str
+    ) -> str:
+        """Helper to build the descriptive output string."""
+        parts = []
+
+        # Operation-specific headers
+        headers = {
+            "status": "📊 Repository status retrieved",
+            "add": "➕ Files staged for commit",
+            "commit": "💾 Changes committed",
+            "push": "🚀 Changes pushed",
+            "pull": "⬇️ Changes pulled",
+            "log": "📜 Commit history",
+        }
+
+        if result.returncode == 0:
+            parts.append(headers.get(operation, f"Git {operation} completed"))
+        else:
+            parts.append(f"Git {operation} failed")
+
+        # Standard output
+        if result.stdout:
+            parts.append(f"STDOUT:\n{result.stdout}")
+        if result.stderr:
+            parts.append(f"STDERR:\n{result.stderr}")
+
+        # Hints
+        if result.returncode == 128 and operation in ["push", "pull"]:
+            parts.append("💡 Hint: Exit code 128 often means authentication failed.")
+
+        return "\n".join(parts)
 
     def get_supported_operations(self) -> list:
         """Return list of supported git operations."""
