@@ -24,6 +24,15 @@ class RiskAnalyzer:
         self._failure_embeddings: deque = deque(maxlen=10_000)
 
     def should_retry(self, tool_name: str, arguments: dict) -> Tuple[bool, str]:
+        """Determine if a tool should be retried based on recent failures.
+
+        Args:
+            tool_name: Name of the tool to check
+            arguments: Arguments that were passed to the tool
+
+        Returns:
+            Tuple of (should_retry: bool, reason: str)
+        """
         # Simple implementation for now: allow retry unless recent repeated failures
         failures = [
             f
@@ -53,6 +62,21 @@ class RiskAnalyzer:
         self._failure_embeddings.append(failure_vec)
 
     def relevant_context(self, intent: str) -> Dict[str, Any]:
+        """Extract relevant context information based on the intent.
+
+        Maps intents to relevant fact types and returns current state,
+        potential issues, known failures, and verified assumptions.
+
+        Args:
+            intent: The intent string to analyze
+
+        Returns:
+            Dictionary containing context information with keys:
+            - current_state: Verified facts relevant to the intent
+            - potential_issues: Assumed/uncertain facts
+            - known_failures: Recent refuted facts
+            - verified_assumptions: High-confidence verified facts
+        """
         # Map intent to relevant fact types
         intent_map = {
             "FILE_READ_INTENT": ["file_exists", "file_permissions", "file_location"],
@@ -150,10 +174,38 @@ class RiskAnalyzer:
     def _analyze_file_path_risks(
         self, tool_name: str, args: Dict[str, Any]
     ) -> List[str]:
-        """Analyze risks related to file paths."""
+        """Analyze risks related to file paths.
+
+        Args:
+            tool_name: Name of the tool being analyzed
+            args: Arguments passed to the tool
+
+        Returns:
+            List of risk descriptions
+        """
         risks = []
 
-        # File path checks
+        # Check file path existence verification
+        filepath_risks = self._check_file_path_verification(args)
+        risks.extend(filepath_risks)
+
+        # Check for similar failure patterns
+        failure_risks = self._check_similar_file_failures(tool_name, args)
+        risks.extend(failure_risks)
+
+        return risks
+
+    def _check_file_path_verification(self, args: Dict[str, Any]) -> List[str]:
+        """Check if file path existence has been verified.
+
+        Args:
+            args: Arguments containing potential file paths
+
+        Returns:
+            List of risk descriptions
+        """
+        risks = []
+
         if "filepath" in args or "file" in args:
             filepath = args.get("filepath") or args.get("file", "")
             exists_facts = [
@@ -168,6 +220,22 @@ class RiskAnalyzer:
                     f"File path assumption - '{filepath}' existence not verified"
                 )
 
+        return risks
+
+    def _check_similar_file_failures(self, tool_name: str, args: Dict[str, Any]) -> List[str]:
+        """Check for similar file path failure patterns.
+
+        Args:
+            tool_name: Name of the tool being analyzed
+            args: Arguments containing potential file paths
+
+        Returns:
+            List of risk descriptions
+        """
+        risks = []
+
+        if "filepath" in args or "file" in args:
+            filepath = args.get("filepath") or args.get("file", "")
             similar_failures = [
                 f
                 for f in self._facts.values()
@@ -235,6 +303,17 @@ class RiskAnalyzer:
         return risks
 
     def suggest_verification_steps(self, proposed_action: str) -> List[str]:
+        """Suggest verification steps for a proposed action.
+
+        Based on the action's tool and arguments, generates a list of
+        verification steps to prevent common failures.
+
+        Args:
+            proposed_action: String representation of the proposed action
+
+        Returns:
+            List of verification steps as strings
+        """
         steps = []
         parts = self._parse_action(proposed_action)
         tool_name = parts.get("tool", "")

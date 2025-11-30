@@ -247,26 +247,6 @@ class KnowledgeGraph:
             f.status == FactStatus.VERIFIED for f in self.get_facts_by_type(fact_type)
         )
 
-    def to_prompt_context(self) -> str:
-        verified = [f for f in self._facts.values() if f.status == FactStatus.VERIFIED]
-        refuted = [f for f in self._facts.values() if f.status == FactStatus.REFUTED]
-
-        lines = ["[KNOWLEDGE STATE]"]
-        if verified:
-            verified.sort(key=lambda f: f.updated_at, reverse=True)
-            lines.append("Verified Facts:")
-            lines.extend(
-                f"  • {f.fact_type}: {f.value} (confidence: {f.confidence:.2f})"
-                for f in verified[:5]
-            )
-        if refuted:
-            refuted.sort(key=lambda f: f.updated_at, reverse=True)
-            lines.append("Recent Failures (avoid these approaches):")
-            for f in refuted[:3]:
-                if isinstance(f.value, dict) and "tool" in f.value:
-                    reason = f.value.get("reason", "")
-                    lines.append(f"  • {f.value['tool']}: {reason}")
-        return "\n".join(lines)
 
     # ---------- Context Manager ----------
     def record_failure(
