@@ -6,7 +6,7 @@ Defines the contract for all UI implementations (Rich, Plain, Textual, etc.)
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Union, List
+from typing import Dict, Any, Union, List, Optional
 from dataclasses import dataclass
 import asyncio
 
@@ -17,7 +17,7 @@ class ToolResult:
 
     success: bool
     output: str
-    tool_name: str = None
+    tool_name: Optional[str] = None
 
 
 class UI(ABC):
@@ -109,11 +109,6 @@ class UI(ABC):
     @abstractmethod
     async def start_thinking(self):
         """Start the thinking/loading animation"""
-
-    @abstractmethod
-    async def start_thinking(self):
-        """Start the thinking/loading animation"""
-        pass
 
     # --- NEW: MODEL MANAGER METHODS ---
 

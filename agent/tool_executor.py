@@ -49,6 +49,7 @@ class ToolExecutor:
         """Fallback callback if UI is not initialized."""
         if event == "confirm":
             return self.auto_confirm
+        # For events that don't require a return value, return None
         return None
 
     def _handle_tool_exception(self, error: Exception, action: str) -> ToolResult:
@@ -108,7 +109,7 @@ class ToolExecutor:
         except Exception as e:  # pylint: disable=broad-exception-caught
             return self._handle_tool_exception(e, action)
 
-    def _normalize_tool_call(self, tool_call: Dict) -> Optional[Dict]:
+    def _normalize_tool_call(self, tool_call: Dict) -> Dict:
         """Normalize different tool call formats into standard structure."""
         if "action" in tool_call and "parameters" in tool_call:
             return tool_call
@@ -118,7 +119,8 @@ class ToolExecutor:
                 "parameters": tool_call["arguments"],
                 "reasoning": tool_call.get("reasoning", ""),
             }
-        return None
+        # Instead of returning None, raise an exception with details
+        raise ToolExecutionError(f"Invalid tool call format: {tool_call}")
 
     async def _confirm_and_handle_edits(
         self, normalized: Dict
@@ -172,8 +174,9 @@ class ToolExecutor:
         Returns: (ToolResult, should_finish_flag)
         """
         # 1. Normalize
-        normalized = self._normalize_tool_call(tool_call)
-        if not normalized:
+        try:
+            normalized = self._normalize_tool_call(tool_call)
+        except ToolExecutionError as e:
             error_msg = f"Invalid tool call format: {str(tool_call)[:100]}..."
             self.logger.warning(error_msg)
             await self.ui_callback("tool_error", {"error": error_msg})
@@ -191,7 +194,11 @@ class ToolExecutor:
                 "task_complete",
                 {"summary": normalized["parameters"].get("summary", "")},
             )
-            return None, True
+            # Return a success result with finish message instead of None
+            return (
+                ToolResult(success=True, output="Task completed", tool_name="finish"),
+                True,
+            )
 
         # 3. Confirmation & Modification (Refactored)
         final_tool_call, suggestion_result = await self._confirm_and_handle_edits(
@@ -201,13 +208,14 @@ class ToolExecutor:
         if suggestion_result:
             return suggestion_result, False
 
-        # 4. Execute
+        # 4. Execute - Check that final_tool_call is not None
+        if final_tool_call is None:
+            raise ToolExecutionError("Tool call was None after confirmation")
         result = await self._execute_tool(final_tool_call)
 
         # 5. Stamp Name & Display
         if not hasattr(result, "tool_name") or not result.tool_name:
             result.tool_name = final_tool_call["action"]
-
         await self.ui_callback(
             "result", {"result": result, "tool_name": final_tool_call["action"]}
         )

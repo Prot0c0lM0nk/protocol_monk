@@ -17,9 +17,9 @@ class MonkBaseError(Exception):
     def __init__(
         self,
         message: str,
-        original_error: Exception = None,
-        user_hint: str = None,
-        details: dict = None,
+        original_error: Optional[Exception] = None,
+        user_hint: Optional[str] = None,
+        details: Optional[dict] = None,
     ):
         super().__init__(message)
         self.message = message
