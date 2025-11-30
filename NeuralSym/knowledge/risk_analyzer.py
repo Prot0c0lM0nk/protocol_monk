@@ -107,6 +107,85 @@ class RiskAnalyzer:
         }
         return intent_map.get(intent, [])
 
+    def _populate_current_state(self, relevant_types: List[str]) -> Dict[str, Any]:
+        """Populate current verified state based on relevant fact types.
+
+        Args:
+            relevant_types: List of relevant fact types
+
+        Returns:
+            Dictionary containing current state information
+        """
+        current_state = {}
+        for ft in relevant_types:
+            facts = [
+                f
+                for f in self._facts.values()
+                if f.fact_type == ft and f.status == FactStatus.VERIFIED
+            ]
+            if facts:
+                latest = max(facts, key=lambda f: f.updated_at)
+                current_state[ft] = latest.value
+        return current_state
+
+    def _populate_potential_issues(self) -> List[Dict]:
+        """Identify potential issues (assumed/uncertain facts).
+
+        Returns:
+            List of potential issues
+        """
+        potential_issues = []
+        for fact in self._facts.values():
+            if fact.status in (FactStatus.ASSUMED, FactStatus.UNCERTAIN):
+                potential_issues.append(
+                    {
+                        "type": fact.fact_type,
+                        "assumption": fact.value,
+                        "confidence": fact.confidence,
+                        "warning": f"Unverified: {fact.fact_type}",
+                    }
+                )
+        return potential_issues
+
+    def _populate_known_failures(self) -> List[Dict]:
+        """List recent failures (refuted facts).
+
+        Returns:
+            List of recent failures
+        """
+        known_failures = []
+        refuted = [f for f in self._facts.values() if f.status == FactStatus.REFUTED]
+        refuted.sort(key=lambda f: f.updated_at, reverse=True)
+        for fact in refuted[:5]:
+            if isinstance(fact.value, dict):
+                known_failures.append(
+                    {
+                        "tool": fact.value.get("tool", "unknown"),
+                        "reason": fact.value.get("reason", ""),
+                        "args": fact.value.get("args", {}),
+                    }
+                )
+        return known_failures
+
+    def _populate_verified_assumptions(self) -> List[Dict]:
+        """List high-confidence verified facts.
+
+        Returns:
+            List of verified assumptions
+        """
+        verified_assumptions = []
+        verified = [f for f in self._facts.values() if f.status == FactStatus.VERIFIED]
+        verified.sort(key=lambda f: f.confidence, reverse=True)
+        for fact in verified[:3]:
+            verified_assumptions.append(
+                {
+                    "type": fact.fact_type,
+                    "value": fact.value,
+                    "confidence": fact.confidence,
+                }
+            )
+        return verified_assumptions
+
     def relevant_context(self, intent: str) -> Dict[str, Any]:
         """Extract relevant context information based on the intent.
 
@@ -125,61 +204,12 @@ class RiskAnalyzer:
         """
         relevant_types = self._get_relevant_fact_types(intent)
         
-        # Initialize context
         context = {
-            "current_state": {},
-            "potential_issues": [],
-            "known_failures": [],
-            "verified_assumptions": [],
+            "current_state": self._populate_current_state(relevant_types),
+            "potential_issues": self._populate_potential_issues(),
+            "known_failures": self._populate_known_failures(),
+            "verified_assumptions": self._populate_verified_assumptions(),
         }
-        
-        # Populate current verified state
-        for ft in relevant_types:
-            facts = [
-                f
-                for f in self._facts.values()
-                if f.fact_type == ft and f.status == FactStatus.VERIFIED
-            ]
-            if facts:
-                latest = max(facts, key=lambda f: f.updated_at)
-                context["current_state"][ft] = latest.value
-        
-        # Populate potential issues (assumed/uncertain)
-        for fact in self._facts.values():
-            if fact.status in (FactStatus.ASSUMED, FactStatus.UNCERTAIN):
-                context["potential_issues"].append(
-                    {
-                        "type": fact.fact_type,
-                        "assumption": fact.value,
-                        "confidence": fact.confidence,
-                        "warning": f"Unverified: {fact.fact_type}",
-                    }
-                )
-        
-        # Populate recent failures
-        refuted = [f for f in self._facts.values() if f.status == FactStatus.REFUTED]
-        refuted.sort(key=lambda f: f.updated_at, reverse=True)
-        for fact in refuted[:5]:
-            if isinstance(fact.value, dict):
-                context["known_failures"].append(
-                    {
-                        "tool": fact.value.get("tool", "unknown"),
-                        "reason": fact.value.get("reason", ""),
-                        "args": fact.value.get("args", {}),
-                    }
-                )
-        
-        # Populate verified assumptions (high-confidence)
-        verified = [f for f in self._facts.values() if f.status == FactStatus.VERIFIED]
-        verified.sort(key=lambda f: f.confidence, reverse=True)
-        for fact in verified[:3]:
-            context["verified_assumptions"].append(
-                {
-                    "type": fact.fact_type,
-                    "value": fact.value,
-                    "confidence": fact.confidence,
-                }
-            )
         
         return context
 
