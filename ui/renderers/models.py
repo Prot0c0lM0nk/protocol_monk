@@ -5,10 +5,11 @@ Model Renderer Module - Orthodox Matrix Theme
 Contains pure rendering functions for model management UI components.
 """
 
-from typing import List, Any
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
+from typing import Any, List
+
 from ..styles import console
 
 

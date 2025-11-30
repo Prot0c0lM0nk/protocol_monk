@@ -4,11 +4,12 @@ Query and planning logic for the knowledge graph.
 Provides context-aware queries, action plan generation, and summaries.
 """
 
-import time
 from collections import defaultdict
-from typing import Dict, List, Set, Any
 
-from .base import Fact, FactStatus, EvidenceStrength, ActionPlan
+import time
+from typing import Any, Dict, List, Set
+
+from .base import ActionPlan, EvidenceStrength, Fact, FactStatus
 
 # Patterns for inferring required facts
 GOAL_PATTERNS = {

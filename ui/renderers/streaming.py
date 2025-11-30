@@ -5,11 +5,12 @@ Streaming Renderer Module - Orthodox Matrix Theme
 Contains pure rendering functions for streaming UI components.
 """
 
-from rich.text import Text
-from rich.markdown import Markdown
-from rich.console import Group
 from rich.align import Align
+from rich.console import Group
+from rich.markdown import Markdown
 from rich.spinner import Spinner
+from rich.text import Text
+
 from ..styles import create_monk_panel
 
 

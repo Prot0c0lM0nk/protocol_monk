@@ -1,9 +1,9 @@
 # styles.py
-from rich.theme import Theme
-from rich.console import Console
-from rich.style import Style
-from rich.panel import Panel
 from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.style import Style
+from rich.theme import Theme
 
 # --- ORTHODOX MATRIX THEME ---
 ORTHODOX_MATRIX_THEME = Theme(

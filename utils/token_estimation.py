@@ -4,13 +4,14 @@ Advanced Token Estimation for MonkCode Agent
 Provides accurate token counting without heavy ML dependencies
 """
 
-import re
-import json
 import asyncio
+import json
 import logging
+import re
 import sys
-from typing import Dict, List, Optional, Union
 from pathlib import Path
+from typing import Dict, List, Optional, Union
+
 from utils.exceptions import ContextError
 
 # FIXED: Pre-compile regex patterns at module level to avoid per-word compilation

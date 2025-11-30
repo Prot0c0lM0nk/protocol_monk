@@ -8,22 +8,21 @@ Orchestrates the Model, the Tools, and the Context via TAOR Loop.
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Any, List, Tuple
-
-from config.static import settings
-from ui.base import UI
-from ui.plain import PlainUI
-from utils.json_parser import extract_json_with_feedback
-from utils.enhanced_logger import EnhancedLogger
+from typing import Any, Dict, List, Optional, Tuple
 
 # Agent Components
 from agent.context import ContextManager
-from agent.model_client import ModelClient
-from agent.tool_executor import ToolExecutor, ExecutionSummary
 from agent.model.exceptions import ModelConfigurationError
+from agent.model_client import ModelClient
 from agent.model_manager import RuntimeModelManager
-from agent.taor_loop import TAORLoop
 from agent.scratch_manager import ScratchManager
+from agent.taor_loop import TAORLoop
+from agent.tool_executor import ExecutionSummary, ToolExecutor
+from config.static import settings
+from ui.base import UI
+from ui.plain import PlainUI
+from utils.enhanced_logger import EnhancedLogger
+from utils.json_parser import extract_json_with_feedback
 
 
 class ProtocolAgent:

@@ -1,6 +1,7 @@
+from collections import Counter
+
 import json
 from pathlib import Path
-from collections import Counter
 
 
 class DashboardGenerator:

@@ -4,6 +4,7 @@ Thinking Renderer - Orthodox Matrix Theme
 """
 import asyncio
 from rich.status import Status
+
 from ui.styles import console
 
 

@@ -6,9 +6,9 @@ Delete Lines Tool - Delete specific line numbers from a file.
 import logging
 import os
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
-from tools.base import BaseTool, ToolSchema, ToolResult, ExecutionStatus
+from tools.base import BaseTool, ExecutionStatus, ToolResult, ToolSchema
 
 
 class DeleteLinesTool(BaseTool):

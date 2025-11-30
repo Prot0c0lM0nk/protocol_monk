@@ -1,13 +1,13 @@
 import time
-from rich.console import Console, Group
-from rich.panel import Panel
-from rich.text import Text
-from rich.markdown import Markdown
-from rich.table import Table
 from rich import box
+from rich.console import Console, Group
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.style import Style
+from rich.table import Table
+from rich.text import Text
 from rich.theme import Theme
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
 
 # --- 1. THEME DEFINITION (The "Palette") ---
 # We define the colors here so we can change them in one place.

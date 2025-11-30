@@ -4,21 +4,20 @@ Rich UI Implementation - Orthodox Matrix Theme
 """
 
 import asyncio
-from typing import Dict, Any, Union, List
-
-from rich.live import Live
 from rich.console import Group
+from rich.live import Live
+from typing import Any, Dict, List, Union
 
 # --- IMPORTS ---
 from .base import UI, ToolResult
+from .renderers.message import render_agent_message, render_user_message
+from .renderers.models import render_model_table, render_switch_report
+from .renderers.streaming import generate_stream_panel
+from .renderers.tools import render_tool_call_pretty, render_tool_result
+from .stream_processor import StreamProcessor
 
 # ADD: Import the new factory function
 from .styles import console, create_monk_panel
-from .renderers.message import render_user_message, render_agent_message
-from .renderers.tools import render_tool_call_pretty, render_tool_result
-from .renderers.models import render_model_table, render_switch_report
-from .renderers.streaming import generate_stream_panel
-from .stream_processor import StreamProcessor
 
 
 class RichUI(UI):
@@ -219,7 +218,7 @@ class RichUI(UI):
         # Create a nice summary panel
         from rich.console import Group
         from rich.text import Text
-        from rich.text import Text
+
         from ui.styles import console, create_monk_panel, create_task_completion_panel
 
         # If the summary is a JSON-like string or complex, we could parse it here.

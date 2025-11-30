@@ -4,17 +4,18 @@ A standalone test harness for the NeuralSym system.
 Simulates a conversation loop without needing an actual LLM.
 """
 
-import time
 import shutil
+
 import os
-from pathlib import Path
+import time
+from dashboard import DashboardGenerator
+from guidance import GuidanceSystem
 
 # Import our modules
 from knowledge.graph import KnowledgeGraph
+from pathlib import Path
 from patterns.analyzer import AdvancedPatternAnalyzer
 from patterns.base import Outcome
-from guidance import GuidanceSystem
-from dashboard import DashboardGenerator
 
 # --- CONFIGURATION ---
 DATA_DIR = Path("./data_simulation")

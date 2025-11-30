@@ -5,10 +5,10 @@ Abstract async UI interface for Protocol Monk
 Defines the contract for all UI implementations (Rich, Plain, Textual, etc.)
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Union, List, Optional
-from dataclasses import dataclass
 import asyncio
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Union
 
 
 @dataclass

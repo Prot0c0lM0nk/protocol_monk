@@ -10,35 +10,34 @@ Matrix-Orthodox themed terminal assistant for coding tasks.
 """
 
 import asyncio
-import sys
 import logging
-from typing import Tuple, Optional
+import sys
 from pathlib import Path
-
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
+from typing import Optional, Tuple
 
-# Import config
-from config.static import settings
-from config.session import initialize_session
+from agent import core_exceptions
+from agent.command_dispatcher import CommandDispatcher
+from agent.model_manager import RuntimeModelManager
 
 # Import Agent & Core
 from agent.monk import ProtocolAgent
-from agent.command_dispatcher import CommandDispatcher
-from agent.model_manager import RuntimeModelManager
-from agent import core_exceptions
+from config.session import initialize_session
+
+# Import config
+from config.static import settings
 
 # Import Tools & Utils
 from tools.registry import ToolRegistry
-from utils.enhanced_logger import EnhancedLogger
-from utils.debug_logger import _logger, close_debug_log
 
 # Import UI
 from ui.base import UI
-from ui.textual.app import MonkCodeTUI
 from ui.plain import PlainUI
 from ui.rich_ui import RichUI
-
+from ui.textual.app import MonkCodeTUI
+from utils.debug_logger import _logger, close_debug_log
+from utils.enhanced_logger import EnhancedLogger
 
 # =============================================================================
 # LOGGING SETUP
@@ -202,6 +201,7 @@ async def _configure_model(ui: UI, use_tui: bool, use_rich: bool) -> str:
 
     if use_rich:
         from rich.panel import Panel  # pylint: disable=import-outside-toplevel
+
         from ui.styles import console  # pylint: disable=import-outside-toplevel
 
         console.print()

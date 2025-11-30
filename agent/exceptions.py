@@ -6,7 +6,7 @@ Provides the single source of truth for the Agent's error contract.
 All domain-specific exceptions must inherit from MonkBaseError.
 """
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 class MonkBaseError(Exception):

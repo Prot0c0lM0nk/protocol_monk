@@ -2,16 +2,17 @@
 Tool Registry - Auto-discovery and management of tools.
 """
 
-import importlib
 import inspect
+
+import asyncio
+import importlib
 import logging
 import sys
-import asyncio
-from typing import Dict, List, Optional, Any
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from tools.base import BaseTool, ToolResult
 from agent.tools.exceptions import ToolNotFoundError
+from tools.base import BaseTool, ToolResult
 
 
 class ToolRegistry:

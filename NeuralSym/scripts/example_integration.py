@@ -4,12 +4,13 @@ example_integration.py
 Example of how to use the integrated NeuralSym guidance system
 """
 
-import asyncio
 import tempfile
-from pathlib import Path
+
+import asyncio
 
 # Add the project root to the path
 import sys
+from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 

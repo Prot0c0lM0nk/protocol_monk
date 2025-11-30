@@ -1,6 +1,7 @@
-from agent.model_manager.structs import ModelInfo, SwitchReport
-from agent.model_manager.loader import ModelConfigLoader
 from typing import Dict
+
+from agent.model_manager.loader import ModelConfigLoader
+from agent.model_manager.structs import ModelInfo, SwitchReport
 
 
 class ModelSelector:

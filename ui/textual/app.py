@@ -1,12 +1,13 @@
-from textual.app import App
-from textual.screen import Screen
-from textual.containers import Container
-from textual.widgets import Label
 from textual import on
-from ui.textual.interface import TextualUI
-from ui.textual.screens.chat import ChatScreen
-from ui.textual.screens.approval import ApprovalScreen
+from textual.app import App
+from textual.containers import Container
+from textual.screen import Screen
+from textual.widgets import Label
+
 from agent.monk import ProtocolAgent
+from ui.textual.interface import TextualUI
+from ui.textual.screens.approval import ApprovalScreen
+from ui.textual.screens.chat import ChatScreen
 
 
 class MonkCodeTUI(App):

@@ -1,6 +1,7 @@
 import aiohttp
 import asyncio
-from typing import Dict, List, Any
+from typing import Any, Dict, List
+
 from agent.model_manager.structs import ModelInfo
 from config.static import settings
 

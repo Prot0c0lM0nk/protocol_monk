@@ -7,11 +7,11 @@ Handles active project directory and Python environment selection.
 Updated to prevent 'Configuration Traps' by confirming saved sessions.
 """
 
+import json
 import os
 import sys
-import json
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 
 class ActiveSession:

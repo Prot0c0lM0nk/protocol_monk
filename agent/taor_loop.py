@@ -7,7 +7,7 @@ Orchestrates the agent's cognitive cycle with strict serial execution.
 
 import json
 import logging
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
 from agent.core_exceptions import OrchestrationError
 from agent.model.exceptions import ModelError

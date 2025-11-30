@@ -3,13 +3,14 @@ Predictive recommendations and risk assessment
 Blueprint 4: Statistical Self-Improvement (Patterns)
 """
 
-from typing import Dict, List, Optional, Any
 from collections import defaultdict
 
+from typing import Any, Dict, List, Optional
+
 from .base import (
-    Outcome,
     ComplexityLevel,
     ContextSnapshot,
+    Outcome,
     PredictiveRecommendation,
     ToolProfile,
 )

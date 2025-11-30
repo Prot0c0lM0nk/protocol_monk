@@ -9,9 +9,9 @@ from typing import Dict, List, Optional, Tuple
 
 # Import NeuralSym components
 try:
+    from NeuralSym.guidance.unified import UnifiedGuidanceSystem
     from NeuralSym.knowledge.graph import KnowledgeGraph
     from NeuralSym.patterns.analyzer import AdvancedPatternAnalyzer
-    from NeuralSym.guidance.unified import UnifiedGuidanceSystem
 
     NEURALSYM_AVAILABLE = True
 except ImportError:

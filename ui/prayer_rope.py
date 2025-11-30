@@ -3,14 +3,15 @@ Prayer Rope Progress Indicators
 Orthodox-themed spinners and progress bars for AI thinking states
 """
 
-import time
+from contextlib import contextmanager
+
 import random
-from typing import Optional, List
+import time
 from rich.console import Console
 from rich.live import Live
-from rich.text import Text
 from rich.spinner import Spinner
-from contextlib import contextmanager
+from rich.text import Text
+from typing import List, Optional
 
 
 class PrayerRope:

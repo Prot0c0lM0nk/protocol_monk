@@ -3,17 +3,18 @@ small_model_simulation.py
 Simulation testing the enhanced guidance system for small LLMs
 """
 
-import time
 import shutil
-from pathlib import Path
+
+import time
+from dashboard import DashboardGenerator
+from guidance import GuidanceSystem
+from integrated_small_model_guidance import IntegratedSmallModelGuidance
 
 # Import our modules
 from knowledge.graph import KnowledgeGraph
+from pathlib import Path
 from patterns.analyzer import AdvancedPatternAnalyzer
 from patterns.base import Outcome
-from integrated_small_model_guidance import IntegratedSmallModelGuidance
-from guidance import GuidanceSystem
-from dashboard import DashboardGenerator
 
 # --- CONFIGURATION ---
 DATA_DIR = Path("./data_simulation")

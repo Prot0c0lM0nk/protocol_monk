@@ -3,15 +3,11 @@ example_usage.py
 Simple example demonstrating how to use the enhanced NeuralSym guidance system
 """
 
+from integrated_small_model_guidance import IntegratedSmallModelGuidance
+from knowledge.base import Evidence, EvidenceStrength, FactStatus
+from knowledge.graph import KnowledgeGraph
 from pathlib import Path
-from knowledge.graph import KnowledgeGraph
 from patterns.analyzer import AdvancedPatternAnalyzer
-from integrated_small_model_guidance import IntegratedSmallModelGuidance
-from knowledge.base import Evidence, EvidenceStrength, FactStatus
-from knowledge.graph import KnowledgeGraph
-from patterns.analyzer import AdvancedPatternAnalyzer
-from integrated_small_model_guidance import IntegratedSmallModelGuidance
-from knowledge.base import Evidence, EvidenceStrength, FactStatus
 
 
 def main():

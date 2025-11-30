@@ -9,11 +9,13 @@ Usage:
     debug_log("System prompt", content, separator="=")
 """
 
+import threading
+from datetime import datetime
+from queue import Empty, Queue
+
 import sys
 from pathlib import Path
-from datetime import datetime
-from queue import Queue, Empty
-import threading
+
 from utils.exceptions import ConfigurationError
 
 

@@ -4,12 +4,13 @@ Clipboard Cleaner - Remove Apple's hidden Unicode characters that break code.
 Provides bidirectional cleaning for both incoming and outgoing clipboard content.
 """
 
-import subprocess
-import re
-import unicodedata
-import logging
-import asyncio
 import shlex
+import unicodedata
+
+import asyncio
+import logging
+import re
+import subprocess
 from typing import Dict
 
 from config.static import settings

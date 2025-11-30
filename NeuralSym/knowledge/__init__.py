@@ -6,17 +6,16 @@ actionable insights for decision making.
 """
 
 from .base import (
-    FactStatus,
-    EvidenceStrength,
-    Evidence,
-    Fact,
     ActionPlan,
+    Evidence,
+    EvidenceStrength,
+    Fact,
+    FactStatus,
 )
-
 from .graph import KnowledgeGraph
+from .persistence import PersistenceManager
 from .query_engine import QueryEngine
 from .risk_analyzer import RiskAnalyzer
-from .persistence import PersistenceManager
 
 __all__ = [
     "FactStatus",

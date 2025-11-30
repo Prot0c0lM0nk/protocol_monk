@@ -4,14 +4,15 @@ Test script to evaluate how the guidance system performs with constraints
 that simulate smaller LLM capabilities (8B models).
 """
 
-import time
 import shutil
-from pathlib import Path
+
+import time
+from guidance import GuidanceSystem
 
 # Import our modules
 from knowledge.graph import KnowledgeGraph
+from pathlib import Path
 from patterns.analyzer import AdvancedPatternAnalyzer
-from guidance import GuidanceSystem
 
 
 def test_small_llm_guidance():

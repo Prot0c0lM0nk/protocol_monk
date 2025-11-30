@@ -4,12 +4,13 @@ Safe persistence layer for the knowledge graph.
 Handles atomic save/load with debouncing and crash-safe writes.
 """
 
-import json
 import tempfile
+
+import json
 import os
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 
 class PersistenceManager:

@@ -3,16 +3,17 @@ Serialization and deserialization for pattern analyzer
 Blueprint 4: Statistical Self-Improvement (Patterns)
 """
 
-import json
 import tempfile
+from enum import Enum
+
+import json
 import os
 import time
 from dataclasses import asdict
-from typing import Dict, List, Optional, Any
 from pathlib import Path
-from enum import Enum
+from typing import Any, Dict, List, Optional
 
-from .base import Outcome, ComplexityLevel, ContextSnapshot, Interaction, ToolProfile
+from .base import ComplexityLevel, ContextSnapshot, Interaction, Outcome, ToolProfile
 
 
 class EnumEncoder(json.JSONEncoder):

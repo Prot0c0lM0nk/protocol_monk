@@ -3,11 +3,12 @@ Time-based patterns and learning analysis
 Blueprint 4: Statistical Self-Improvement (Patterns)
 """
 
-import time
-from typing import Dict, List, Optional, Any
 from collections import defaultdict
 
-from .base import Outcome, Interaction
+import time
+from typing import Any, Dict, List, Optional
+
+from .base import Interaction, Outcome
 
 
 class TemporalAnalyzer:

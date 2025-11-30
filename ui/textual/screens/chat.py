@@ -1,9 +1,10 @@
-from textual.screen import Screen
-from textual.containers import Container, VerticalScroll
-from textual.widgets import Label
 from textual import on
-from ui.textual.widgets.messages import ChatMessage
+from textual.containers import Container, VerticalScroll
+from textual.screen import Screen
+from textual.widgets import Label
+
 from ui.textual.widgets.inputs import InputPanel
+from ui.textual.widgets.messages import ChatMessage
 
 
 class ChatScreen(Screen):

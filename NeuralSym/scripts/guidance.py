@@ -5,7 +5,7 @@ based on data from the Knowledge Graph and Pattern Analyzer.
 """
 
 import time
-from typing import Dict, Tuple, List
+from typing import Dict, List, Tuple
 
 
 class GuidanceSystem:

@@ -6,26 +6,27 @@ This module provides the AdvancedPatternAnalyzer which records tool interactions
 and builds statistical profiles to predict future success probabilities.
 """
 
-import time
-import uuid
 import threading
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Set
-from collections import defaultdict, Counter
+from collections import Counter, defaultdict
 from threading import Lock
 
+import time
+import uuid
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
+
 from .base import (
-    Outcome,
     ComplexityLevel,
     ContextSnapshot,
     Interaction,
-    ToolProfile,
+    Outcome,
     PredictiveRecommendation,
+    ToolProfile,
 )
+from .persistence import PatternPersistence
 from .predictor import PatternPredictor
 from .sequence_analyzer import SequenceAnalyzer
 from .temporal_analyzer import TemporalAnalyzer
-from .persistence import PatternPersistence
 
 
 class AdvancedPatternAnalyzer:

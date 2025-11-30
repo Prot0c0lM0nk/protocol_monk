@@ -6,11 +6,11 @@ Centralized handling of slash commands to clean up main.py
 """
 
 import logging
-from typing import Optional, Dict
+from typing import Dict, Optional
 
-from config.session import get_active_session
-from agent.monk import ProtocolAgent
 from agent.model_manager import RuntimeModelManager
+from agent.monk import ProtocolAgent
+from config.session import get_active_session
 
 # Reuse the blessing from main.py
 BLESSING = """☦ Go in peace. May your code compile without warning. ☦"""

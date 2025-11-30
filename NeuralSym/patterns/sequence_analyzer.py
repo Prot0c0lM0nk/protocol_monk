@@ -3,10 +3,11 @@ Tool sequence analysis and optimization
 Blueprint 4: Statistical Self-Improvement (Patterns)
 """
 
-from typing import Dict, List, Optional, Tuple, Any
 from collections import defaultdict
 
-from .base import Outcome, ContextSnapshot, Interaction
+from typing import Any, Dict, List, Optional, Tuple
+
+from .base import ContextSnapshot, Interaction, Outcome
 
 
 class SequenceAnalyzer:

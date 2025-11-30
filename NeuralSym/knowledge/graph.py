@@ -7,9 +7,9 @@ Manages CRUD operations, dependency tracking, indexing, and simple queries.
 import logging
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Callable, Any
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from .base import Fact, Evidence, FactStatus, EvidenceStrength, ActionPlan
+from .base import ActionPlan, Evidence, EvidenceStrength, Fact, FactStatus
 from .persistence import PersistenceManager
 from .query_engine import QueryEngine
 from .risk_analyzer import RiskAnalyzer

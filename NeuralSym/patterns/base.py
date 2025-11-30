@@ -4,10 +4,10 @@ Blueprint 4: Statistical Self-Improvement (Patterns)
 """
 
 import math
-from typing import Dict, List, Optional, Tuple, Any, Set
-from dataclasses import dataclass, asdict, field
 from enum import Enum
 
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 # Optional dependencies - fall back to basic implementations if not available
 try:

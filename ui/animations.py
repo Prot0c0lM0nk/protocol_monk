@@ -1,15 +1,17 @@
 # ui/animations.py
 
+import datetime
+
+import random
 import sys
 import time
-import random
-from typing import Optional
 from rich.console import Console
-from rich.text import Text
 from rich.live import Live
 from rich.panel import Panel
+from rich.text import Text
+from typing import Optional
+
 from .custom_matrix import run_animation, run_enhanced_matrix_intro
-import datetime
 
 # --- NEW STARTUP SEQUENCE ---
 
@@ -411,9 +413,9 @@ def display_monks_illumination() -> None:
     Orthodox monk's awakening to divine illumination - replaces 'WAKE UP...'
     The monk awakens from contemplative darkness to Christ's light
     """
+    from rich.align import Align
     from rich.live import Live
     from rich.text import Text
-    from rich.align import Align
 
     console = Console()
     console.clear()
@@ -538,8 +540,8 @@ def wait_for_enter() -> None:
     console.print()  # Empty line between texts
 
     # Progressive blinking pattern for "Enter-->" - using Live context manager for proper updating
-    from rich.live import Live
     from rich.align import Align
+    from rich.live import Live
     from rich.text import Text
 
     blink_chars = ["E", "n", "t", "e", "r", "-", "-", ">"]

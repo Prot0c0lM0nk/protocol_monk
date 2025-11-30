@@ -7,10 +7,10 @@ dual-strategy approach (Regex Fencing + Bracket Counting) to maximize
 extraction success rates from LLM outputs.
 """
 
-from typing import List, Dict, Any, Tuple
 import json
-import re
 import logging
+import re
+from typing import Any, Dict, List, Tuple
 
 from utils.exceptions import JsonParsingError
 

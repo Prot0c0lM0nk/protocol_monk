@@ -1,9 +1,10 @@
+import atexit
 import math
+
 import os
 import random
-import time
 import sys
-import atexit
+import time
 from dataclasses import dataclass
 from typing import Optional
 

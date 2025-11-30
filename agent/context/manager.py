@@ -9,23 +9,24 @@ Acts as the central memory hub for the ProtocolAgent.
 import asyncio
 import logging
 from pathlib import Path
-from typing import List, Dict, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, List, Optional
 
-from config.static import settings
-from agent.core_exceptions import ConfigurationError
 from agent.context.exceptions_expanded import (
-    NeuralSymIntegrationError,
     ContextValidationError,
+    NeuralSymIntegrationError,
 )
+from agent.core_exceptions import ConfigurationError
+from config.static import settings
+
+from .file_tracker import FileTracker
 
 # Component imports
 from .message import Message
-from .token_accountant import TokenAccountant
-from .file_tracker import FileTracker
-from .pruner import ContextPruner
 
 # NeuralSym integration
-from .neural_sym_integration import NeuralSymContextManager, NEURALSYM_AVAILABLE
+from .neural_sym_integration import NEURALSYM_AVAILABLE, NeuralSymContextManager
+from .pruner import ContextPruner
+from .token_accountant import TokenAccountant
 
 if TYPE_CHECKING:
     from tools.registry import ToolRegistry

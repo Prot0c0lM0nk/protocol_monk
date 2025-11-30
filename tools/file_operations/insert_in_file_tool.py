@@ -6,9 +6,9 @@ Insert In File Tool - Insert content after a specific line in a file.
 import logging
 import os
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import List, Optional, Tuple
 
-from tools.base import BaseTool, ToolSchema, ToolResult, ExecutionStatus
+from tools.base import BaseTool, ExecutionStatus, ToolResult, ToolSchema
 from tools.file_operations.auto_stage_large_content import auto_stage_large_content
 
 

@@ -4,9 +4,10 @@ SensitiveStr - Wrapper for secrets that masks itself in logs, exceptions, and re
 Prevents accidental leakage of API keys, tokens, passwords, etc.
 """
 
-from typing import Optional, Any, Set, Union
 import threading
+
 import logging
+from typing import Any, Optional, Set, Union
 
 logger = logging.getLogger(__name__)
 

@@ -5,10 +5,11 @@ Plain text async UI implementation for Protocol Monk
 Uses print() and input() for basic terminal interaction.
 Designed to be simple and work in any terminal environment.
 """
-import json
 import asyncio
+import json
 import sys
-from typing import Dict, Any, Union, List
+from typing import Any, Dict, List, Union
+
 from ui.base import UI, ToolResult
 
 

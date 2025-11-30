@@ -1,9 +1,10 @@
-from agent.model_manager.structs import ModelInfo, SwitchReport
+import asyncio
+from typing import Dict, List
+
 from agent.model_manager.loader import ModelConfigLoader
 from agent.model_manager.scanner import ModelScanner
 from agent.model_manager.selector import ModelSelector
-from typing import Dict, List
-import asyncio
+from agent.model_manager.structs import ModelInfo, SwitchReport
 
 
 class RuntimeModelManager:

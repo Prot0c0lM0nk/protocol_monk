@@ -6,10 +6,11 @@ Defines Fact, Evidence, ActionPlan and their supporting enums.
 
 from __future__ import annotations
 
+from enum import Enum
+
 import time
 import uuid
-from dataclasses import dataclass, asdict, field
-from enum import Enum
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
 

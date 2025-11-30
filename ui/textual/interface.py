@@ -1,6 +1,7 @@
-from ui.base import UI
-from typing import Dict, Any, Union, List
 import asyncio
+from typing import Any, Dict, List, Union
+
+from ui.base import UI
 
 
 class TextualUI(UI):

@@ -4,12 +4,12 @@ Git Operations Tool - Handle git commands for MonkCode Agent.
 Adapted from the original CodeAssistant class functionality.
 """
 
-import subprocess
 import logging
-from typing import List, Tuple, Optional, Dict
+import subprocess
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
-from tools.base import BaseTool, ToolSchema, ToolResult, ExecutionStatus
+from tools.base import BaseTool, ExecutionStatus, ToolResult, ToolSchema
 
 # Default timeout for git operations (in seconds)
 DEFAULT_GIT_TIMEOUT = 60

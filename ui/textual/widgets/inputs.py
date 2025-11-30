@@ -1,7 +1,7 @@
-from textual.widget import Widget
-from textual.widgets import TextArea, Button
-from textual.message import Message
 from textual.events import Key
+from textual.message import Message
+from textual.widget import Widget
+from textual.widgets import Button, TextArea
 
 
 class InputPanel(Widget):

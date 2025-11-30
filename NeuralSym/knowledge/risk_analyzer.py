@@ -4,13 +4,14 @@ Predictive failure analysis and verification suggestions.
 Analyzes historical failures and current assumptions to anticipate risks.
 """
 
+from collections import deque
+
 import ast
 import re
 import time
-from collections import deque
-from typing import Dict, List, Any, Tuple
+from typing import Any, Dict, List, Tuple
 
-from .base import Fact, FactStatus, EvidenceStrength
+from .base import EvidenceStrength, Fact, FactStatus
 
 
 class RiskAnalyzer:
@@ -146,10 +147,12 @@ class RiskAnalyzer:
 
         return context
 
-    def _analyze_file_path_risks(self, tool_name: str, args: Dict[str, Any]) -> List[str]:
+    def _analyze_file_path_risks(
+        self, tool_name: str, args: Dict[str, Any]
+    ) -> List[str]:
         """Analyze risks related to file paths."""
         risks = []
-        
+
         # File path checks
         if "filepath" in args or "file" in args:
             filepath = args.get("filepath") or args.get("file", "")
@@ -177,13 +180,13 @@ class RiskAnalyzer:
                 risks.append(
                     f"This file path failed {len(similar_failures)}x in recent attempts"
                 )
-        
+
         return risks
 
     def _analyze_tool_failure_patterns(self, tool_name: str) -> List[str]:
         """Analyze tool-specific failure patterns."""
         risks = []
-        
+
         # Tool-specific failure patterns
         tool_failures = [
             f
@@ -199,20 +202,20 @@ class RiskAnalyzer:
                 most_common = max(set(reasons), key=reasons.count)
                 if reasons.count(most_common) >= 2:
                     risks.append(f"Common failure: {most_common}")
-        
+
         return risks
 
     def _analyze_general_assumptions(self) -> List[str]:
         """Analyze general unverified assumptions."""
         risks = []
-        
+
         # General assumed facts
         assumed_count = len(
             [f for f in self._facts.values() if f.status == FactStatus.ASSUMED]
         )
         if assumed_count:
             risks.append(f"{assumed_count} unverified assumptions in knowledge base")
-        
+
         return risks
 
     def predict_failure_risks(self, proposed_action: str) -> List[str]:
@@ -230,6 +233,7 @@ class RiskAnalyzer:
         risks = file_risks + tool_risks + assumption_risks
 
         return risks
+
     def suggest_verification_steps(self, proposed_action: str) -> List[str]:
         steps = []
         parts = self._parse_action(proposed_action)

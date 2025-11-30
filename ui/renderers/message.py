@@ -3,6 +3,7 @@
 Message Renderer - Orthodox Matrix Theme
 """
 from rich.markdown import Markdown
+
 from ui.styles import console, create_monk_panel
 
 

@@ -1,6 +1,6 @@
-from textual.screen import ModalScreen
-from textual.widgets import Label, Button
 from textual import on
+from textual.screen import ModalScreen
+from textual.widgets import Button, Label
 from typing import Any
 
 

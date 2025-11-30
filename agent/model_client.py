@@ -7,21 +7,21 @@ Async HTTP client for Ollama LLM provider.
 Supports streaming responses with proper error handling and timeout management.
 """
 
+import warnings
+
+import aiohttp
 import asyncio
 import json
 import logging
-import warnings
-from typing import AsyncGenerator, Dict, Any, Optional, List
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
-import aiohttp
-
-from config.static import settings
 from agent.model.exceptions import (
+    EmptyResponseError,
     ModelError,
     ModelTimeoutError,
-    EmptyResponseError,
 )
 from agent.model_manager import RuntimeModelManager
+from config.static import settings
 
 
 class ModelClient:

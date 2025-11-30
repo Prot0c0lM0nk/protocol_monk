@@ -6,17 +6,16 @@ This module learns from tool interaction history to predict success probabilitie
 recommend optimal approaches, and warn about potential failures.
 """
 
+from .analyzer import AdvancedPatternAnalyzer
 from .base import (
-    Outcome,
     ComplexityLevel,
     ContextSnapshot,
     Interaction,
-    ToolProfile,
+    Outcome,
     PredictiveRecommendation,
+    ToolProfile,
     calculate_confidence_interval,
 )
-
-from .analyzer import AdvancedPatternAnalyzer
 
 __all__ = [
     "Outcome",
