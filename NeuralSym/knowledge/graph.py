@@ -247,7 +247,6 @@ class KnowledgeGraph:
             f.status == FactStatus.VERIFIED for f in self.get_facts_by_type(fact_type)
         )
 
-
     # ---------- Context Manager ----------
     def record_failure(
         self,
@@ -288,25 +287,75 @@ class KnowledgeGraph:
             context_tags={"tool_execution", "user_rejection"},
         )
 
-    def to_prompt_context(self) -> str:
-        verified = [f for f in self._facts.values() if f.status == FactStatus.VERIFIED]
-        refuted = [f for f in self._facts.values() if f.status == FactStatus.REFUTED]
+    def _get_verified_facts(self) -> List[Any]:
+        """Get verified facts sorted by update time.
 
-        lines = ["[KNOWLEDGE STATE]"]
+        Returns:
+            List of verified facts sorted by update time (newest first)
+        """
+        verified = [f for f in self._facts.values() if f.status == FactStatus.VERIFIED]
+        verified.sort(key=lambda f: f.updated_at, reverse=True)
+        return verified
+
+    def _get_refuted_facts(self) -> List[Any]:
+        """Get refuted facts sorted by update time.
+
+        Returns:
+            List of refuted facts sorted by update time (newest first)
+        """
+        refuted = [f for f in self._facts.values() if f.status == FactStatus.REFUTED]
+        refuted.sort(key=lambda f: f.updated_at, reverse=True)
+        return refuted
+
+    def _format_verified_facts(self, verified: List[Any]) -> List[str]:
+        """Format verified facts for display.
+
+        Args:
+            verified: List of verified facts
+
+        Returns:
+            List of formatted strings for verified facts
+        """
+        lines = []
         if verified:
-            verified.sort(key=lambda f: f.updated_at, reverse=True)
             lines.append("Verified Facts:")
             lines.extend(
                 f"  • {f.fact_type}: {f.value} (confidence: {f.confidence:.2f})"
                 for f in verified[:5]
             )
+        return lines
+
+    def _format_refuted_facts(self, refuted: List[Any]) -> List[str]:
+        """Format refuted facts for display.
+
+        Args:
+            refuted: List of refuted facts
+
+        Returns:
+            List of formatted strings for refuted facts
+        """
+        lines = []
         if refuted:
-            refuted.sort(key=lambda f: f.updated_at, reverse=True)
             lines.append("Recent Failures (avoid these approaches):")
             for f in refuted[:3]:
                 if isinstance(f.value, dict) and "tool" in f.value:
                     reason = f.value.get("reason", "")
                     lines.append(f"  • {f.value['tool']}: {reason}")
+        return lines
+
+    def to_prompt_context(self) -> str:
+        """Generate a string representation of the knowledge state for prompt context.
+
+        Returns:
+            Formatted string containing verified facts and recent failures
+        """
+        verified = self._get_verified_facts()
+        refuted = self._get_refuted_facts()
+
+        lines = ["[KNOWLEDGE STATE]"]
+        lines.extend(self._format_verified_facts(verified))
+        lines.extend(self._format_refuted_facts(refuted))
+
         return "\n".join(lines)
 
     # ---------- Persistence API ----------
