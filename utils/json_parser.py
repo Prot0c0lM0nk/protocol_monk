@@ -1,4 +1,13 @@
-from typing import List, Dict, Any, Tuple, Optional
+"""
+JSON Parsing Utilities.
+
+This module provides robust JSON extraction capabilities, capable of handling
+Markdown code fences and raw JSON objects embedded in text. It uses a
+dual-strategy approach (Regex Fencing + Bracket Counting) to maximize
+extraction success rates from LLM outputs.
+"""
+
+from typing import List, Dict, Any, Tuple
 import json
 import re
 import logging
@@ -6,21 +15,6 @@ import logging
 from utils.exceptions import JsonParsingError
 
 logger = logging.getLogger(__name__)
-
-
-class JsonParsingError(Exception):
-    """Custom exception for JSON parsing errors with context"""
-
-    def __init__(
-        self,
-        message: str,
-        original_error: Optional[Exception] = None,
-        position: Optional[int] = None,
-    ):
-        super().__init__(message)
-        self.original_error = original_error
-        self.position = position
-        self.message = message
 
 
 def extract_json_from_text(
@@ -36,99 +30,113 @@ def extract_json_from_text(
     Returns:
         Tuple of (successful_objects, parsing_errors)
     """
+    # Strategy 1: Markdown Code Blocks (Preferred)
+    objects, errors = _extract_by_fencing(text)
+    if objects or errors:
+        return objects, errors
+
+    # Strategy 2: Bracket Counting (Fallback)
+    parser = _BracketParser(text)
+    return parser.parse()
+
+
+def _extract_by_fencing(
+    text: str,
+) -> Tuple[List[Dict[str, Any]], List[JsonParsingError]]:
+    """Attempt to extract JSON from Markdown code blocks."""
     json_objects = []
     parsing_errors = []
 
-    # --- Strategy 1: Markdown Code Blocks (Preferred) ---
-    # Matches ```json {content} ``` with multiline support
     fence_pattern = r"```json\s*([\s\S]*?)\s*```"
     matches = re.findall(fence_pattern, text, re.DOTALL)
 
-    if matches:
-        for match in matches:
-            try:
-                obj = json.loads(match)
-                # We only care about Dictionaries (JSON Objects) or Lists (JSON Arrays)
-                if isinstance(obj, (dict, list)):
-                    json_objects.append(obj)
-            except json.JSONDecodeError as e:
-                error = JsonParsingError(
-                    f"Failed to parse fenced JSON: {e}", original_error=e
-                )
-                parsing_errors.append(error)
-                logger.warning(f"Failed to parse fenced JSON: {e}")
-
-        # If we found fenced content, we return it. We do not mix strategies.
-        return json_objects, parsing_errors
-
-    # --- Strategy 2: Bracket Counting (Fallback) ---
-    # Used only if the model forgets to fence the code.
-    if "{" not in text and "[" not in text:
-        return json_objects, parsing_errors
-
-    # Track both object {} and array [] brackets
-    bracket_stack = []
-    start_indices = []
-    in_string = False
-    escape = False
-
-    for i, char in enumerate(text):
-        if escape:
-            escape = False
-            continue
-        if char == "\\":
-            escape = True
-            continue
-        if char == '"' and not escape:
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-
-        if char in "{[":
-            if len(bracket_stack) == 0:
-                start_indices.append(i)
-            bracket_stack.append(char)
-
-        elif char in "}":
-            if bracket_stack and bracket_stack[-1] == "{":
-                bracket_stack.pop()
-
-                if len(bracket_stack) == 0 and start_indices:
-                    start_index = start_indices.pop()
-                    candidate = text[start_index : i + 1]
-                    try:
-                        obj = json.loads(candidate)
-                        if isinstance(obj, (dict, list)):
-                            json_objects.append(obj)
-                    except json.JSONDecodeError as e:
-                        error = JsonParsingError(
-                            f"Failed to parse JSON object at position {start_index}: {e}",
-                            original_error=e,
-                            position=start_index,
-                        )
-                        parsing_errors.append(error)
-
-        elif char in "]":
-            if bracket_stack and bracket_stack[-1] == "[":
-                bracket_stack.pop()
-
-                if len(bracket_stack) == 0 and start_indices:
-                    start_index = start_indices.pop()
-                    candidate = text[start_index : i + 1]
-                    try:
-                        obj = json.loads(candidate)
-                        if isinstance(obj, (dict, list)):
-                            json_objects.append(obj)
-                    except json.JSONDecodeError as e:
-                        error = JsonParsingError(
-                            f"Failed to parse JSON array at position {start_index}: {e}",
-                            original_error=e,
-                            position=start_index,
-                        )
-                        parsing_errors.append(error)
+    for match in matches:
+        try:
+            obj = json.loads(match)
+            if isinstance(obj, (dict, list)):
+                json_objects.append(obj)
+        except json.JSONDecodeError as e:
+            error = JsonParsingError(
+                f"Failed to parse fenced JSON: {e}", original_error=e
+            )
+            parsing_errors.append(error)
+            logger.warning("Failed to parse fenced JSON: %s", e)
 
     return json_objects, parsing_errors
+
+
+class _BracketParser:
+    """
+    Helper class for stateful bracket counting parsing.
+    Encapsulates state to avoid passing 7+ arguments between functions.
+    """
+
+    def __init__(self, text: str):
+        self.text = text
+        self.objects: List[Any] = []
+        self.errors: List[JsonParsingError] = []
+        self._stack: List[str] = []
+        self._start_indices: List[int] = []
+        self._in_string = False
+        self._escape = False
+
+    def parse(self) -> Tuple[List[Dict[str, Any]], List[JsonParsingError]]:
+        """Run the parsing logic."""
+        if "{" not in self.text and "[" not in self.text:
+            return [], []
+
+        for i, char in enumerate(self.text):
+            self._process_char(i, char)
+
+        return self.objects, self.errors
+
+    def _process_char(self, i: int, char: str):
+        """Process a single character and update state."""
+        if self._escape:
+            self._escape = False
+            return
+        if char == "\\":
+            self._escape = True
+            return
+        if char == '"' and not self._escape:
+            self._in_string = not self._in_string
+            return
+        if self._in_string:
+            return
+
+        if char in "{[":
+            if not self._stack:
+                self._start_indices.append(i)
+            self._stack.append(char)
+
+        elif char in "}]":
+            self._handle_closing(char, i)
+
+    def _handle_closing(self, char: str, current_index: int):
+        """Handle closing brackets and attempt JSON parsing."""
+        expected_open = "{" if char == "}" else "["
+
+        if self._stack and self._stack[-1] == expected_open:
+            self._stack.pop()
+
+            if not self._stack and self._start_indices:
+                start_index = self._start_indices.pop()
+                self._attempt_parse(start_index, current_index)
+
+    def _attempt_parse(self, start_index: int, current_index: int):
+        """Attempt to parse the substring as JSON."""
+        candidate = self.text[start_index : current_index + 1]
+        try:
+            obj = json.loads(candidate)
+            if isinstance(obj, (dict, list)):
+                self.objects.append(obj)
+        except json.JSONDecodeError as e:
+            error = JsonParsingError(
+                f"Failed to parse JSON candidate at {start_index}: {e}",
+                original_error=e,
+                position=start_index,
+            )
+            self.errors.append(error)
 
 
 def extract_json_with_feedback(text: str) -> Tuple[List[Dict[str, Any]], bool]:
@@ -139,12 +147,10 @@ def extract_json_with_feedback(text: str) -> Tuple[List[Dict[str, Any]], bool]:
     try:
         objects, errors = extract_json_from_text(text)
 
-        # Log any errors via EnhancedLogger
         for error in errors:
-            logger.warning(f"JSON Parsing Error: {error.message}")
+            logger.warning("JSON Parsing Error: %s", error.message)
 
         return objects, len(objects) > 0
-    except Exception as e:
-        logger.error(f"JSON Extraction failed: {e}")
-        # Return empty list rather than crashing the agent loop
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("JSON Extraction failed: %s", e, exc_info=True)
         return [], False
