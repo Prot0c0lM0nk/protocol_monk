@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Agent Components
 from agent.context import ContextManager
+from agent.context.exceptions_expanded import ContextValidationError
 from agent.model.exceptions import ModelConfigurationError
 from agent.model_client import ModelClient
 from agent.model_manager import RuntimeModelManager
@@ -119,6 +120,13 @@ class ProtocolAgent:
             context = await self.context_manager.get_context(self.current_model)
             self.enhanced_logger.log_context_snapshot(context)
             return context
+        except ContextValidationError as e:
+            # Handle context validation errors specifically
+            await self.ui.print_error(f"Context validation error: {e}")
+            await self.ui.print_error(
+                "Please clear the context with '/clear' command and try again."
+            )
+            return None
         except Exception as e:  # pylint: disable=broad-exception-caught
             await self.ui.print_error(f"Error getting context: {e}")
             return None

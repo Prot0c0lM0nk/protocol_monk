@@ -81,13 +81,13 @@ class TokenAccountant:
 
     def check_budget(self, new_tokens: int) -> bool:
         """
-        Check if adding new_tokens would exceed the 80% pruning threshold.
+        Check if adding new_tokens would exceed the 90% pruning threshold.
         Returns True if budget is OK, False if pruning is needed.
         """
         if self.max_tokens <= 0:
             return True  # Infinite budget or unconfigured
 
-        pruning_threshold = int(self.max_tokens * 0.8)
+        pruning_threshold = int(self.max_tokens * 0.9)  # Trigger at 90% instead of 80%
         return (self.total_tokens + new_tokens) <= pruning_threshold
 
     def recalculate(self, system_message: str, messages: List[Message]):

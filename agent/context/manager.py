@@ -189,10 +189,14 @@ class ContextManager:
         Formats the conversation for the LLM API.
         Automatically applies NeuralSym enhancement if the model is small/weak.
         """
-        # 1. Get the base context (System + History)
+        # 1. Check context size before proceeding
+        if model_name:
+            await self.check_context_before_generation(model_name)
+
+        # 2. Get the base context (System + History)
         base_context = await self._get_base_context()
 
-        # 2. Check if we need to enhance it (Small Model Logic)
+        # 3. Check if we need to enhance it (Small Model Logic)
         if model_name and self.neural_sym:
             # Check if model is small (contains size indicators)
             small_identifiers = [
@@ -276,3 +280,80 @@ class ContextManager:
                     operation="record_interaction_outcome",
                     original_error=e,
                 ) from e
+
+    def _check_context_size_for_model(self, model_name: str) -> dict:
+        """
+        Check if current context size is appropriate for the given model.
+        Returns dict with status and information.
+        """
+        from agent.model_manager import RuntimeModelManager
+
+        # Get current context stats
+        stats = self.accountant.get_stats()
+        current_tokens = stats["total_tokens"]
+
+        # Get model's context window
+        model_manager = RuntimeModelManager()
+        model_info = model_manager.get_available_models().get(model_name)
+        if not model_info:
+            # If model not found, use a safe default
+            model_context_window = 32768  # Conservative default
+        else:
+            model_context_window = model_info.context_window
+
+        # Define thresholds
+        warning_threshold = int(model_context_window * 0.8)  # 80%
+        critical_threshold = int(model_context_window * 0.95)  # 95%
+        hard_limit = model_context_window  # 100%
+
+        result = {
+            "current_tokens": current_tokens,
+            "model_context_window": model_context_window,
+            "warning_threshold": warning_threshold,
+            "critical_threshold": critical_threshold,
+            "hard_limit": hard_limit,
+            "is_warning": current_tokens > warning_threshold,
+            "is_critical": current_tokens > critical_threshold,
+            "is_over_limit": current_tokens > hard_limit,
+            "usage_percent": (
+                round((current_tokens / model_context_window) * 100, 2)
+                if model_context_window > 0
+                else 0
+            ),
+        }
+
+        return result
+
+    def _get_context_size_advice(self, check_result: dict) -> str:
+        """
+        Generate user-friendly advice based on context size check.
+        """
+        if check_result["is_over_limit"]:
+            return f"🚨 CRITICAL: Context ({check_result['current_tokens']:,} tokens) exceeds model limit ({check_result['hard_limit']:,} tokens). Please clear context with '/clear'."
+        elif check_result["is_critical"]:
+            return f"⚠️  WARNING: Context ({check_result['current_tokens']:,} tokens) is critically large ({check_result['usage_percent']}% of limit). Consider clearing with '/clear'."
+        elif check_result["is_warning"]:
+            return f"⚠️  NOTICE: Context ({check_result['current_tokens']:,} tokens) is large ({check_result['usage_percent']}% of limit). Consider clearing with '/clear'."
+        else:
+            return f"✅ Context ({check_result['current_tokens']:,} tokens) is within limits ({check_result['usage_percent']}% of {check_result['model_context_window']:,} token limit)."
+
+    async def check_context_before_generation(self, model_name: str) -> dict:
+        """
+        Check context size before generation and return status.
+        Raises an exception if context exceeds hard limits.
+        """
+        check_result = self._check_context_size_for_model(model_name)
+
+        # Log the status
+        advice = self._get_context_size_advice(check_result)
+        self.logger.info(advice)
+
+        # Raise exception if over hard limit
+        if check_result["is_over_limit"]:
+            raise ContextValidationError(
+                f"Context size ({check_result['current_tokens']:,} tokens) exceeds model limit ({check_result['hard_limit']:,} tokens)",
+                validation_type="context_size",
+                invalid_value=check_result["current_tokens"],
+            )
+
+        return check_result

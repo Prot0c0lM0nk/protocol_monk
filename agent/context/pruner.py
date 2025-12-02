@@ -72,7 +72,9 @@ class ContextPruner:
         """Select highest scoring messages that fit within the budget."""
         kept_messages = []
         current_tokens = 0
-        target_tokens = int(self.max_tokens * 0.6)  # Target 60% after pruning
+        target_tokens = int(
+            self.max_tokens * 0.7
+        )  # Target 70% after pruning (more aggressive)
 
         # Iterate through messages (highest score first)
         for _, original_index, msg in scored_messages:
@@ -104,6 +106,11 @@ class ContextPruner:
                     len(conversation),
                     current_tokens,
                     self.max_tokens,
+                )
+                # Even for minimum conversations, we must fit within limits
+                # Try to prune individual messages if needed
+                return self._select_fitting_messages(
+                    [(0.0, i, msg) for i, msg in enumerate(conversation)], accountant
                 )
             return conversation
 
