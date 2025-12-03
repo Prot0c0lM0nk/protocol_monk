@@ -25,7 +25,12 @@ class ScratchManager:
         self.scratch_dir.mkdir(exist_ok=True)
 
     def cleanup(self):
-        """Delete all files in the scratch directory."""
+        """
+        Delete all files in the scratch directory.
+
+        Raises:
+            ScratchManagerError: If cleanup fails
+        """
         if self.scratch_dir.exists():
             try:
                 shutil.rmtree(self.scratch_dir)
@@ -43,6 +48,16 @@ class ScratchManager:
         Auto-stage large inline content to a scratch file.
         Returns the scratch_id if staged.
         Raises ScratchManagerError on failure.
+
+        Args:
+            content: Content string to potentially stage
+            threshold: Character threshold for staging (default: 1000)
+
+        Returns:
+            str: Scratch ID if staged, empty string if not
+
+        Raises:
+            ScratchManagerError: If staging fails
         """
         if not content or len(content) <= threshold:
             # Return empty string for content that doesn't need staging
@@ -68,7 +83,18 @@ class ScratchManager:
             ) from e
 
     def read_content(self, scratch_id: str) -> str:
-        """Retrieve content from a scratch file. Raises ScratchManagerError on failure."""
+        """
+        Retrieve content from a scratch file. Raises ScratchManagerError on failure.
+
+        Args:
+            scratch_id: Unique identifier for the scratch file
+
+        Returns:
+            str: Content from the scratch file
+
+        Raises:
+            ScratchManagerError: If file not found or read fails
+        """
         try:
             file_path = self.scratch_dir / f"{scratch_id}.txt"
             if file_path.exists():

@@ -7,10 +7,24 @@ class ModelSelector:
     """Implements the guardrail logic for model switching."""
 
     def __init__(self, model_map: Dict[str, ModelInfo]):
+        """
+        Initialize the model selector with available models.
+        
+        Args:
+            model_map: Dictionary of available models with their info
+        """
         self.model_map = model_map
-
     def assess_switch(self, current_usage: int, target_model_name: str) -> SwitchReport:
-        """Assess if it's safe to switch to the target model."""
+        """
+        Assess if it's safe to switch to the target model.
+        
+        Args:
+            current_usage: Current token usage
+            target_model_name: Name of target model to switch to
+            
+        Returns:
+            SwitchReport: Assessment report with safety status and limits
+        """
         target_model = self.model_map.get(target_model_name)
 
         if not target_model:

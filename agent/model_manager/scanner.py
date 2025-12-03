@@ -9,10 +9,18 @@ class ModelScanner:
     """Scans for available local models via Ollama API."""
 
     def __init__(self):
+        """
+        Initialize the model scanner with Ollama URL.
+        """
         self.ollama_url = settings.api.ollama_url.replace("/api/chat", "")  # Base URL
 
     async def scan_local_models(self) -> List[str]:
-        """Query Ollama for available local models."""
+        """
+        Query Ollama for available local models.
+        
+        Returns:
+            List[str]: List of available model names
+        """
         try:
             timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -31,7 +39,16 @@ class ModelScanner:
     def merge_availability(
         self, map_data: Dict[str, ModelInfo], local_data: List[str]
     ) -> Dict[str, ModelInfo]:
-        """Merge model map data with local availability information."""
+        """
+        Merge model map data with local availability information.
+        
+        Args:
+            map_data: Model map data with ModelInfo objects
+            local_data: List of locally available model names
+            
+        Returns:
+            Dict[str, ModelInfo]: Merged model availability data
+        """
         # For now, we'll just return the map_data as is
         # In a more advanced implementation, we could mark which models are locally available
         return map_data

@@ -13,11 +13,25 @@ class ModelConfigLoader:
         model_map_file: str = "model_map.json",
         model_options_file: str = "model_options.json",
     ):
+        """
+        Initialize the model loader with file paths.
+        
+        Args:
+            model_map_file: Path to model map JSON file (default: "model_map.json")
+            model_options_file: Path to model options JSON file (default: "model_options.json")
+        """
+        self.model_map_file = Path(model_map_file)
+        self.model_options_file = Path(model_options_file)
         self.model_map_file = Path(model_map_file)
         self.model_options_file = Path(model_options_file)
 
     def load_model_map(self) -> Dict[str, ModelInfo]:
-        """Load model map and convert to ModelInfo objects."""
+        """
+        Load model map and convert to ModelInfo objects.
+        
+        Returns:
+            Dict[str, ModelInfo]: Model map with ModelInfo objects
+        """
         try:
             with open(self.model_map_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -38,7 +52,12 @@ class ModelConfigLoader:
             return {}
 
     def load_options(self) -> Dict[str, Any]:
-        """Load model options configuration."""
+        """
+        Load model options configuration.
+        
+        Returns:
+            Dict[str, Any]: Model options configuration
+        """
         try:
             with open(self.model_options_file, "r", encoding="utf-8") as f:
                 return json.load(f)
@@ -47,7 +66,15 @@ class ModelConfigLoader:
             return {}
 
     def get_model_limit(self, model_name: str) -> int:
-        """Get the context window limit for a specific model."""
+        """
+        Get the context window limit for a specific model.
+        
+        Args:
+            model_name: Name of the model to get limit for
+            
+        Returns:
+            int: Context window limit in tokens
+        """
         model_map = self.load_model_map()
         model_info = model_map.get(model_name)
         if model_info:

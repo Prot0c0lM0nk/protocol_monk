@@ -291,7 +291,6 @@ class ContextManager:
         """
         Resets the entire context state.
 
-        Returns:
             None: Clears conversation and resets trackers
         """
         async with self._lock:
@@ -339,7 +338,6 @@ class ContextManager:
             strategy: Pruning strategy to use
             _target_limit: Target token limit for pruning
 
-        Returns:
             None: Modifies conversation context in-place
         """
         if strategy in ["strict", "archive"]:
