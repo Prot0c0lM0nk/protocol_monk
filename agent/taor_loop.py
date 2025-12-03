@@ -22,6 +22,12 @@ class TAORLoop:
     """
 
     def __init__(self, agent):
+        """
+        Initialize the TAOR loop with agent reference.
+
+        Args:
+            agent: Reference to the main agent instance
+        """
         self.agent = agent
         self.logger = logging.getLogger(__name__)
         self.max_autonomous_iterations = 50
@@ -32,6 +38,12 @@ class TAORLoop:
         """
         Main execution entry point.
         Returns True if conversation completed normally, False on fatal error.
+
+        Args:
+            user_input: User's input string
+
+        Returns:
+            bool: True if completed normally, False on fatal error
         """
         # 0. OBSERVE (User Input)
         await self.agent.context_manager.add_message("user", user_input)
@@ -55,6 +67,16 @@ class TAORLoop:
         """
         Execute one complete Think-Act-Observe cycle.
         Returns False if the loop should terminate.
+
+        Args:
+            iteration: Current iteration number
+
+        Returns:
+            bool: False if loop should terminate, True to continue
+
+        Raises:
+            OrchestrationError: If context preparation fails
+            ModelError: If model response generation fails
         """
         # 1. THINK (Prepare Context & Call Model)
         context = await self.agent._prepare_context()
@@ -84,7 +106,15 @@ class TAORLoop:
         return await self._process_action(actions[0])
 
     async def _handle_no_actions(self, response: str) -> bool:
-        """Handle cases where no tools were called."""
+        """
+        Handle cases where no tools were called.
+
+        Args:
+            response: Response string to analyze
+
+        Returns:
+            bool: True to continue loop, False to stop
+        """
         if self._detect_ghost_tool(response):
             await self.agent.ui.print_warning("⚠️ Malformed tool detected. Retrying...")
             await self.agent.context_manager.add_message(
@@ -99,7 +129,15 @@ class TAORLoop:
         return False
 
     async def _process_action(self, action: Dict) -> bool:
-        """Execute the action and record results."""
+        """
+        Execute the action and record results.
+
+        Args:
+            action: Action dictionary to process
+
+        Returns:
+            bool: True to continue loop, False to stop
+        """
         try:
             # tool_executor expects a list
             summary = await self.agent.tool_executor.execute_tool_calls([action])
@@ -126,7 +164,15 @@ class TAORLoop:
         return True  # Continue loop
 
     def _detect_ghost_tool(self, response: str) -> bool:
-        """Enhanced detection of malformed tool calls using JSON validation."""
+        """
+        Enhanced detection of malformed tool calls using JSON validation.
+
+        Args:
+            response: Response string to check for ghost tool patterns
+
+        Returns:
+            bool: True if ghost tool detected, False otherwise
+        """
         try:
             # Heuristic: If it looks like JSON/Tool but failed parsing
             if "{" in response and ("action:" in response or "name:" in response):

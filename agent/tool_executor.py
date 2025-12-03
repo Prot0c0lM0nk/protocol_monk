@@ -38,6 +38,15 @@ class ToolExecutor:
         auto_confirm: bool = False,
         ui_callback: Optional[Callable] = None,
     ):
+        """
+        Initialize the tool executor with registry and configuration.
+
+        Args:
+            tool_registry: Registry of available tools
+            working_dir: Working directory for file operations
+            auto_confirm: Whether to auto-confirm tool executions (default: False)
+            ui_callback: Optional UI callback function for user interaction
+        """
         self.tool_registry = tool_registry
         self.working_dir = working_dir
         self.auto_confirm = auto_confirm
@@ -46,14 +55,32 @@ class ToolExecutor:
         self._config_lock = Lock()
 
     async def _default_ui_callback(self, event: str, _data: Dict[str, Any]) -> Any:
-        """Fallback callback if UI is not initialized."""
+        """
+        Fallback callback if UI is not initialized.
+
+        Args:
+            event: UI event type
+            _data: Event data dictionary
+
+        Returns:
+            Any: Response based on event type
+        """
         if event == "confirm":
             return self.auto_confirm
         # For events that don't require a return value, return None
         return None
 
     def _handle_tool_exception(self, error: Exception, action: str) -> ToolResult:
-        """Map exceptions to ToolResults and log them appropriately."""
+        """
+        Map exceptions to ToolResults and log them appropriately.
+
+        Args:
+            error: Exception that occurred during tool execution
+            action: Name of the tool that failed
+
+        Returns:
+            ToolResult: Result representing the error condition
+        """
         # Note: ToolResult does not accept 'data' or metadata fields.
         # We append debug details to the output for visibility.
 
@@ -99,7 +126,15 @@ class ToolExecutor:
         )
 
     async def _execute_tool(self, tool_call: Dict) -> ToolResult:
-        """Execute a single tool via the registry."""
+        """
+        Execute a single tool via the registry.
+
+        Args:
+            tool_call: Normalized tool call dictionary
+
+        Returns:
+            ToolResult: Result of tool execution
+        """
         action = tool_call["action"]
         parameters = tool_call["parameters"]
 
@@ -110,7 +145,18 @@ class ToolExecutor:
             return self._handle_tool_exception(e, action)
 
     def _normalize_tool_call(self, tool_call: Dict) -> Dict:
-        """Normalize different tool call formats into standard structure."""
+        """
+        Normalize different tool call formats into standard structure.
+
+        Args:
+            tool_call: Raw tool call dictionary to normalize
+
+        Returns:
+            Dict: Normalized tool call with 'action' and 'parameters' keys
+
+        Raises:
+            ToolExecutionError: If tool call format is invalid
+        """
         if "action" in tool_call and "parameters" in tool_call:
             return tool_call
         if "name" in tool_call and "arguments" in tool_call:
@@ -127,11 +173,17 @@ class ToolExecutor:
     ) -> Tuple[Optional[Dict], Optional[ToolResult]]:
         """
         Handle UI confirmation and user modifications.
+
+        Args:
+            normalized: Normalized tool call dictionary
+
         Returns:
-            (normalized_tool_call, None) -> Execution approved
-            (None, ToolResult) -> User gave a suggestion (don't execute)
+            Tuple[Optional[Dict], Optional[ToolResult]]:
+                (normalized_tool_call, None) -> Execution approved
+                (None, ToolResult) -> User gave a suggestion (don't execute)
+
         Raises:
-            UserCancellationError -> User rejected
+            UserCancellationError: User rejected tool execution
         """
         confirmation = await self.ui_callback(
             "confirm", {"tool_call": normalized, "auto_confirm": self.auto_confirm}
@@ -172,6 +224,15 @@ class ToolExecutor:
         """
         Process the lifecycle of a single tool call.
         Returns: (ToolResult, should_finish_flag)
+
+        Args:
+            tool_call: Single tool call dictionary to process
+
+        Returns:
+            Tuple[Optional[ToolResult], bool]: Tool result and finish flag
+
+        Raises:
+            ToolExecutionError: If tool call format is invalid
         """
         # 1. Normalize
         try:
@@ -223,7 +284,15 @@ class ToolExecutor:
         return result, False
 
     async def execute_tool_calls(self, tool_calls: List[Dict]) -> ExecutionSummary:
-        """Execute a list of tool calls using async UI callback."""
+        """
+        Execute a list of tool calls using async UI callback.
+
+        Args:
+            tool_calls: List of tool call dictionaries to execute
+
+        Returns:
+            ExecutionSummary: Summary of execution results and status
+        """
         if not tool_calls:
             return ExecutionSummary()
 
@@ -248,7 +317,12 @@ class ToolExecutor:
         return summary
 
     async def set_auto_confirm(self, value: bool):
-        """Thread-safe update of auto-confirm setting."""
+        """
+        Thread-safe update of auto-confirm setting.
+
+        Args:
+            value: New auto-confirm setting value
+        """
         async with self._config_lock:
             self.auto_confirm = value
         await self.ui_callback("auto_confirm_changed", {"value": value})

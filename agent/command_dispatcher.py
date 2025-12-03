@@ -25,7 +25,15 @@ class CommandDispatcher:
         self.logger = logging.getLogger(__name__)
 
     async def dispatch(self, user_input: str) -> Optional[bool]:
-        """Process slash commands and return appropriate signals."""
+        """
+        Process slash commands and return appropriate signals.
+
+        Args:
+            user_input: The user's input string
+
+        Returns:
+            Optional[bool]: True if command was handled, None if not a command
+        """
         if not user_input.startswith("/"):
             return None
 
@@ -95,7 +103,12 @@ class CommandDispatcher:
         await self.ui.print_info(status_text)
 
     async def _display_model_list(self, available_models: Dict):
-        """Print the list of available models."""
+        """
+        Print the list of available models.
+
+        Args:
+            available_models: Dictionary of available models
+        """
         await self.ui.print_info("Available Models:")
         for i, model_name in enumerate(available_models.keys(), 1):
             m = available_models[model_name]
@@ -113,7 +126,15 @@ class CommandDispatcher:
             await self.ui.print_info(f"  {i}. {model_name} ({prov}, {ctx:,} tokens)")
 
     async def _get_model_choice(self, available_models: Dict) -> Optional[str]:
-        """Prompt user and parse selection."""
+        """
+        Prompt user and parse selection.
+
+        Args:
+            available_models: Dictionary of available models
+
+        Returns:
+            Optional[str]: Selected model name or None if invalid
+        """
         try:
             choice = await self.ui.prompt_user(
                 "\nSelect a model (enter number or name): "
@@ -141,7 +162,16 @@ class CommandDispatcher:
     async def _handle_guardrails(
         self, selected_model: str, model_manager: RuntimeModelManager
     ) -> bool:
-        """Check token limits and prune if necessary. Returns True if switch succeeds."""
+        """
+        Check token limits and prune if necessary. Returns True if switch succeeds.
+
+        Args:
+            selected_model: Name of the selected model
+            model_manager: Runtime model manager instance
+
+        Returns:
+            bool: True if switch succeeds, False otherwise
+        """
         current_tokens = self.agent.context_manager.get_total_tokens()
         switch_report = model_manager.assess_switch(current_tokens, selected_model)
 

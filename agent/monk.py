@@ -36,6 +36,18 @@ class ProtocolAgent:
         tool_registry=None,
         ui: Optional[UI] = None,
     ):
+        """
+        Initialize the core agent with configuration options.
+
+        Args:
+            working_dir: Working directory for file operations (default: ".")
+            model_name: LLM model to use (default: from settings)
+            tool_registry: Tool registry instance (optional)
+            ui: User interface instance (optional)
+
+        Raises:
+            ModelConfigurationError: If model client initialization fails
+        """
         self.working_dir = Path(working_dir).resolve()
         self.current_model = model_name
         self.ui = ui or PlainUI()
@@ -76,13 +88,24 @@ class ProtocolAgent:
         self.taor_loop = TAORLoop(self)
 
     async def async_initialize(self):
-        """Initialize async components like tool registry and context manager."""
+        """
+        Initialize async components like tool registry and context manager.
+        """
         if hasattr(self.tool_executor.tool_registry, "async_initialize"):
             await self.tool_executor.tool_registry.async_initialize()
         await self.context_manager.async_initialize()
 
     async def _handle_ui_event(self, event: str, data: Dict[str, Any]) -> Any:
-        """Handle UI events triggered by tool execution."""
+        """
+        Handle UI events triggered by tool execution.
+
+        Args:
+            event: Type of UI event (confirm, progress, result, etc.)
+            data: Event data dictionary
+
+        Returns:
+            Any: Response based on event type (None for most events)
+        """
         # Pass-through to UI
         if event == "confirm":
             return await self.ui.confirm_tool_call(
@@ -109,13 +132,26 @@ class ProtocolAgent:
         return None
 
     async def process_request(self, user_input: str) -> bool:
-        """Delegate to TAOR Loop."""
+        """
+        Delegate to TAOR Loop.
+
+        Args:
+            user_input: User's input string
+
+        Returns:
+            bool: Result from TAOR loop execution
+        """
         return await self.taor_loop.run_loop(user_input)
 
     # --- Helpers called by TAOR Loop ---
 
     async def _prepare_context(self) -> Optional[List[Dict]]:
-        """Retrieve and log the current context for the model."""
+        """
+        Retrieve and log the current context for the model.
+
+        Returns:
+            Optional[List[Dict]]: Context for model, None if error
+        """
         try:
             context = await self.context_manager.get_context(self.current_model)
             self.enhanced_logger.log_context_snapshot(context)
@@ -132,7 +168,15 @@ class ProtocolAgent:
             return None
 
     async def _get_model_response(self, context: List[Dict]):
-        """Stream the model response and handle errors."""
+        """
+        Stream the model response and handle errors.
+
+        Args:
+            context: Conversation context for the model
+
+        Returns:
+            str: Full response text, None if interrupted, False if error
+        """
         await self.ui.start_thinking()
         full_response = ""
         try:
@@ -155,11 +199,27 @@ class ProtocolAgent:
             return False
 
     def _parse_response(self, text: str) -> Tuple[List[Dict], bool]:
-        """Parse response and return (actions, has_json_content)."""
+        """
+        Parse response and return (actions, has_json_content).
+
+        Args:
+            text: Response text to parse
+
+        Returns:
+            Tuple[List[Dict], bool]: Actions list and JSON content flag
+        """
         return extract_json_with_feedback(text)
 
     async def _record_results(self, summary: ExecutionSummary) -> bool:
-        """Record results and return True if any failures occurred."""
+        """
+        Record results and return True if any failures occurred.
+
+        Args:
+            summary: Execution summary with tool results
+
+        Returns:
+            bool: True if any failures occurred, False otherwise
+        """
         had_failure = False
         for result in summary.results:
             await self.context_manager.add_message("tool", result.output, importance=5)
@@ -177,12 +237,19 @@ class ProtocolAgent:
 
     # --- Legacy Support Methods ---
     async def clear_conversation(self):
-        """Reset the context manager and UI."""
+        """
+        Reset the context manager and UI.
+        """
         await self.context_manager.clear()
         await self.ui.print_info("✓ Cleared.")
 
     async def get_status(self) -> Dict:
-        """Return the current status of the agent, context, and model."""
+        """
+        Return the current status of the agent, context, and model.
+
+        Returns:
+            Dict: Status information including working directory, model, tokens, etc.
+        """
         context_stats = await self.context_manager.get_stats()
         return {
             "working_dir": str(self.working_dir),
@@ -194,7 +261,12 @@ class ProtocolAgent:
         }
 
     async def set_model(self, model_name: str):
-        """Switch the current model and update context limits."""
+        """
+        Switch the current model and update context limits.
+
+        Args:
+            model_name: Name of the model to switch to
+        """
         self.current_model = model_name
         self.model_client.set_model(model_name)
         model_manager = RuntimeModelManager()
