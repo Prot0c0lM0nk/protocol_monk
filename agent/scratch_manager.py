@@ -3,7 +3,6 @@ import shutil
 import logging
 import time
 from pathlib import Path
-from typing import Optional
 
 from agent.context.exceptions_expanded import ScratchManagerError
 

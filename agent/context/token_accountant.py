@@ -1,7 +1,6 @@
 import logging
 from typing import Any, List, Optional
 
-from agent.context.exceptions import ContextOverflowError
 from agent.context.exceptions_expanded import (
     ContextValidationError,
     TokenEstimationError,

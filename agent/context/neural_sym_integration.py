@@ -5,8 +5,7 @@ Integration of NeuralSym guidance system with the agent context manager
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-
+from typing import Dict, List, Tuple
 # Import NeuralSym components
 try:
     from NeuralSym.guidance.unified import UnifiedGuidanceSystem

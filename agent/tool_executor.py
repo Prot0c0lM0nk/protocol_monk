@@ -176,7 +176,7 @@ class ToolExecutor:
         # 1. Normalize
         try:
             normalized = self._normalize_tool_call(tool_call)
-        except ToolExecutionError as e:
+        except ToolExecutionError:
             error_msg = f"Invalid tool call format: {str(tool_call)[:100]}..."
             self.logger.warning(error_msg)
             await self.ui_callback("tool_error", {"error": error_msg})

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from agent.context.exceptions import ContextError
 from agent.core_exceptions import AgentCoreError
