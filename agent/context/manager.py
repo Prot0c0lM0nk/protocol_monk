@@ -80,7 +80,16 @@ class ContextManager:
         self.accountant.recalculate(self.system_message, self.conversation)
 
     async def _build_system_message(self) -> str:
-        """Reads the system prompt template and injects tool definitions."""
+        """
+        Reads the system prompt template and injects tool definitions.
+
+        Returns:
+            str: Built system message with tool definitions
+
+        Raises:
+            ConfigurationError: If system prompt template file is not found
+            ContextValidationError: If system prompt building fails
+        """
         try:
             # Run file I/O in a separate thread to avoid blocking
             prompt_template = await asyncio.to_thread(
@@ -115,7 +124,15 @@ class ContextManager:
             ) from e
 
     async def _check_and_update_files(self, content: str):
-        """Check if content is a file path and update tracker if valid."""
+        """
+        Check if content is a file path and update tracker if valid.
+
+        Args:
+            content: Content string to check for file path
+
+        Returns:
+            None: Updates file tracker if valid file path found
+        """
         # Quick heuristic check before expensive operations
         if len(content) >= 256 or "\n" in content:
             return
@@ -146,6 +163,14 @@ class ContextManager:
         """
         Add a message to the conversation.
         Handles token counting, pruning, and file content management automatically.
+
+        Args:
+            role: Message role (user, assistant, system)
+            content: Message content
+            importance: Message importance level (optional)
+
+        Returns:
+            None: Adds message to conversation
         """
         async with self._lock:
             # Log meaningful information about what's being added
@@ -177,17 +202,41 @@ class ContextManager:
             self.accountant.add(new_tokens)
 
     async def add_user_message(self, content: str, importance: int = 4):
-        """Add a message from the user."""
+        """
+        Add a message from the user.
+
+        Args:
+            content: User message content
+            importance: Message importance level (default: 4)
+
+        Returns:
+            None: Adds user message to conversation
+        """
         await self.add_message("user", content, importance)
 
     async def add_assistant_message(self, content: str, importance: int = 3):
-        """Add a message from the assistant (AI)."""
+        """
+        Add a message from the assistant (AI).
+
+        Args:
+            content: Assistant message content
+            importance: Message importance level (default: 3)
+
+        Returns:
+            None: Adds assistant message to conversation
+        """
         await self.add_message("assistant", content, importance)
 
     async def get_context(self, model_name: str = None) -> List[Dict]:
         """
         Formats the conversation for the LLM API.
         Automatically applies NeuralSym enhancement if the model is small/weak.
+
+        Args:
+            model_name: Name of the model to format context for (optional)
+
+        Returns:
+            List[Dict]: Formatted conversation context for API
         """
         # 1. Check context size before proceeding
         if model_name:
@@ -226,7 +275,12 @@ class ContextManager:
         return base_context
 
     async def _get_base_context(self) -> List[Dict]:
-        """Standard context construction without AI enhancement."""
+        """
+        Standard context construction without AI enhancement.
+
+        Returns:
+            List[Dict]: Basic conversation context without enhancements
+        """
         async with self._lock:
             context = [{"role": "system", "content": self.system_message}]
             for msg in self.conversation:
@@ -234,7 +288,12 @@ class ContextManager:
             return context
 
     async def clear(self):
-        """Resets the entire context state."""
+        """
+        Resets the entire context state.
+
+        Returns:
+            None: Clears conversation and resets trackers
+        """
         async with self._lock:
             self.conversation = []
             await self.tracker.clear()
@@ -242,15 +301,30 @@ class ContextManager:
 
     @property
     def max_tokens(self) -> int:
-        """Return the maximum token limit."""
+        """
+        Return the maximum token limit.
+
+        Returns:
+            int: Maximum allowed tokens in context
+        """
         return self.accountant.max_tokens
 
     def get_total_tokens(self) -> int:
-        """Get the current total token count."""
+        """
+        Get the current total token count.
+
+        Returns:
+            int: Current total tokens in context
+        """
         return self.accountant.total_tokens
 
     async def get_stats(self) -> Dict:
-        """Returns current usage statistics."""
+        """
+        Returns current usage statistics.
+
+        Returns:
+            Dict: Statistics including tokens, messages, and files tracked
+        """
         async with self._lock:
             stats = self.accountant.get_stats()
             stats["total_messages"] = len(self.conversation)
@@ -258,7 +332,16 @@ class ContextManager:
             return stats
 
     def prune_context(self, strategy: str, _target_limit: int):
-        """Prune context based on strategy and target limit."""
+        """
+        Prune context based on strategy and target limit.
+
+        Args:
+            strategy: Pruning strategy to use
+            _target_limit: Target token limit for pruning
+
+        Returns:
+            None: Modifies conversation context in-place
+        """
         if strategy in ["strict", "archive"]:
             self.conversation = self.pruner.prune(self.conversation, self.accountant)
         elif strategy == "smart":
@@ -270,7 +353,19 @@ class ContextManager:
     # --- Neural Sym Passthrough Methods ---
 
     def record_tool_execution_outcome(self, *args, **kwargs):
-        """Forward tool execution results to NeuralSym for learning."""
+        """
+        Forward tool execution results to NeuralSym for learning.
+
+        Args:
+            *args: Variable arguments to pass to NeuralSym
+            **kwargs: Keyword arguments to pass to NeuralSym
+
+        Returns:
+            None: Forwards to NeuralSym system
+
+        Raises:
+            NeuralSymIntegrationError: If NeuralSym recording fails
+        """
         if self.neural_sym:
             try:
                 self.neural_sym.record_interaction_outcome(*args, **kwargs)
@@ -284,7 +379,12 @@ class ContextManager:
     def _check_context_size_for_model(self, model_name: str) -> dict:
         """
         Check if current context size is appropriate for the given model.
-        Returns dict with status and information.
+
+        Args:
+            model_name: Name of the model to check against
+
+        Returns:
+            dict: Status and information about context size compatibility
         """
         from agent.model_manager import RuntimeModelManager
 
@@ -327,6 +427,12 @@ class ContextManager:
     def _get_context_size_advice(self, check_result: dict) -> str:
         """
         Generate user-friendly advice based on context size check.
+
+        Args:
+            check_result: Dictionary with context size analysis results
+
+        Returns:
+            str: User-friendly advice message
         """
         if check_result["is_over_limit"]:
             return f"🚨 CRITICAL: Context ({check_result['current_tokens']:,} tokens) exceeds model limit ({check_result['hard_limit']:,} tokens). Please clear context with '/clear'."
@@ -341,6 +447,15 @@ class ContextManager:
         """
         Check context size before generation and return status.
         Raises an exception if context exceeds hard limits.
+
+        Args:
+            model_name: Name of the model to check context against
+
+        Returns:
+            dict: Context size analysis and status information
+
+        Raises:
+            ContextValidationError: If context exceeds hard limits
         """
         check_result = self._check_context_size_for_model(model_name)
 

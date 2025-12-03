@@ -6,6 +6,7 @@ Integration of NeuralSym guidance system with the agent context manager
 import logging
 from pathlib import Path
 from typing import Dict, List, Tuple
+
 # Import NeuralSym components
 try:
     from NeuralSym.guidance.unified import UnifiedGuidanceSystem
@@ -58,6 +59,14 @@ class NeuralSymContextManager:
     ) -> Tuple[str, Dict]:
         """
         Get guidance for a specific intent, optimized for model size.
+
+        Args:
+            intent: User intent to get guidance for
+            context_tags: Set of context tags for guidance
+            model_size: Model size category (default: "large")
+
+        Returns:
+            Tuple[str, Dict]: Guidance text and metadata
         """
         if not self.guidance_system:
             return "", {}
@@ -71,6 +80,13 @@ class NeuralSymContextManager:
     ) -> Dict:
         """
         Get structured context optimized for the model size.
+
+        Args:
+            intent: User intent to get context for
+            model_size: Model size category (default: "large")
+
+        Returns:
+            Dict: Structured context with guidance and trace information
         """
         if not self.guidance_system:
             return {}
@@ -89,6 +105,13 @@ class NeuralSymContextManager:
     ) -> List[str]:
         """
         Get critical constraints optimized for the model size.
+
+        Args:
+            intent: User intent to get constraints for
+            model_size: Model size category (default: "large")
+
+        Returns:
+            List[str]: Critical constraint items
         """
         if not self.guidance_system:
             return []
@@ -105,6 +128,13 @@ class NeuralSymContextManager:
     ) -> List[str]:
         """
         Get verification checklist optimized for the model size.
+
+        Args:
+            intent: User intent to get checklist for
+            model_size: Model size category (default: "large")
+
+        Returns:
+            List[str]: Verification checklist items
         """
         if not self.guidance_system:
             return []
@@ -126,6 +156,16 @@ class NeuralSymContextManager:
     ):
         """
         Record the outcome of a tool interaction for learning.
+
+        Args:
+            tool_name: Name of the tool that was executed
+            arguments: Arguments passed to the tool
+            success: Whether the execution succeeded
+            error_message: Error message if execution failed
+            context_summary: Summary of execution context
+
+        Returns:
+            None: Records outcome to knowledge system
         """
         if not self.guidance_system:
             return
@@ -166,6 +206,13 @@ class NeuralSymContextManager:
     ) -> List[Dict]:
         """
         Enhance the base context with NeuralSym guidance when appropriate.
+
+        Args:
+            base_context: Original conversation context
+            model_name: Name of the model for optimization
+
+        Returns:
+            List[Dict]: Enhanced context with guidance if applicable
         """
         if not self.guidance_system:
             return base_context

@@ -21,7 +21,12 @@ class FileTracker:
     async def track_file_shown(self, filepath: str) -> int:
         """
         Mark a file as shown to the user.
-        Returns: 1 if it's new, 0 if already shown.
+
+        Args:
+            filepath: Path to the file
+
+        Returns:
+            int: 1 if it's new, 0 if already shown
         """
         if filepath not in self.files_shown:
             self.files_shown.add(filepath)
@@ -29,13 +34,28 @@ class FileTracker:
         return 0
 
     async def get_file_shown_count(self, filepath: str) -> int:
-        """Check if a file is currently in the tracked set."""
+        """
+        Check if a file is currently in the tracked set.
+
+        Args:
+            filepath: Path to the file to check
+
+        Returns:
+            int: 1 if file is in tracked set, 0 otherwise
+        """
         return 1 if filepath in self.files_shown else 0
 
     @staticmethod
     def _exact_path_match(filepath: str, text: str) -> bool:
         """
         Helper function for regex boundary matching to prevent false positives.
+
+        Args:
+            filepath: File path to match
+            text: Text to search in
+
+        Returns:
+            bool: True if exact path match found
         """
         # For file paths, we want to match the exact path when it appears as a complete token
         # but we're more flexible about boundaries since paths can appear in various contexts
@@ -48,6 +68,12 @@ class FileTracker:
     def _validate_file_exists(self, filepath: str) -> bool:
         """
         Validate that a file exists before processing.
+
+        Args:
+            filepath: Path to the file to validate
+
+        Returns:
+            bool: True if file exists and is readable, False otherwise
         """
         try:
             path = Path(filepath)
@@ -61,6 +87,13 @@ class FileTracker:
         """
         Scans conversation history. If 'filepath' appears multiple times,
         replaces older occurrences with a placeholder to save tokens.
+
+        Args:
+            filepath: Path to the file to process
+            conversation: List of conversation messages
+
+        Returns:
+            None: Modifies conversation in-place
         """
         # Validate file existence first
         if not self._validate_file_exists(filepath):

@@ -24,7 +24,15 @@ class ContextPruner:
     def _score_messages(
         self, conversation: List[Message]
     ) -> List[Tuple[float, int, Message]]:
-        """Calculate importance scores for each message."""
+        """
+        Calculate importance scores for each message.
+
+        Args:
+            conversation: List of conversation messages to score
+
+        Returns:
+            List[Tuple[float, int, Message]]: Scored messages with importance scores
+        """
         scored_messages = []
         total_messages = len(conversation)
 
@@ -46,7 +54,19 @@ class ContextPruner:
     def _estimate_message_tokens(
         self, msg: Message, accountant: TokenAccountant
     ) -> int:
-        """Estimate tokens for a single message with error handling."""
+        """
+        Estimate tokens for a single message with error handling.
+
+        Args:
+            msg: Message to estimate tokens for
+            accountant: TokenAccountant for estimation
+
+        Returns:
+            int: Estimated token count for the message
+
+        Raises:
+            TokenEstimationError: If token estimation fails
+        """
         try:
             return accountant.estimate(msg.content)
         except TokenEstimationError:
@@ -69,7 +89,16 @@ class ContextPruner:
         scored_messages: List[Tuple[float, int, Message]],
         accountant: TokenAccountant,
     ) -> List[Tuple[int, Message]]:
-        """Select highest scoring messages that fit within the budget."""
+        """
+        Select highest scoring messages that fit within the budget.
+
+        Args:
+            scored_messages: List of scored messages with importance scores
+            accountant: TokenAccountant for token estimation
+
+        Returns:
+            List[Tuple[int, Message]]: Selected messages with original indices
+        """
         kept_messages = []
         current_tokens = 0
         target_tokens = int(
@@ -92,6 +121,13 @@ class ContextPruner:
         """
         Prunes the conversation list to fit 60% of max_tokens.
         Uses the TokenAccountant for accurate token estimation.
+
+        Args:
+            conversation: List of conversation messages to prune
+            accountant: TokenAccountant for token estimation
+
+        Returns:
+            List[Message]: Pruned conversation messages
         """
         self.logger.info("Pruning conversation. Start count: %d", len(conversation))
 

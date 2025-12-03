@@ -47,6 +47,15 @@ class TokenAccountant:
     def estimate(self, text: str) -> int:
         """
         Estimate tokens for a single string using the strictly defined estimator.
+
+        Args:
+            text: Text string to estimate tokens for
+
+        Returns:
+            int: Estimated token count for the text
+
+        Raises:
+            TokenEstimationError: If token estimation fails
         """
         if not text:
             return 0
@@ -68,7 +77,15 @@ class TokenAccountant:
             ) from e
 
     def add(self, tokens: int):
-        """Add tokens to the total count."""
+        """
+        Add tokens to the total count.
+
+        Args:
+            tokens: Number of tokens to add to total
+
+        Raises:
+            ContextValidationError: If max_tokens is invalid
+        """
         if self.max_tokens <= 0:
             raise ContextValidationError(
                 f"Invalid max_tokens value: {self.max_tokens}. Must be positive.",
@@ -82,6 +99,12 @@ class TokenAccountant:
         """
         Check if adding new_tokens would exceed the 90% pruning threshold.
         Returns True if budget is OK, False if pruning is needed.
+
+        Args:
+            new_tokens: Number of tokens to check against budget
+
+        Returns:
+            bool: True if within budget, False if pruning needed
         """
         if self.max_tokens <= 0:
             return True  # Infinite budget or unconfigured
@@ -93,6 +116,10 @@ class TokenAccountant:
         """
         Recalculate the total token count from scratch.
         This is the source of truth for the context state.
+
+        Args:
+            system_message: System message to include in calculation
+            messages: List of conversation messages to include
         """
         running_total = 0
 
@@ -107,7 +134,12 @@ class TokenAccountant:
         self.logger.debug(f"Recalculated total tokens: {self.total_tokens}")
 
     def get_stats(self) -> dict:
-        """Get current token statistics."""
+        """
+        Get current token statistics.
+
+        Returns:
+            dict: Token usage statistics including total, max, and percentage
+        """
         usage_percent = (
             (self.total_tokens / self.max_tokens) * 100 if self.max_tokens > 0 else 0
         )
