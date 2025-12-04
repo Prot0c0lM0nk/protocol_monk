@@ -18,7 +18,8 @@ class ModelConfigLoader:
         
         Args:
             model_map_file: Path to model map JSON file (default: "model_map.json")
-            model_options_file: Path to model options JSON file (default: "model_options.json")
+            model_options_file: Path to model options JSON file 
+                (default: "model_options.json")
         """
         self.model_map_file = Path(model_map_file)
         self.model_options_file = Path(model_options_file)

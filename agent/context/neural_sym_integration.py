@@ -250,7 +250,8 @@ class NeuralSymContextManager:
             # Create a new list to avoid mutating the input list in place
             new_context = list(base_context)
 
-            # Insert after the main system prompt (index 1), or at index 0 if list is empty/weird
+            # Insert after the main system prompt (index 1), or at index 0
+            # if list is empty/weird
             insert_idx = 1 if len(new_context) > 0 else 0
             new_context.insert(insert_idx, system_note)
 

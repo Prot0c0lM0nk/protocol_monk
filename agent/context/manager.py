@@ -68,7 +68,11 @@ class ContextManager:
             self.neural_sym = None
 
     async def async_initialize(self):
-        """Initialize async components and load the system prompt from disk."""
+        """Initialize async components and load the system prompt from disk.
+        
+        Raises:
+            ContextValidationError: If system message fails to initialize properly
+        """
         self.system_message = await self._build_system_message()
         # Validate that system message was successfully built
         if not self.system_message or "[ERROR]" in self.system_message:
@@ -132,6 +136,9 @@ class ContextManager:
 
         Returns:
             None: Updates file tracker if valid file path found
+
+        Raises:
+            Exception: Various exceptions from file operations (caught internally)
         """
         # Quick heuristic check before expensive operations
         if len(content) >= 256 or "\n" in content:
@@ -168,9 +175,6 @@ class ContextManager:
             role: Message role (user, assistant, system)
             content: Message content
             importance: Message importance level (optional)
-
-        Returns:
-            None: Adds message to conversation
         """
         async with self._lock:
             # Log meaningful information about what's being added
@@ -208,9 +212,6 @@ class ContextManager:
         Args:
             content: User message content
             importance: Message importance level (default: 4)
-
-        Returns:
-            None: Adds user message to conversation
         """
         await self.add_message("user", content, importance)
 
@@ -221,9 +222,6 @@ class ContextManager:
         Args:
             content: Assistant message content
             importance: Message importance level (default: 3)
-
-        Returns:
-            None: Adds assistant message to conversation
         """
         await self.add_message("assistant", content, importance)
 
@@ -237,6 +235,9 @@ class ContextManager:
 
         Returns:
             List[Dict]: Formatted conversation context for API
+
+        Raises:
+            NeuralSymIntegrationError: If NeuralSym enhancement fails for the model
         """
         # 1. Check context size before proceeding
         if model_name:
@@ -357,9 +358,6 @@ class ContextManager:
         Args:
             *args: Variable arguments to pass to NeuralSym
             **kwargs: Keyword arguments to pass to NeuralSym
-
-        Returns:
-            None: Forwards to NeuralSym system
 
         Raises:
             NeuralSymIntegrationError: If NeuralSym recording fails

@@ -89,6 +89,8 @@ class CommandDispatcher:
         else:
             env_info = "general directory"
 
+        token_percentage = (stats['estimated_tokens'] / stats['token_limit'] * 100)
+
         status_text = f"""Current State:
 
 🤖 Model: {stats['current_model']}
@@ -98,7 +100,8 @@ class CommandDispatcher:
 🐍 Environment: {env_info}
 
 💬 Conversation Length: {stats['conversation_length']} messages
-🧮 Token Usage: {stats['estimated_tokens']:,} / {stats['token_limit']:,} ({(stats['estimated_tokens']/stats['token_limit']*100):.1f}%)
+🧮 Token Usage: {stats['estimated_tokens']:,} / {stats['token_limit']:,} \
+            ({token_percentage:.1f}%)
 """
         await self.ui.print_info(status_text)
 

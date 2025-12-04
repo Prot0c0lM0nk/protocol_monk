@@ -57,8 +57,9 @@ class FileTracker:
         Returns:
             bool: True if exact path match found
         """
-        # For file paths, we want to match the exact path when it appears as a complete token
-        # but we're more flexible about boundaries since paths can appear in various contexts
+        # For file paths, we want to match the exact path when it appears as a
+        # complete token but we're more flexible about boundaries since paths
+        # can appear in various contexts
         escaped_path = re.escape(filepath)
         # Look for the path with flexible boundaries
         pattern = escaped_path

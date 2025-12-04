@@ -49,6 +49,5 @@ class ModelScanner:
         Returns:
             Dict[str, ModelInfo]: Merged model availability data
         """
-        # For now, we'll just return the map_data as is
-        # In a more advanced implementation, we could mark which models are locally available
         return map_data
+
