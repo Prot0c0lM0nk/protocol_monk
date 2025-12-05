@@ -4,6 +4,7 @@ Read File Tool - Tool for reading specific lines from a file.
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -21,6 +22,7 @@ class ReadFileTool(BaseTool):
 
     @property
     def schema(self) -> ToolSchema:
+        """Return the tool schema."""
         return ToolSchema(
             name="read_file",
             description="Read and display file contents, with optional line range.",
@@ -49,6 +51,11 @@ class ReadFileTool(BaseTool):
                 "❌ Missing required parameter: 'filepath'", missing_params=["filepath"]
             )
 
+        # Path Cleaning: Remove redundant working_dir prefix
+        str_cwd = str(self.working_dir)
+        if str(filepath).startswith(str_cwd):
+            filepath = str(filepath)[len(str_cwd) :].lstrip(os.sep)
+
         # 1. Read File
         lines, error = self._validate_and_read(filepath)
         if error:
@@ -56,23 +63,22 @@ class ReadFileTool(BaseTool):
 
         # 2. Extract Range
         start, end = kwargs.get("line_start"), kwargs.get("line_end")
+        # pylint: disable=unpacking-non-sequence
         selected_lines, actual_start, actual_end, range_error = self._extract_range(
-            lines, start, end  # type: ignore
+            lines, start, end
         )
 
         if range_error:
             return range_error
 
         # 3. Format Output
-        return self._format_output(
-            filepath, selected_lines, actual_start, actual_end  # type: ignore
-        )
+        return self._format_output(filepath, selected_lines, actual_start, actual_end)
 
     def _validate_and_read(
         self, filepath: str
     ) -> Tuple[List[str], Optional[ToolResult]]:
         """Validate path, check size, and read content."""
-        if not self._is_safe_file_path(filepath, read_only=True):
+        if not self._is_safe_file_path(filepath):
             return [], ToolResult.security_blocked(
                 f"🔒 File path blocked due to security policy: {filepath}",
                 reason="Unsafe file path",
@@ -87,8 +93,9 @@ class ReadFileTool(BaseTool):
                 )
 
             if full_path.stat().st_size > self.MAX_FILE_SIZE_BYTES:
+                size_kb = self.MAX_FILE_SIZE_BYTES / 1024
                 return [], ToolResult.command_failed(
-                    f"❌ File too large (> {self.MAX_FILE_SIZE_BYTES/1024:.2f} KB).",
+                    f"❌ File too large (> {size_kb:.2f} KB).",
                     exit_code=1,
                 )
 
@@ -127,7 +134,7 @@ class ReadFileTool(BaseTool):
                 0,
                 ToolResult(
                     ExecutionStatus.COMMAND_FAILED,
-                    f"❌ Start line {start} exceeds file length ({total_lines} lines)",
+                    f"❌ Start line {start} exceeds length ({total_lines})",
                 ),
             )
 

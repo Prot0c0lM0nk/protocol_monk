@@ -20,6 +20,7 @@ class DeleteLinesTool(BaseTool):
 
     @property
     def schema(self) -> ToolSchema:
+        """Return the tool schema."""
         return ToolSchema(
             name="delete_lines",
             description=(
@@ -29,7 +30,7 @@ class DeleteLinesTool(BaseTool):
             parameters={
                 "filepath": {
                     "type": "string",
-                    "description": "Path to the file (relative to working directory)",
+                    "description": "Path to the file (relative to working dir)",
                 },
                 "line_start": {
                     "type": "integer",
@@ -37,7 +38,7 @@ class DeleteLinesTool(BaseTool):
                 },
                 "line_end": {
                     "type": "integer",
-                    "description": "Ending line number to delete (1-based, inclusive)",
+                    "description": "Ending line number to delete (1-based)",
                 },
             },
             required_params=["filepath", "line_start", "line_end"],
@@ -51,19 +52,20 @@ class DeleteLinesTool(BaseTool):
             return error
 
         # 2. Process Logic (Read -> Delete -> Reassemble)
+        # pylint: disable=unpacking-non-sequence
         new_content, deleted_lines, proc_error = self._process_deletion(
-            filepath, start, end  # type: ignore
+            filepath, start, end
         )
         if proc_error:
             return proc_error
 
         # 3. Perform Write
-        write_error = self._perform_atomic_write(filepath, new_content)  # type: ignore
+        write_error = self._perform_atomic_write(filepath, new_content)
         if write_error:
             return write_error
 
         # 4. Return Success
-        return self._format_success(filepath, start, end, deleted_lines)  # type: ignore
+        return self._format_success(filepath, start, end, deleted_lines)
 
     def _validate_inputs(
         self, kwargs: dict
@@ -83,6 +85,11 @@ class DeleteLinesTool(BaseTool):
                     missing_params=["filepath", "line_start", "line_end"],
                 ),
             )
+
+        # Path Cleaning
+        str_cwd = str(self.working_dir)
+        if str(filepath).startswith(str_cwd):
+            filepath = str(filepath)[len(str_cwd) :].lstrip(os.sep)
 
         if not self._is_safe_file_path(filepath):
             return (
@@ -125,7 +132,8 @@ class DeleteLinesTool(BaseTool):
                 [],
                 ToolResult(
                     ExecutionStatus.COMMAND_FAILED,
-                    f"❌ Invalid range: {line_start}-{line_end} (File has {len(lines)} lines)",
+                    f"❌ Invalid range: {line_start}-{line_end} "
+                    f"(File has {len(lines)} lines)",
                 ),
             )
 

@@ -22,20 +22,22 @@ class InsertInFileTool(BaseTool):
 
     @property
     def schema(self) -> ToolSchema:
+        """Return the tool schema."""
         return ToolSchema(
             name="insert_in_file",
             description=(
-                "[USE THIS FOR INSERTING IN MIDDLE] Insert content after a specific line. "
-                "Perfect for adding imports, class methods, or code between lines."
+                "[USE THIS FOR INSERTING IN MIDDLE] Insert content after a "
+                "specific line. Perfect for adding imports, class methods, "
+                "or code between lines."
             ),
             parameters={
                 "filepath": {
                     "type": "string",
-                    "description": "Path to the file (relative to working directory)",
+                    "description": "Path to the file (relative to working dir)",
                 },
                 "after_line": {
                     "type": "string",
-                    "description": "Exact line content to insert after (must match exactly)",
+                    "description": "Exact line content to insert after",
                 },
                 "content": {
                     "type": "string",
@@ -62,20 +64,21 @@ class InsertInFileTool(BaseTool):
 
         # 2. Logic: Read -> Find -> Splice
         full_path = self.working_dir / filepath
+        # pylint: disable=unpacking-non-sequence
         new_text, insert_idx, added_lines, logic_error = self._apply_insertion(
-            full_path, target_line, content  # type: ignore
+            full_path, target_line, content
         )
         if logic_error:
             return logic_error
 
         # 3. Write
-        write_error = self._perform_atomic_write(full_path, new_text)  # type: ignore
+        write_error = self._perform_atomic_write(full_path, new_text)
         if write_error:
             return write_error
 
         # 4. Result
         return self._format_success(
-            filepath, insert_idx, added_lines, new_text.splitlines()  # type: ignore
+            filepath, insert_idx, added_lines, new_text.splitlines()
         )
 
     def _validate_inputs(
@@ -95,6 +98,11 @@ class InsertInFileTool(BaseTool):
                     missing_params=["filepath", "after_line"],
                 ),
             )
+
+        # Path Cleaning
+        str_cwd = str(self.working_dir)
+        if str(filepath).startswith(str_cwd):
+            filepath = str(filepath)[len(str_cwd) :].lstrip(os.sep)
 
         if not self._is_safe_file_path(filepath):
             return (
@@ -146,7 +154,7 @@ class InsertInFileTool(BaseTool):
             )
         try:
             return path.read_text(encoding="utf-8"), None
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except OSError as e:
             return None, ToolResult.internal_error(f"❌ Error reading scratch: {e}")
 
     def _read_memory(self, key: str) -> Tuple[Optional[str], Optional[ToolResult]]:
@@ -222,8 +230,11 @@ class InsertInFileTool(BaseTool):
         all_lines: List[str],
     ) -> ToolResult:
         """Create success result with context view."""
-        msg = f"✅ Inserted {len(added_lines)} line(s) after line {insert_idx} in {filepath}\n"
-        msg += f"📝 Insertion context:\n{'-' * 50}\n"
+        msg = (
+            f"✅ Inserted {len(added_lines)} line(s) after line "
+            f"{insert_idx} in {filepath}\n"
+            f"📝 Insertion context:\n{'-' * 50}\n"
+        )
 
         context_range = 2
         start_show = max(0, insert_idx - context_range)

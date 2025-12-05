@@ -69,7 +69,7 @@ class ContextManager:
 
     async def async_initialize(self):
         """Initialize async components and load the system prompt from disk.
-        
+
         Raises:
             ContextValidationError: If system message fails to initialize properly
         """

@@ -13,7 +13,7 @@ from tools.file_operations.auto_stage_large_content import auto_stage_large_cont
 
 
 class AppendToFileTool(BaseTool):
-    """Tool for appending content to the end of a file without modifying existing content."""
+    """Tool for appending content to the end of a file."""
 
     def __init__(self, working_dir: Path):
         super().__init__(working_dir)
@@ -21,17 +21,18 @@ class AppendToFileTool(BaseTool):
 
     @property
     def schema(self) -> ToolSchema:
+        """Return the tool schema."""
         return ToolSchema(
             name="append_to_file",
             description=(
-                "[USE THIS FOR ADDING NEW CONTENT] Add content to the END of a file "
-                "without modifying existing content. Perfect for adding new functions, "
-                "classes, or configuration."
+                "[USE THIS FOR ADDING NEW CONTENT] Add content to the END "
+                "of a file without modifying existing content. Perfect for "
+                "adding new functions, classes, or configuration."
             ),
             parameters={
                 "filepath": {
                     "type": "string",
-                    "description": "Path to the file (relative to working directory)",
+                    "description": "Path to the file (relative to working dir)",
                 },
                 "content": {
                     "type": "string",
@@ -56,6 +57,11 @@ class AppendToFileTool(BaseTool):
             return ToolResult.invalid_params(
                 "❌ Missing required parameter: 'filepath'", missing_params=["filepath"]
             )
+
+        # Path Cleaning
+        str_cwd = str(self.working_dir)
+        if str(filepath).startswith(str_cwd):
+            filepath = str(filepath)[len(str_cwd) :].lstrip(os.sep)
 
         # 1. Resolve Content
         content, error = self._resolve_content(kwargs)
@@ -90,7 +96,7 @@ class AppendToFileTool(BaseTool):
 
         if memory_key:
             return "", ToolResult.internal_error(
-                "❌ The 'content_from_memory' feature is not supported in this version."
+                "❌ The 'content_from_memory' feature is not supported."
             )
 
         if not content:
@@ -113,7 +119,7 @@ class AppendToFileTool(BaseTool):
 
         try:
             return scratch_path.read_text(encoding="utf-8"), None
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except OSError as e:
             return "", ToolResult.internal_error(f"❌ Failed to read scratch file: {e}")
 
     def _perform_append(self, filepath: str, content: str) -> ToolResult:
@@ -143,9 +149,6 @@ class AppendToFileTool(BaseTool):
         except OSError as e:
             self.logger.error("File system error appending %s: %s", filepath, e)
             return ToolResult.internal_error(f"❌ File system error: {e}")
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            self.logger.error("Unexpected error in %s: %s", filepath, e, exc_info=True)
-            return ToolResult.internal_error(f"❌ Unexpected error: {e}")
 
     def _calculate_new_content(self, existing: str, new_chunk: str) -> str:
         """Handle logic for separators/newlines."""

@@ -21,16 +21,17 @@ class CreateFileTool(BaseTool):
 
     @property
     def schema(self) -> ToolSchema:
+        """Return the tool schema."""
         return ToolSchema(
             name="create_file",
             description=(
                 "Create a new file with specified content. For large files, "
-                "use 'remember' tool first, then reference with content_from_memory."
+                "use 'remember' tool first, then 'content_from_memory'."
             ),
             parameters={
                 "filepath": {
                     "type": "string",
-                    "description": "Path to the file (relative to working directory)",
+                    "description": "Path to the file (relative to working dir)",
                 },
                 "content": {
                     "type": "string",
@@ -56,6 +57,11 @@ class CreateFileTool(BaseTool):
                 "❌ Missing required parameter: 'filepath'", missing_params=["filepath"]
             )
 
+        # Path Cleaning
+        str_cwd = str(self.working_dir)
+        if str(filepath).startswith(str_cwd):
+            filepath = str(filepath)[len(str_cwd) :].lstrip(os.sep)
+
         # 1. Resolve Content
         content, error = self._resolve_content(kwargs)
         if error:
@@ -72,7 +78,7 @@ class CreateFileTool(BaseTool):
         return self._perform_atomic_write(filepath, content)
 
     def _resolve_content(self, kwargs: dict) -> Tuple[str, Optional[ToolResult]]:
-        """Determine the final content source (Scratch vs Memory vs Inline)."""
+        """Determine the final content source."""
         content = kwargs.get("content")
         scratch_id = kwargs.get("content_from_scratch")
         memory_key = kwargs.get("content_from_memory")
@@ -89,7 +95,7 @@ class CreateFileTool(BaseTool):
 
         if memory_key:
             return "", ToolResult.internal_error(
-                "❌ The 'content_from_memory' feature is not supported in this version."
+                "❌ The 'content_from_memory' feature is not supported."
             )
 
         return content if content is not None else "", None
@@ -106,7 +112,7 @@ class CreateFileTool(BaseTool):
 
         try:
             return scratch_path.read_text(encoding="utf-8"), None
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except OSError as e:
             return "", ToolResult.internal_error(
                 f"❌ Failed to read scratch file '{scratch_id}': {e}"
             )

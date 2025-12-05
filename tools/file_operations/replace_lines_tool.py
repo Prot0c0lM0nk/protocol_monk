@@ -22,9 +22,13 @@ class ReplaceLinesTool(BaseTool):
 
     @property
     def schema(self) -> ToolSchema:
+        """Return the tool schema."""
         return ToolSchema(
             name="replace_lines",
-            description="[DANGER] Delete lines from start to end (inclusive) and insert new content.",
+            description=(
+                "[DANGER] Delete lines from start to end (inclusive) and "
+                "insert new content."
+            ),
             parameters={
                 "filepath": {"type": "string", "description": "Path to file"},
                 "line_start": {
@@ -57,20 +61,21 @@ class ReplaceLinesTool(BaseTool):
 
         # 2. Read & Apply Logic
         full_path = self.working_dir / filepath
+        # pylint: disable=unpacking-non-sequence
         new_text, old_lines, logic_error = self._apply_replacement(
-            full_path, start, end, content  # type: ignore
+            full_path, start, end, content
         )
         if logic_error:
             return logic_error
 
         # 3. Write
-        write_error = self._perform_atomic_write(full_path, new_text)  # type: ignore
+        write_error = self._perform_atomic_write(full_path, new_text)
         if write_error:
             return write_error
 
         # 4. Success Result
         return self._format_success(
-            filepath, start, end, old_lines, content.splitlines()  # type: ignore
+            filepath, start, end, old_lines, content.splitlines()
         )
 
     def _validate_inputs(
@@ -94,6 +99,11 @@ class ReplaceLinesTool(BaseTool):
                     missing_params=["filepath", "line_start", "line_end"],
                 ),
             )
+
+        # Path Cleaning
+        str_cwd = str(self.working_dir)
+        if str(filepath).startswith(str_cwd):
+            filepath = str(filepath)[len(str_cwd) :].lstrip(os.sep)
 
         if not self._is_safe_file_path(filepath):
             return (
@@ -146,7 +156,7 @@ class ReplaceLinesTool(BaseTool):
             )
         try:
             return path.read_text(encoding="utf-8"), None
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except OSError as e:
             return None, ToolResult.internal_error(f"❌ Error reading scratch: {e}")
 
     def _read_memory(self, key: str) -> Tuple[Optional[str], Optional[ToolResult]]:
