@@ -9,14 +9,13 @@ Relies on Parent Process for environment (Conda/Venv).
 """
 
 import shlex
-
 import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Tuple
 
-from tools.base import BaseTool, ExecutionStatus, ToolResult, ToolSchema
+from tools.base import BaseTool, ToolResult, ToolSchema
 
 
 class ExecuteCommandTool(BaseTool):
@@ -31,6 +30,12 @@ class ExecuteCommandTool(BaseTool):
 
     @property
     def schema(self) -> ToolSchema:
+        """
+        Return the tool schema.
+
+        Returns:
+            ToolSchema: The definition of the tool's interface.
+        """
         return ToolSchema(
             name="execute_command",
             description="Execute a shell command in the working directory.",
@@ -53,7 +58,15 @@ class ExecuteCommandTool(BaseTool):
         )
 
     def execute(self, **kwargs) -> ToolResult:
-        """Execute the command with security checks."""
+        """
+        Execute the command with security checks.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments (command, timeout, etc).
+
+        Returns:
+            ToolResult: The result of the command execution.
+        """
         command = kwargs.get("command", "").strip()
         timeout = kwargs.get("timeout", 30)
 
@@ -68,7 +81,15 @@ class ExecuteCommandTool(BaseTool):
         return self._run_command(command, timeout)
 
     def _analyze_command_safety(self, command: str) -> Tuple[bool, str]:
-        """Analyze a shell command for potential security risks."""
+        """
+        Analyze a shell command for potential security risks.
+
+        Args:
+            command: The command string to analyze.
+
+        Returns:
+            Tuple[bool, str]: (Is safe, Reason/Message).
+        """
         dangerous_patterns = [
             (r"\brm\s+-rf\s+/", "Root directory deletion"),
             (r"\brm\s+-rf\s+\.\./", "Directory traversal deletion"),
@@ -82,29 +103,41 @@ class ExecuteCommandTool(BaseTool):
 
         for pattern, description in dangerous_patterns:
             if re.search(pattern, command, re.IGNORECASE):
-                return False, f"Dangerous command pattern detected: {description}"
+                msg = f"Dangerous command pattern detected: {description}"
+                return False, msg
 
         return True, "Command appears safe"
 
     def _run_command(self, command: str, timeout: int) -> ToolResult:
-        """Determine execution mode and run subprocess."""
+        """
+        Determine execution mode and run subprocess.
+
+        Args:
+            command: The command to run.
+            timeout: Maximum execution time in seconds.
+
+        Returns:
+            ToolResult: The result of the execution.
+        """
         try:
             env = os.environ.copy()
             needs_shell = self._requires_shell(command)
 
             # Hybrid Execution Strategy:
             # 1. Simple commands use shell=False (Secure)
-            # 2. Complex commands (pipes/redirects) use shell=True (Necessary but risky)
+            # 2. Complex commands (pipes/redirects) use shell=True (Risky)
             if needs_shell:
+                # nosec B602: Validated by _analyze_command_safety & approval
                 result = subprocess.run(
                     command,
-                    shell=True,  # nosec B602: Validated by _analyze_command_safety & User Approval
+                    shell=True,
                     cwd=self.working_dir,
                     capture_output=True,
                     text=True,
                     timeout=timeout,
                     env=env,
-                    executable="/bin/bash" if os.path.exists("/bin/bash") else None,
+                    check=False,
+                    executable=("/bin/bash" if os.path.exists("/bin/bash") else None),
                 )
             else:
                 args = shlex.split(command)
@@ -116,6 +149,7 @@ class ExecuteCommandTool(BaseTool):
                     text=True,
                     timeout=timeout,
                     env=env,
+                    check=False,
                 )
 
             return self._format_result(command, result)
@@ -127,14 +161,31 @@ class ExecuteCommandTool(BaseTool):
             return ToolResult.internal_error(f"Execution failed: {str(e)}")
 
     def _requires_shell(self, command: str) -> bool:
-        """Check if command requires shell features (pipes, redirects, etc)."""
+        """
+        Check if command requires shell features (pipes, redirects, etc).
+
+        Args:
+            command: The command string.
+
+        Returns:
+            bool: True if shell is required.
+        """
         shell_indicators = ["|", ">", "<", "&", ";", "$", "`", "*", "?"]
         return any(indicator in command for indicator in shell_indicators)
 
     def _format_result(
         self, command: str, result: subprocess.CompletedProcess
     ) -> ToolResult:
-        """Format the subprocess result into a ToolResult."""
+        """
+        Format the subprocess result into a ToolResult.
+
+        Args:
+            command: The executed command.
+            result: The subprocess result object.
+
+        Returns:
+            ToolResult: Formatted result.
+        """
         output_parts = [f"Command: {command}", f"Exit Code: {result.returncode}"]
 
         if result.stdout:
