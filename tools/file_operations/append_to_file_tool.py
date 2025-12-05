@@ -21,7 +21,12 @@ class AppendToFileTool(BaseTool):
 
     @property
     def schema(self) -> ToolSchema:
-        """Return the tool schema."""
+        """
+        Return the tool schema.
+
+        Returns:
+            ToolSchema: The definition of the tool's interface.
+        """
         return ToolSchema(
             name="append_to_file",
             description=(
@@ -51,7 +56,15 @@ class AppendToFileTool(BaseTool):
         )
 
     def execute(self, **kwargs) -> ToolResult:
-        """Orchestrate the append operation."""
+        """
+        Orchestrate the append operation.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments (filepath, content, etc).
+
+        Returns:
+            ToolResult: The result of the append operation.
+        """
         filepath = kwargs.get("filepath")
         if not filepath:
             return ToolResult.invalid_params(
@@ -71,15 +84,23 @@ class AppendToFileTool(BaseTool):
         # 2. Security Check
         if not self._is_safe_file_path(filepath):
             return ToolResult.security_blocked(
-                f"🔒 File path blocked due to security policy: {filepath}",
-                reason="Unsafe file path",
+                f"🔒 File path blocked due to security policy: {filepath}"
             )
 
         # 3. Perform Append
         return self._perform_append(filepath, content)
 
     def _resolve_content(self, kwargs: dict) -> Tuple[str, Optional[ToolResult]]:
-        """Determine the content source."""
+        """
+        Determine the content source.
+
+        Args:
+            kwargs: Dictionary of arguments passed to execute.
+
+        Returns:
+            Tuple[str, Optional[ToolResult]]: The resolved content and an
+            optional error result.
+        """
         content = kwargs.get("content")
         scratch_id = kwargs.get("content_from_scratch")
         memory_key = kwargs.get("content_from_memory")
@@ -101,14 +122,23 @@ class AppendToFileTool(BaseTool):
 
         if not content:
             return "", ToolResult.invalid_params(
-                "❌ Must provide content via 'content' or 'content_from_scratch'.",
+                "❌ Must provide content via 'content' or " "'content_from_scratch'.",
                 missing_params=["content"],
             )
 
         return content, None
 
     def _read_scratch_file(self, scratch_id: str) -> Tuple[str, Optional[ToolResult]]:
-        """Read content from a staged scratch file."""
+        """
+        Read content from a staged scratch file.
+
+        Args:
+            scratch_id: The ID of the scratch file.
+
+        Returns:
+            Tuple[str, Optional[ToolResult]]: The file content and an
+            optional error result.
+        """
         scratch_path = self.working_dir / ".scratch" / f"{scratch_id}.txt"
 
         if not scratch_path.exists():
@@ -123,7 +153,16 @@ class AppendToFileTool(BaseTool):
             return "", ToolResult.internal_error(f"❌ Failed to read scratch file: {e}")
 
     def _perform_append(self, filepath: str, content: str) -> ToolResult:
-        """Read, format, and atomic write."""
+        """
+        Read, format, and atomic write.
+
+        Args:
+            filepath: The relative path to the file.
+            content: The content to append.
+
+        Returns:
+            ToolResult: The result of the operation.
+        """
         full_path = self.working_dir / filepath
 
         try:
@@ -151,17 +190,36 @@ class AppendToFileTool(BaseTool):
             return ToolResult.internal_error(f"❌ File system error: {e}")
 
     def _calculate_new_content(self, existing: str, new_chunk: str) -> str:
-        """Handle logic for separators/newlines."""
+        """
+        Handle logic for separators/newlines.
+
+        Args:
+            existing: The current content of the file.
+            new_chunk: The new content to append.
+
+        Returns:
+            str: The combined content.
+        """
         separator = "\n"
         if existing and not existing.endswith("\n"):
-            separator = "\n\n"  # Ensure separation if file didn't end with newline
+            # Ensure separation if file didn't end with newline
+            separator = "\n\n"
         elif not existing:
             separator = ""  # No separator for empty files
 
         return existing + separator + new_chunk
 
     def _atomic_write(self, full_path: Path, content: str):
-        """Perform safe atomic write."""
+        """
+        Perform safe atomic write.
+
+        Args:
+            full_path: The absolute path to write to.
+            content: The content to write.
+
+        Raises:
+            Exception: Re-raises exceptions after cleanup.
+        """
         temp_path = full_path.with_suffix(f"{full_path.suffix}.tmp")
         try:
             with temp_path.open("w", encoding="utf-8") as f:
@@ -175,7 +233,16 @@ class AppendToFileTool(BaseTool):
             raise
 
     def _format_result(self, filepath: str, content: str) -> ToolResult:
-        """Format the success message."""
+        """
+        Format the success message.
+
+        Args:
+            filepath: The path of the modified file.
+            content: The content that was added.
+
+        Returns:
+            ToolResult: The success result with formatted data.
+        """
         line_count = len(content.splitlines())
         msg = (
             f"✅ Appended {line_count} line(s) to {filepath}\n"

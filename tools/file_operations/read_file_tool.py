@@ -22,10 +22,15 @@ class ReadFileTool(BaseTool):
 
     @property
     def schema(self) -> ToolSchema:
-        """Return the tool schema."""
+        """
+        Return the tool schema.
+
+        Returns:
+            ToolSchema: The definition of the tool's interface.
+        """
         return ToolSchema(
             name="read_file",
-            description="Read and display file contents, with optional line range.",
+            description=("Read and display file contents, with optional line range."),
             parameters={
                 "filepath": {
                     "type": "string",
@@ -44,7 +49,15 @@ class ReadFileTool(BaseTool):
         )
 
     def execute(self, **kwargs) -> ToolResult:
-        """Orchestrate the read operation."""
+        """
+        Orchestrate the read operation.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments (filepath, line_start, etc).
+
+        Returns:
+            ToolResult: The result of the file read operation.
+        """
         filepath = kwargs.get("filepath")
         if not filepath:
             return ToolResult.invalid_params(
@@ -77,22 +90,26 @@ class ReadFileTool(BaseTool):
     def _validate_and_read(
         self, filepath: str
     ) -> Tuple[List[str], Optional[ToolResult]]:
-        """Validate path, check size, and read content."""
+        """
+        Validate path, check size, and read content.
+
+        Args:
+            filepath: The relative path to the file.
+
+        Returns:
+            Tuple[List[str], Optional[ToolResult]]: A tuple containing either
+            the list of lines or None, and an error result if failed.
+        """
         if not self._is_safe_file_path(filepath):
-            return [], ToolResult.security_blocked(
-                f"🔒 File path blocked due to security policy: {filepath}",
-                reason="Unsafe file path",
-            )
+            return [], ToolResult.security_blocked(f"Unsafe file path: {filepath}")
 
         full_path = self.working_dir / filepath
 
         try:
-            if not full_path.exists():
-                return [], ToolResult.command_failed(
-                    f"❌ File not found: {filepath}", exit_code=1
-                )
+            # We use stat() first to check size, which also verifies existence
+            file_stat = full_path.stat()
 
-            if full_path.stat().st_size > self.MAX_FILE_SIZE_BYTES:
+            if file_stat.st_size > self.MAX_FILE_SIZE_BYTES:
                 size_kb = self.MAX_FILE_SIZE_BYTES / 1024
                 return [], ToolResult.command_failed(
                     f"❌ File too large (> {size_kb:.2f} KB).",
@@ -102,9 +119,13 @@ class ReadFileTool(BaseTool):
             content = full_path.read_text(encoding="utf-8")
             return content.splitlines(), None
 
+        except FileNotFoundError:
+            return [], ToolResult.command_failed(
+                f"❌ File not found: {filepath}", exit_code=1
+            )
         except PermissionError as e:
             self.logger.warning("Permission denied for %s: %s", filepath, e)
-            return [], ToolResult.security_blocked(f"🔒 Permission denied: {filepath}")
+            return [], ToolResult.security_blocked(f"Permission denied: {filepath}")
         except UnicodeDecodeError as e:
             return [], ToolResult.internal_error(
                 f"❌ Encoding error: {e}. File may be binary."
@@ -116,7 +137,18 @@ class ReadFileTool(BaseTool):
     def _extract_range(
         self, lines: List[str], start: Optional[int], end: Optional[int]
     ) -> Tuple[List[str], int, int, Optional[ToolResult]]:
-        """Slice the lines based on requested range."""
+        """
+        Slice the lines based on requested range.
+
+        Args:
+            lines: The list of file lines.
+            start: The 1-based start line (inclusive).
+            end: The 1-based end line (inclusive).
+
+        Returns:
+            Tuple[List[str], int, int, Optional[ToolResult]]:
+            (Selected lines, Actual start, Actual end, Error result).
+        """
         total_lines = len(lines)
 
         # Default to full file if not specified
@@ -143,7 +175,18 @@ class ReadFileTool(BaseTool):
     def _format_output(
         self, filepath: str, lines: List[str], start: int, end: int
     ) -> ToolResult:
-        """Create the formatted display string."""
+        """
+        Create the formatted display string.
+
+        Args:
+            filepath: The name of the file.
+            lines: The subset of lines to display.
+            start: The starting line number for display.
+            end: The ending line number for display.
+
+        Returns:
+            ToolResult: The success result with formatted output.
+        """
         numbered_content = "\n".join(
             f"{i+start:3}│ {line}" for i, line in enumerate(lines)
         )

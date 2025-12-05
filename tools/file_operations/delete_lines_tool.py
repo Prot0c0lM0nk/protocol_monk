@@ -20,7 +20,12 @@ class DeleteLinesTool(BaseTool):
 
     @property
     def schema(self) -> ToolSchema:
-        """Return the tool schema."""
+        """
+        Return the tool schema.
+
+        Returns:
+            ToolSchema: The definition of the tool's interface.
+        """
         return ToolSchema(
             name="delete_lines",
             description=(
@@ -30,7 +35,7 @@ class DeleteLinesTool(BaseTool):
             parameters={
                 "filepath": {
                     "type": "string",
-                    "description": "Path to the file (relative to working dir)",
+                    "description": "Path to file (relative to working dir)",
                 },
                 "line_start": {
                     "type": "integer",
@@ -45,7 +50,15 @@ class DeleteLinesTool(BaseTool):
         )
 
     def execute(self, **kwargs) -> ToolResult:
-        """Orchestrate the line deletion process."""
+        """
+        Orchestrate the line deletion process.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            ToolResult: The result of the deletion operation.
+        """
         # 1. Validate Inputs & Security
         filepath, start, end, error = self._validate_inputs(kwargs)
         if error:
@@ -70,7 +83,15 @@ class DeleteLinesTool(BaseTool):
     def _validate_inputs(
         self, kwargs: dict
     ) -> Tuple[Optional[str], Optional[int], Optional[int], Optional[ToolResult]]:
-        """Extract and validate parameters."""
+        """
+        Extract and validate parameters.
+
+        Args:
+            kwargs: Dictionary of inputs.
+
+        Returns:
+            Tuple: (filepath, start, end, error_result).
+        """
         filepath = kwargs.get("filepath")
         start = kwargs.get("line_start")
         end = kwargs.get("line_end")
@@ -106,7 +127,17 @@ class DeleteLinesTool(BaseTool):
     def _process_deletion(
         self, filepath: str, line_start: int, line_end: int
     ) -> Tuple[str, List[str], Optional[ToolResult]]:
-        """Read file, remove lines, and reassemble content."""
+        """
+        Read file, remove lines, and reassemble content.
+
+        Args:
+            filepath: The relative path to the file.
+            line_start: Start line number (1-based).
+            line_end: End line number (1-based).
+
+        Returns:
+            Tuple: (New content, Deleted lines list, Error result).
+        """
         full_path = self.working_dir / filepath
 
         try:
@@ -120,7 +151,7 @@ class DeleteLinesTool(BaseTool):
                 ),
             )
         except OSError as e:
-            return "", [], ToolResult.internal_error(f"❌ Error reading file: {e}")
+            return ("", [], ToolResult.internal_error(f"❌ Error reading file: {e}"))
 
         lines = content.splitlines()
         start_idx = line_start - 1
@@ -150,7 +181,16 @@ class DeleteLinesTool(BaseTool):
     def _perform_atomic_write(
         self, filepath: str, content: str
     ) -> Optional[ToolResult]:
-        """Perform robust atomic write."""
+        """
+        Perform robust atomic write.
+
+        Args:
+            filepath: Relative path to write.
+            content: Content to write.
+
+        Returns:
+            Optional[ToolResult]: None if success, Error if failed.
+        """
         full_path = self.working_dir / filepath
         temp_path = full_path.with_suffix(f"{full_path.suffix}.tmp")
 
@@ -171,7 +211,18 @@ class DeleteLinesTool(BaseTool):
     def _format_success(
         self, filepath: str, start: int, end: int, deleted_lines: List[str]
     ) -> ToolResult:
-        """Create the success result with visualization."""
+        """
+        Create the success result with visualization.
+
+        Args:
+            filepath: Path of the modified file.
+            start: Start line of deletion.
+            end: End line of deletion.
+            deleted_lines: List of lines removed.
+
+        Returns:
+            ToolResult: Success result with formatted output.
+        """
         msg_lines = [
             f"✅ Deleted lines {start}-{end} from {filepath}",
             f"📝 Removed {len(deleted_lines)} line(s):",

@@ -22,7 +22,12 @@ class InsertInFileTool(BaseTool):
 
     @property
     def schema(self) -> ToolSchema:
-        """Return the tool schema."""
+        """
+        Return the tool schema.
+
+        Returns:
+            ToolSchema: The definition of the tool's interface.
+        """
         return ToolSchema(
             name="insert_in_file",
             description=(
@@ -33,7 +38,7 @@ class InsertInFileTool(BaseTool):
             parameters={
                 "filepath": {
                     "type": "string",
-                    "description": "Path to the file (relative to working dir)",
+                    "description": "Path to file (relative to working dir)",
                 },
                 "after_line": {
                     "type": "string",
@@ -56,7 +61,15 @@ class InsertInFileTool(BaseTool):
         )
 
     def execute(self, **kwargs) -> ToolResult:
-        """Orchestrate the insertion."""
+        """
+        Orchestrate the insertion.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments (filepath, after_line, etc).
+
+        Returns:
+            ToolResult: The result of the insertion operation.
+        """
         # 1. Validate & Resolve Content
         filepath, target_line, content, error = self._validate_inputs(kwargs)
         if error:
@@ -84,7 +97,15 @@ class InsertInFileTool(BaseTool):
     def _validate_inputs(
         self, kwargs: dict
     ) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[ToolResult]]:
-        """Validate parameters and resolve content source."""
+        """
+        Validate parameters and resolve content source.
+
+        Args:
+            kwargs: Dictionary of arguments passed to execute.
+
+        Returns:
+            Tuple: (filepath, target_line, content, error_result).
+        """
         filepath = kwargs.get("filepath")
         target_line = kwargs.get("after_line")
 
@@ -119,7 +140,16 @@ class InsertInFileTool(BaseTool):
         return filepath, target_line, content, None
 
     def _resolve_content(self, **kwargs) -> Tuple[Optional[str], Optional[ToolResult]]:
-        """Resolve content from scratch, memory, or inline."""
+        """
+        Resolve content from scratch, memory, or inline.
+
+        Args:
+            **kwargs: Arguments containing content identifiers.
+
+        Returns:
+            Tuple[Optional[str], Optional[ToolResult]]: Resolved content and
+            optional error.
+        """
         content = kwargs.get("content")
         memory_key = kwargs.get("content_from_memory")
         scratch_id = kwargs.get("content_from_scratch")
@@ -167,7 +197,17 @@ class InsertInFileTool(BaseTool):
     def _apply_insertion(
         self, full_path: Path, target_line: str, content: str
     ) -> Tuple[str, int, List[str], Optional[ToolResult]]:
-        """Read file, find line, and insert content."""
+        """
+        Read file, find line, and insert content.
+
+        Args:
+            full_path: Absolute path to the file.
+            target_line: The exact line content to search for.
+            content: The content to insert after the target line.
+
+        Returns:
+            Tuple: (New full text, insertion index, added lines list, error).
+        """
         try:
             original_content = full_path.read_text(encoding="utf-8")
         except FileNotFoundError:
@@ -180,7 +220,7 @@ class InsertInFileTool(BaseTool):
                 ),
             )
         except OSError as e:
-            return "", 0, [], ToolResult.internal_error(f"❌ Error reading file: {e}")
+            return ("", 0, [], ToolResult.internal_error(f"❌ Error reading file: {e}"))
 
         lines = original_content.splitlines()
 
@@ -209,7 +249,16 @@ class InsertInFileTool(BaseTool):
         return new_text, insert_idx, new_lines_list, None
 
     def _perform_atomic_write(self, path: Path, content: str) -> Optional[ToolResult]:
-        """Perform robust atomic write."""
+        """
+        Perform robust atomic write.
+
+        Args:
+            path: The absolute path to write to.
+            content: The content to write.
+
+        Returns:
+            Optional[ToolResult]: None if success, ToolResult if error.
+        """
         temp_path = path.with_suffix(f"{path.suffix}.tmp")
         try:
             with temp_path.open("w", encoding="utf-8") as f:
@@ -229,7 +278,18 @@ class InsertInFileTool(BaseTool):
         added_lines: List[str],
         all_lines: List[str],
     ) -> ToolResult:
-        """Create success result with context view."""
+        """
+        Create success result with context view.
+
+        Args:
+            filepath: Path to the modified file.
+            insert_idx: The line number where insertion occurred.
+            added_lines: List of lines that were added.
+            all_lines: List of all lines in the new file.
+
+        Returns:
+            ToolResult: Success result with formatted output.
+        """
         msg = (
             f"✅ Inserted {len(added_lines)} line(s) after line "
             f"{insert_idx} in {filepath}\n"

@@ -21,7 +21,12 @@ class CreateFileTool(BaseTool):
 
     @property
     def schema(self) -> ToolSchema:
-        """Return the tool schema."""
+        """
+        Return the tool schema.
+
+        Returns:
+            ToolSchema: The definition of the tool's interface.
+        """
         return ToolSchema(
             name="create_file",
             description=(
@@ -31,7 +36,7 @@ class CreateFileTool(BaseTool):
             parameters={
                 "filepath": {
                     "type": "string",
-                    "description": "Path to the file (relative to working dir)",
+                    "description": "Path to file (relative to working dir)",
                 },
                 "content": {
                     "type": "string",
@@ -50,7 +55,15 @@ class CreateFileTool(BaseTool):
         )
 
     def execute(self, **kwargs) -> ToolResult:
-        """Orchestrate file creation."""
+        """
+        Orchestrate file creation.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments (filepath, content, etc).
+
+        Returns:
+            ToolResult: The result of the file creation operation.
+        """
         filepath = kwargs.get("filepath")
         if not filepath:
             return ToolResult.invalid_params(
@@ -70,15 +83,23 @@ class CreateFileTool(BaseTool):
         # 2. Security Check
         if not self._is_safe_file_path(filepath):
             return ToolResult.security_blocked(
-                f"🔒 File path blocked due to security policy: {filepath}",
-                reason="Unsafe file path",
+                f"🔒 File path blocked due to security policy: {filepath}"
             )
 
         # 3. Perform Write
         return self._perform_atomic_write(filepath, content)
 
     def _resolve_content(self, kwargs: dict) -> Tuple[str, Optional[ToolResult]]:
-        """Determine the final content source."""
+        """
+        Determine the final content source.
+
+        Args:
+            kwargs: Dictionary of arguments passed to execute.
+
+        Returns:
+            Tuple[str, Optional[ToolResult]]: The resolved content and an
+            optional error result.
+        """
         content = kwargs.get("content")
         scratch_id = kwargs.get("content_from_scratch")
         memory_key = kwargs.get("content_from_memory")
@@ -101,7 +122,16 @@ class CreateFileTool(BaseTool):
         return content if content is not None else "", None
 
     def _read_scratch_file(self, scratch_id: str) -> Tuple[str, Optional[ToolResult]]:
-        """Read content from a staged scratch file."""
+        """
+        Read content from a staged scratch file.
+
+        Args:
+            scratch_id: The ID of the scratch file to read.
+
+        Returns:
+            Tuple[str, Optional[ToolResult]]: The content of the file and
+            an optional error result.
+        """
         scratch_path = self.working_dir / ".scratch" / f"{scratch_id}.txt"
 
         if not scratch_path.exists():
@@ -118,7 +148,16 @@ class CreateFileTool(BaseTool):
             )
 
     def _perform_atomic_write(self, filepath: str, content: str) -> ToolResult:
-        """Handle the safe, atomic writing of the file."""
+        """
+        Handle the safe, atomic writing of the file.
+
+        Args:
+            filepath: The relative path to the file.
+            content: The content to write.
+
+        Returns:
+            ToolResult: The result of the write operation.
+        """
         full_path = self.working_dir / filepath
 
         try:
@@ -140,7 +179,17 @@ class CreateFileTool(BaseTool):
             return ToolResult.internal_error(f"❌ File system error: {e}")
 
     def _write_to_disk(self, full_path: Path, content: str):
-        """Low-level atomic write operation."""
+        """
+        Low-level atomic write operation.
+
+        Args:
+            full_path: The absolute path to write to.
+            content: The content to write.
+
+        Raises:
+            Exception: If the write fails, cleanup is attempted,
+                then the error is re-raised.
+        """
         temp_path = full_path.with_suffix(f"{full_path.suffix}.tmp")
         try:
             with temp_path.open("w", encoding="utf-8") as f:
