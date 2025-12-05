@@ -104,9 +104,7 @@ class RunPythonTool(BaseTool):
             return temp_path, None
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.error("Failed to write temp script: %s", e)
-            return None, ToolResult.internal_error(
-                f"❌ Failed to write script: {e}"
-            )
+            return None, ToolResult.internal_error(f"❌ Failed to write script: {e}")
 
     def _run_script_execution(
         self, file_path: Path, original_content: str
@@ -145,6 +143,4 @@ class RunPythonTool(BaseTool):
                 file_path.unlink()
                 self.logger.info("Cleaned up temporary script: %s", file_path)
             except OSError as e:
-                self.logger.warning(
-                    "Failed to clean up script %s: %s", file_path, e
-                )
+                self.logger.warning("Failed to clean up script %s: %s", file_path, e)
