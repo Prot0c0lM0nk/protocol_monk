@@ -1,4 +1,11 @@
-from agent.exceptions import MonkBaseError
+#!/usr/bin/env python3
+"""
+Model Exception Definitions for MonkCode
+
+All model-related exceptions inherit from MonkBaseError.
+"""
+
+from exceptions.base import MonkBaseError
 
 
 class ModelError(MonkBaseError):

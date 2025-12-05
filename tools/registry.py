@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # pylint: disable=no-name-in-module
-from agent.tools.exceptions import ToolNotFoundError
+from exceptions import ToolNotFoundError
 from tools.base import BaseTool, ToolResult
 
 

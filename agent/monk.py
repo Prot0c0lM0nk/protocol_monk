@@ -12,8 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Agent Components
 from agent.context import ContextManager
-from agent.context.exceptions_expanded import ContextValidationError
-from agent.model.exceptions import ModelConfigurationError
+from exceptions import ContextValidationError, ModelConfigurationError
+from exceptions import ModelConfigurationError
 from agent.model_client import ModelClient
 from agent.model_manager import RuntimeModelManager
 from agent.scratch_manager import ScratchManager

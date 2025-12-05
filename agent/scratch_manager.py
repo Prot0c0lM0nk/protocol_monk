@@ -4,7 +4,7 @@ import logging
 import time
 from pathlib import Path
 
-from agent.context.exceptions_expanded import ScratchManagerError
+from exceptions import ScratchManagerError
 
 
 class ScratchManager:

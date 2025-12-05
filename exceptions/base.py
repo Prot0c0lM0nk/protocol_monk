@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Base Exception Contract for MonkCode Agent
+Base Exception Contract for MonkCode
 
-Provides the single source of truth for the Agent's error contract.
+Provides the single source of truth for the MonkCode error contract.
 All domain-specific exceptions must inherit from MonkBaseError.
 """
 
@@ -11,7 +11,7 @@ from typing import Optional
 
 class MonkBaseError(Exception):
     """
-    The Base Contract for all Agent errors.
+    The Base Contract for all MonkCode errors.
     """
 
     def __init__(
@@ -47,7 +47,3 @@ def wrap_exception(exception_class, user_hint=None):
         return wrapper
 
     return decorator
-
-
-# Export the base contract
-__all__ = ["MonkBaseError", "wrap_exception"]

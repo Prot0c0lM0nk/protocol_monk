@@ -11,11 +11,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from agent.context.exceptions_expanded import (
-    ContextValidationError,
-    NeuralSymIntegrationError,
-)
-from agent.core_exceptions import ConfigurationError
+from exceptions import ContextValidationError, NeuralSymIntegrationError
+from exceptions import ConfigurationError
 from config.static import settings
 
 from .file_tracker import FileTracker

@@ -17,7 +17,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from typing import Optional, Tuple
 
-from agent import core_exceptions
+from exceptions import ConfigurationError
 from agent.command_dispatcher import CommandDispatcher
 from agent.model_manager import RuntimeModelManager
 
@@ -167,7 +167,7 @@ async def main():
         else:
             await _run_cli(agent, use_rich)
 
-    except core_exceptions.ConfigurationError as e:
+    except ConfigurationError as e:
         print(f"❌ Config Error: {e.message}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:  # pylint: disable=broad-exception-caught

@@ -1,8 +1,28 @@
+#!/usr/bin/env python3
 """
-Core graph operations for EnhancedKnowledgeGraph.
+Knowledge Graph Manager for Protocol Monk
 
-Manages CRUD operations, dependency tracking, indexing, and simple queries.
+Manages the semantic knowledge graph for long-term memory and reasoning.
 """
+
+import asyncio
+import json
+import logging
+import os
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
+from exceptions.base import MonkBaseError
+from .risk_analyzer import RiskAnalyzer
+
+_logger = logging.getLogger(__name__)
+
+
+class GraphManagerError(MonkBaseError):
+    """Raised for internal graph consistency or I/O problems."""
+
+    pass
 
 import logging
 from dataclasses import asdict

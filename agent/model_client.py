@@ -15,7 +15,7 @@ import json
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from agent.model.exceptions import (
+from exceptions import (
     EmptyResponseError,
     ModelError,
     ModelTimeoutError,
@@ -279,9 +279,16 @@ class ModelClient:
                 timeout_seconds=self.timeout,
                 details={"provider": "ollama", "model": self.model_name},
             ) from exc
-        except aiohttp.ClientError as e:
+        except (aiohttp.ClientError, json.JSONDecodeError) as e:
             raise ModelError(
-                message=f"Connection error: {str(e)}",
+                message=f"Server communication error: {str(e)}",
+                details={"provider": "ollama", "model": self.model_name},
+            ) from e
+        except Exception as e:
+            # Safety net for any other unexpected errors
+            self.logger.exception("Unexpected error communicating with Ollama server")
+            raise ModelError(
+                message=f"Unexpected server error: {str(e)}",
                 details={"provider": "ollama", "model": self.model_name},
             ) from e
 

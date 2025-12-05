@@ -1,4 +1,11 @@
-from agent.exceptions import MonkBaseError
+#!/usr/bin/env python3
+"""
+Tool Exception Definitions for MonkCode
+
+All tool-related exceptions inherit from MonkBaseError.
+"""
+
+from exceptions.base import MonkBaseError
 
 
 class ToolError(MonkBaseError):

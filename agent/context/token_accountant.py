@@ -1,12 +1,9 @@
 import logging
 from typing import Any, List, Optional
 
-from agent.context.exceptions_expanded import (
-    ContextValidationError,
-    TokenEstimationError,
-)
+from exceptions import ContextValidationError, TokenEstimationError
 from agent.context.message import Message
-from agent.core_exceptions import ConfigurationError
+from exceptions import ConfigurationError
 
 # Import the official estimator from utils
 from utils.token_estimation import SmartTokenEstimator
