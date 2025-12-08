@@ -48,7 +48,14 @@ class ModelClient:
 
         self.ollama_url = settings.api.ollama_url
         self.timeout = settings.model.request_timeout
-        self.model_options = settings.model_options.chat_options
+        
+        # 1. Load the default options first
+        self.model_options = settings.model_options.chat_options.copy() # Good practice to copy mutable dicts
+
+        # 2. CRITICAL FIX: Run the full setup logic immediately.
+        # This looks up the model in your model_map.json and applies 
+        # the specific context window (e.g., 40k) right now.
+        self.set_model(model_name)
 
         self._session: Optional[aiohttp.ClientSession] = None
 
@@ -138,6 +145,17 @@ class ModelClient:
                 if chunk_content:
                     yield chunk_content
                 buffer = self._update_buffer(buffer)
+
+        # --- BUG FIX START: Flush remaining buffer ---
+        # If the server closed the connection but left data in the buffer 
+        # (because it didn't end with a newline), force process it now.
+        if buffer.strip():
+            self.logger.debug("Flushing remaining buffer: %s", buffer)
+            # Append a newline to force the splitter to recognize this line
+            async for chunk_content in self._process_buffer(buffer + "\n"):
+                if chunk_content:
+                    yield chunk_content
+        # --- BUG FIX END ---
 
         self._log_complete_response()
 
