@@ -17,7 +17,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from typing import Optional, Tuple
 
-from exceptions import ConfigurationError
+from exceptions import ConfigurationError, SessionInitializationError, UIInitializationError, ToolRegistryError, ModelClientError, ConfigFileError, DirectorySelectionError, ModelConfigError, ValidationError
 from agent.command_dispatcher import CommandDispatcher
 from agent.model_manager import RuntimeModelManager
 
@@ -136,30 +136,49 @@ async def main():
         setup_logging()
 
         # 1. Initialization
-        session = initialize_session()
-        use_rich, use_tui = _parse_ui_flags()
-        ui = _select_ui_mode(use_rich, use_tui)
+        try:
+            session = initialize_session()
+        except Exception as e:
+            raise SessionInitializationError(f"Failed to initialize session: {e}") from e
+            
+        try:
+            use_rich, use_tui = _parse_ui_flags()
+            ui = _select_ui_mode(use_rich, use_tui)
+        except Exception as e:
+            raise UIInitializationError(f"Failed to initialize UI: {e}") from e
 
         # 2. Tool Registry
-        tool_registry = ToolRegistry(
-            working_dir=session.working_dir,
-            preferred_env=session.preferred_env,
-            venv_path=session.venv_path,
-        )
+        try:
+            tool_registry = ToolRegistry(
+                working_dir=session.working_dir,
+                preferred_env=session.preferred_env,
+                venv_path=session.venv_path,
+            )
+        except Exception as e:
+            raise ToolRegistryError(f"Failed to initialize tool registry: {e}") from e
 
         # 3. Model Selection (Interactive)
-        selected_model = await _configure_model(ui, use_tui, use_rich)
+        try:
+            selected_model = await _configure_model(ui, use_tui, use_rich)
+        except Exception as e:
+            raise ModelClientError(f"Failed to configure model: {e}") from e
 
         # 4. Agent Setup
-        agent = ProtocolAgent(
-            working_dir=session.working_dir,
-            model_name=selected_model,
-            tool_registry=tool_registry,
-            ui=ui,
-        )
+        try:
+            agent = ProtocolAgent(
+                working_dir=session.working_dir,
+                model_name=selected_model,
+                tool_registry=tool_registry,
+                ui=ui,
+            )
+        except Exception as e:
+            raise ModelClientError(f"Failed to initialize agent: {e}") from e
 
-        enhanced_logger = EnhancedLogger()
-        await agent.async_initialize()
+        try:
+            enhanced_logger = EnhancedLogger()
+            await agent.async_initialize()
+        except Exception as e:
+            raise ModelClientError(f"Failed to initialize agent components: {e}") from e
 
         # 5. Run Interface
         if use_tui:
@@ -169,6 +188,42 @@ async def main():
 
     except ConfigurationError as e:
         print(f"❌ Config Error: {e.message}", file=sys.stderr)
+        sys.exit(1)
+    except SessionInitializationError as e:
+        print(f"❌ Session Error: {e.message}", file=sys.stderr)
+        sys.exit(1)
+    except UIInitializationError as e:
+        print(f"❌ UI Error: {e.message}", file=sys.stderr)
+        sys.exit(1)
+    except ToolRegistryError as e:
+        print(f"❌ Tool Registry Error: {e.message}", file=sys.stderr)
+        sys.exit(1)
+    except ModelClientError as e:
+        print(f"❌ Model Error: {e.message}", file=sys.stderr)
+        sys.exit(1)
+    except ConfigFileError as e:
+        print(f"❌ Config File Error: {e.message}", file=sys.stderr)
+        if e.file_path:
+            print(f"   File: {e.file_path}", file=sys.stderr)
+        if e.operation:
+            print(f"   Operation: {e.operation}", file=sys.stderr)
+        sys.exit(1)
+    except DirectorySelectionError as e:
+        print(f"❌ Directory Selection Error: {e.message}", file=sys.stderr)
+        if e.directory_path:
+            print(f"   Path: {e.directory_path}", file=sys.stderr)
+        sys.exit(1)
+    except ModelConfigError as e:
+        print(f"❌ Model Configuration Error: {e.message}", file=sys.stderr)
+        if e.config_file:
+            print(f"   Config file: {e.config_file}", file=sys.stderr)
+        sys.exit(1)
+    except ValidationError as e:
+        print(f"❌ Validation Error: {e.message}", file=sys.stderr)
+        if e.field_name:
+            print(f"   Field: {e.field_name}", file=sys.stderr)
+        if e.invalid_value:
+            print(f"   Invalid value: {e.invalid_value}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"❌ Unexpected error: {e}", file=sys.stderr)
@@ -313,22 +368,33 @@ async def _cleanup(
     agent: Optional[ProtocolAgent], enhanced_logger: Optional[EnhancedLogger]
 ):
     """Ensure resources are closed properly."""
-    try:
-        if enhanced_logger:
-            enhanced_logger.close()  # Fixed method name
-    except Exception:  # pylint: disable=broad-exception-caught
-        pass
-
+    logger = logging.getLogger(__name__)
+    
+    # Close enhanced logger
+    if enhanced_logger:
+        try:
+            enhanced_logger.close()
+        except (OSError, IOError) as e:
+            logger.warning(f"Failed to close enhanced logger: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error closing enhanced logger: {e}", exc_info=True)
+    
+    # Close debug log
     try:
         close_debug_log()
-    except Exception:  # pylint: disable=broad-exception-caught
-        pass
-
+    except (OSError, IOError) as e:
+        logger.warning(f"Failed to close debug log: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error closing debug log: {e}", exc_info=True)
+    
+    # Close agent model client
     if agent:
         try:
             await agent.model_client.close()
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
+        except (OSError, IOError) as e:
+            logger.warning(f"Failed to close agent model client: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error closing agent model client: {e}", exc_info=True)
 
 
 if __name__ == "__main__":

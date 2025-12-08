@@ -32,3 +32,6 @@ class EmptyResponseError(ModelError):
     """Raised when model returns an empty response."""
 
     pass
+class ModelClientError(ModelError):
+    """Raised when model client initialization or operations fail."""
+    pass

@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from exceptions import ConfigFileError, DirectorySelectionError
+
 
 class ActiveSession:
     """Holds the active, runtime-specific project configuration."""
@@ -65,7 +67,6 @@ class ConfigFileHandler:
     @staticmethod
     def get_config_file_path() -> Path:
         return Path(".protocol_config.json")
-
     @staticmethod
     def load_saved_config() -> Optional[Dict[str, Any]]:
         config_file = ConfigFileHandler.get_config_file_path()
@@ -73,8 +74,18 @@ class ConfigFileHandler:
             try:
                 with open(config_file, "r") as f:
                     return json.load(f)
-            except Exception:
-                return None
+            except json.JSONDecodeError as e:
+                raise ConfigFileError(
+                    f"Invalid JSON format in config file {config_file}: {e}",
+                    file_path=config_file,
+                    operation="load"
+                ) from e
+            except (OSError, IOError) as e:
+                raise ConfigFileError(
+                    f"Failed to read config file {config_file}: {e}",
+                    file_path=config_file,
+                    operation="load"
+                ) from e
         return None
 
     @staticmethod
@@ -83,8 +94,18 @@ class ConfigFileHandler:
         try:
             with open(config_file, "w") as f:
                 json.dump(config, f, indent=2)
-        except Exception as e:
-            print(f"Warning: Could not save config file: {e}", file=sys.stderr)
+        except (OSError, IOError) as e:
+            raise ConfigFileError(
+                f"Failed to save config file {config_file}: {e}",
+                file_path=config_file,
+                operation="save"
+            ) from e
+        except (TypeError, ValueError) as e:
+            raise ConfigFileError(
+                f"Invalid configuration data for JSON serialization: {e}",
+                file_path=config_file,
+                operation="save"
+            ) from e
 
 
 def get_desktop_path() -> Path:
@@ -106,8 +127,16 @@ def list_desktop_directories() -> list[Path]:
         for item in desktop.iterdir():
             if item.is_dir():
                 directories.append(item)
-    except Exception:
-        pass
+    except (OSError, IOError) as e:
+        raise DirectorySelectionError(
+            f"Failed to list directories in desktop path {desktop}: {e}",
+            directory_path=desktop
+        ) from e
+    except PermissionError as e:
+        raise DirectorySelectionError(
+            f"Permission denied accessing desktop path {desktop}: {e}",
+            directory_path=desktop
+        ) from e
     return sorted(directories)
 
 
@@ -132,7 +161,13 @@ def select_directory_interactive() -> Optional[Path]:
         if not choice_input:
             return None
 
-        choice = int(choice_input)
+        try:
+            choice = int(choice_input)
+        except ValueError as e:
+            raise DirectorySelectionError(
+                f"Invalid choice input '{choice_input}'. Please enter a number.",
+                directory_path=None
+            ) from e
 
         if choice == 0:
             return None
@@ -141,16 +176,30 @@ def select_directory_interactive() -> Optional[Path]:
         elif choice == len(directories) + 1:
             path_str = input("Enter directory path: ").strip()
             if path_str:
-                path = Path(path_str).expanduser().resolve()
-                if path.exists() and path.is_dir():
-                    return path
-                print("Invalid directory path.")
+                try:
+                    path = Path(path_str).expanduser().resolve()
+                    if path.exists() and path.is_dir():
+                        return path
+                    raise DirectorySelectionError(
+                        f"Invalid directory path '{path_str}'. Path does not exist or is not a directory.",
+                        directory_path=path
+                    )
+                except OSError as e:
+                    raise DirectorySelectionError(
+                        f"Failed to resolve directory path '{path_str}': {e}",
+                        directory_path=path_str
+                    ) from e
             return None
         else:
-            print("Invalid choice.")
-            return None
-    except Exception:
-        return None
+            raise DirectorySelectionError(
+                f"Invalid choice {choice}. Please choose a number between 0 and {len(directories) + 1}.",
+                directory_path=None
+            )
+    except KeyboardInterrupt:
+        raise DirectorySelectionError(
+            "Directory selection cancelled by user.",
+            directory_path=None
+        )
 
 
 def detect_python_environment(directory: Path) -> Dict[str, Any]:

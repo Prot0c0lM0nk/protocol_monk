@@ -35,6 +35,14 @@ from .context import (
     TokenEstimationError,
 )
 
+# Config exceptions
+from .config import (
+    ConfigFileError,
+    DirectorySelectionError,
+    ModelConfigError,
+    ValidationError,
+)
+
 # Agent exceptions
 from .agent import (
     AgentError,
@@ -42,6 +50,24 @@ from .agent import (
     OrchestrationError,
     ScratchManagerError,
 )
+
+# Application/UI exceptions (new category for main.py)
+class SessionInitializationError(MonkBaseError):
+    """Raised when the application session fails to initialize."""
+    pass
+
+class UIInitializationError(MonkBaseError):
+    """Raised when the user interface fails to initialize."""
+    pass
+
+class ToolRegistryError(MonkBaseError):
+    """Raised for errors related to the tool registry."""
+    pass
+
+class ModelClientError(MonkBaseError):
+    """Raised for errors related to the model client."""
+    pass
+
 
 __all__ = [
     # Base
@@ -69,9 +95,21 @@ __all__ = [
     "TokenEstimationError",
     "NeuralSymIntegrationError",
     
+    # Config
+    "ConfigFileError",
+    "DirectorySelectionError",
+    "ModelConfigError", 
+    "ValidationError",
+    
     # Agent
     "AgentError",
     "ConfigurationError",
     "OrchestrationError",
     "ScratchManagerError",
+    
+    # Application/UI
+    "SessionInitializationError",
+    "UIInitializationError", 
+    "ToolRegistryError",
+    "ModelClientError",
 ]

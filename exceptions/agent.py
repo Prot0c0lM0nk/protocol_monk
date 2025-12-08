@@ -8,13 +8,6 @@ Agent-level exceptions that don't fit in other categories.
 from pathlib import Path
 
 from exceptions.base import MonkBaseError
-"""
-Agent Exception Definitions for MonkCode
-
-Agent-level exceptions that don't fit in other categories.
-"""
-
-from exceptions.base import MonkBaseError
 
 
 class AgentError(MonkBaseError):
@@ -53,3 +46,21 @@ class ScratchManagerError(AgentError):
         self.scratch_id = scratch_id
         self.file_path = file_path
         self.original_error = original_error
+class SessionInitializationError(AgentError):
+    """Raised when session initialization fails."""
+    pass
+
+
+class UIInitializationError(AgentError):
+    """Raised when UI initialization fails."""
+    pass
+
+
+class ToolRegistryError(AgentError):
+    """Raised when tool registry initialization fails."""
+    pass
+
+
+class ModelClientError(AgentError):
+    """Raised when model client initialization fails."""
+    pass

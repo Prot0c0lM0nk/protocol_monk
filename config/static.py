@@ -19,6 +19,8 @@ from dotenv import load_dotenv
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from exceptions import ConfigFileError, ModelConfigError
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -113,9 +115,18 @@ class ModelManager:
             else:
                 print(f"⚠️  Model map file not found: {model_map_path}", file=sys.stderr)
                 return {}
-        except Exception as e:
-            print(f"⚠️  Error loading model map: {e}", file=sys.stderr)
-            return {}
+        except json.JSONDecodeError as e:
+            raise ModelConfigError(
+                f"Invalid JSON format in model map file {model_map_path}: {e}",
+                config_file=model_map_path,
+                original_error=e
+            ) from e
+        except (OSError, IOError) as e:
+            raise ModelConfigError(
+                f"Failed to read model map file {model_map_path}: {e}",
+                config_file=model_map_path,
+                original_error=e
+            ) from e
 
     def _get_model_info(self, model_name: str) -> Dict[str, Any]:
         """Get information about a specific model."""
@@ -262,12 +273,24 @@ class ModelOptionsConfig:
                     file=sys.stderr,
                 )
                 return default_tool_options, default_chat_options
-        except Exception as e:
-            print(
-                f"⚠️  Error loading {self.model_options_file}: {e}. Using default model options.",
-                file=sys.stderr,
-            )
-            return default_tool_options, default_chat_options
+        except json.JSONDecodeError as e:
+            raise ConfigFileError(
+                f"Invalid JSON format in model options file {self.model_options_file}: {e}",
+                file_path=self.model_options_file,
+                operation="load"
+            ) from e
+        except (OSError, IOError) as e:
+            raise ConfigFileError(
+                f"Failed to read model options file {self.model_options_file}: {e}",
+                file_path=self.model_options_file,
+                operation="load"
+            ) from e
+        except (TypeError, ValueError) as e:
+            raise ConfigFileError(
+                f"Invalid model options data structure in {self.model_options_file}: {e}",
+                file_path=self.model_options_file,
+                operation="load"
+            ) from e
 
 
 # =============================================================================
@@ -418,6 +441,7 @@ class EnvironmentConfig:
     def __init__(self):
         self.preferred_env = os.getenv("PROTOCOL_PREFERRED_ENV", None)
         self.venv_path = os.getenv("PROTOCOL_VENV_PATH", None)
+        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
 
 
 # =============================================================================
@@ -472,11 +496,17 @@ class ProtocolConfig:
 
         try:
             test_file_path.touch()
-        except Exception as e:
+        except (OSError, IOError) as e:
             errors.append(f"Working directory not writable: {e}")
+        except PermissionError as e:
+            errors.append(f"Permission denied creating files in working directory: {e}")
         finally:
             if test_file_path.exists():
-                test_file_path.unlink()
+                try:
+                    test_file_path.unlink()
+                except (OSError, IOError) as e:
+                    # Non-critical error, just log it
+                    print(f"Warning: Could not remove test file {test_file_path}: {e}", file=sys.stderr)
 
         # Check context window is reasonable
         if self.model.context_window < 1024:
