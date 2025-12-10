@@ -22,6 +22,7 @@ from exceptions import (
 )
 from agent.model_manager import RuntimeModelManager
 from config.static import settings
+from agent.buffered_model_client import create_buffered_response
 
 
 class ModelClient:
@@ -278,7 +279,11 @@ class ModelClient:
                 await self._check_error_status(response)
 
                 if stream:
-                    async for chunk in self._process_stream_response(response):
+                    # Use buffered response to handle split tool calls
+                    # IMPORTANT: Keep original model configuration untouched
+                    raw_generator = self._process_stream_response(response)
+                    buffered_generator = create_buffered_response(raw_generator)
+                    async for chunk in buffered_generator:
                         yield chunk
                 else:
                     data = await response.json()
