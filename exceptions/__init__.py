@@ -14,12 +14,15 @@ from .model import (
     ModelConfigurationError,
     ModelError,
     ModelTimeoutError,
+    ModelResponseParseError,
+    ModelRateLimitError,
 )
 
 # Tool exceptions
 from .tools import (
     ToolError,
     ToolExecutionError,
+    ToolInputValidationError,
     ToolNotFoundError,
     ToolSecurityError,
     UserCancellationError,
@@ -79,12 +82,18 @@ __all__ = [
     "ModelTimeoutError",
     "ModelConfigurationError",
     "EmptyResponseError",
+    "ModelResponseParseError",
+    "ModelRateLimitError",
     
     # Tool
     "ToolError",
     "ToolExecutionError",
+    "ToolInputValidationError",
     "ToolSecurityError",
     "ToolNotFoundError",
+    "UserCancellationError",
+    
+    # Context
     "UserCancellationError",
     
     # Context

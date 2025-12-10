@@ -5,7 +5,8 @@ Protocol Monk Core Agent
 The central nervous system of the application.
 Orchestrates the Model, the Tools, and the Context via TAOR Loop.
 """
-
+import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -13,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # Agent Components
 from agent.context import ContextManager
 from exceptions import ContextValidationError, ModelConfigurationError
+from exceptions import ModelResponseParseError, ModelRateLimitError
 from exceptions import ModelConfigurationError
 from agent.model_client import ModelClient
 from agent.model_manager import RuntimeModelManager
@@ -154,22 +156,36 @@ class ProtocolAgent:
         """
         try:
             context = await self.context_manager.get_context(self.current_model)
+
+            # Remove duplicate system messages (keep only the first one)
+            seen_system = False
+            filtered = []
+            for msg in context:
+                if msg.get("role") == "system":
+                    if seen_system:
+                        continue          # skip duplicates
+                    seen_system = True
+                filtered.append(msg)
+            context = filtered
+
+            self.logger.error("FILTERED MESSAGES: %s", json.dumps(filtered, indent=2))
+
+
             self.enhanced_logger.log_context_snapshot(context)
             return context
         except ContextValidationError as e:
-            # Handle context validation errors specifically
             await self.ui.print_error(f"Context validation error: {e}")
             await self.ui.print_error(
                 "Please clear the context with '/clear' command and try again."
             )
             return None
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception as e:
             await self.ui.print_error(f"Error getting context: {e}")
             return None
 
     async def _get_model_response(self, context: List[Dict]):
         """
-        Stream the model response and handle errors.
+        Stream the model response and handle errors with fallback logic.
 
         Args:
             context: Conversation context for the model
@@ -191,16 +207,31 @@ class ProtocolAgent:
                 await self.context_manager.add_message("assistant", full_response)
 
             return full_response
+        except ModelRateLimitError as e:
+            e.log_error()
+            await self.ui.print_warning(e.user_hint)
+            await asyncio.sleep(e.retry_after)
+            return await self._get_model_response(context)  # Retry
+        except ModelResponseParseError as e:
+            e.log_error()
+            await self.ui.print_error("Model returned invalid data. Using fallback response.")
+            fallback_response = "Fallback: I encountered an error processing your request. Please try again."
+            await self.context_manager.add_message("assistant", fallback_response)
+            return fallback_response
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.logger.exception("Model unavailable. Using fallback response.")
+            await self.ui.print_error("Model unavailable. Using fallback response.")
+            fallback_response = "Fallback: The model is currently unavailable. Please try again later."
+            await self.context_manager.add_message("assistant", fallback_response)
+            return fallback_response
         except KeyboardInterrupt:
             await self.ui.print_warning("\n🛑 Interrupted.")
             return None
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            await self.ui.print_error(f"Streaming Error: {e}")
-            return False
 
     def _parse_response(self, text: str) -> Tuple[List[Dict], bool]:
         """
         Parse response and return (actions, has_json_content).
+        Validates parsed actions to prevent crashes.
 
         Args:
             text: Response text to parse
@@ -208,7 +239,21 @@ class ProtocolAgent:
         Returns:
             Tuple[List[Dict], bool]: Actions list and JSON content flag
         """
-        return extract_json_with_feedback(text)
+        actions, has_json = extract_json_with_feedback(text)
+        if not isinstance(actions, list):
+            raise ModelResponseParseError(
+                message="Invalid actions format",
+                raw_response=text,
+                details={"expected": "list", "got": type(actions).__name__},
+            )
+        for action in actions:
+            if not isinstance(action, dict) or "action" not in action:
+                raise ModelResponseParseError(
+                    message="Invalid action format",
+                    raw_response=str(action),
+                    details={"expected": "dict with 'action' key", "got": type(action).__name__},
+                )
+        return actions, has_json
 
     async def _record_results(self, summary: ExecutionSummary) -> bool:
         """

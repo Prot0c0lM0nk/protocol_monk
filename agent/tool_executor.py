@@ -5,6 +5,7 @@ Tool Executor for Protocol Monk
 Handles execution of tool calls with user confirmation and result formatting.
 """
 
+import asyncio
 import logging
 from asyncio import Lock
 from dataclasses import dataclass, field
@@ -13,11 +14,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from exceptions import (
     ToolExecutionError,
+    ToolInputValidationError,
     ToolNotFoundError,
     ToolSecurityError,
     UserCancellationError,
 )
 from ui.base import ToolResult
+from config.static import settings
 
 
 @dataclass
@@ -127,7 +130,7 @@ class ToolExecutor:
 
     async def _execute_tool(self, tool_call: Dict) -> ToolResult:
         """
-        Execute a single tool via the registry.
+        Execute a single tool via the registry with timeout protection.
 
         Args:
             tool_call: Normalized tool call dictionary
@@ -139,14 +142,23 @@ class ToolExecutor:
         parameters = tool_call["parameters"]
 
         try:
-            # Registry handles finding and running the tool
-            return await self.tool_registry.execute_tool(action, **parameters)
+            return await asyncio.wait_for(
+                self.tool_registry.execute_tool(action, **parameters),
+                timeout=settings.model.request_timeout
+            )
+        except asyncio.TimeoutError:
+            raise ToolExecutionError(
+                "Tool execution timed out",
+                tool_name=action,
+                details={"timeout_seconds": settings.model.request_timeout},
+            ) from None
         except Exception as e:  # pylint: disable=broad-exception-caught
             return self._handle_tool_exception(e, action)
 
     def _normalize_tool_call(self, tool_call: Dict) -> Dict:
         """
         Normalize different tool call formats into standard structure.
+        Adds input validation for tool parameters.
 
         Args:
             tool_call: Raw tool call dictionary to normalize
@@ -155,8 +167,31 @@ class ToolExecutor:
             Dict: Normalized tool call with 'action' and 'parameters' keys
 
         Raises:
-            ToolExecutionError: If tool call format is invalid
+            ToolInputValidationError: If tool call format is invalid
+            ToolExecutionError: If tool call format is completely invalid
         """
+        # Validate required fields
+        if "action" not in tool_call or not tool_call["action"]:
+            raise ToolInputValidationError(
+                "Missing 'action' field",
+                tool_name=tool_call.get("name", "unknown")
+            )
+        if "parameters" not in tool_call:
+            raise ToolInputValidationError(
+                "Missing 'parameters' field",
+                tool_name=tool_call.get("action", "unknown")
+            )
+        
+        # Tool-specific validation (e.g., line numbers must be positive)
+        if tool_call["action"] == "replace_lines":
+            params = tool_call["parameters"]
+            if "start_line" in params and params["start_line"] < 1:
+                raise ToolInputValidationError(
+                    "Line numbers must be positive",
+                    tool_name="replace_lines",
+                    invalid_input=params
+                )
+        
         if "action" in tool_call and "parameters" in tool_call:
             return tool_call
         if "name" in tool_call and "arguments" in tool_call:

@@ -47,3 +47,13 @@ class UserCancellationError(ToolError):
 class ToolRegistryError(ToolError):
     """Raised when tool registry initialization or operations fail."""
     pass
+
+
+
+class ToolInputValidationError(ToolError):
+    """Raised when tool input parameters fail validation."""
+    
+    def __init__(self, message, tool_name=None, invalid_input=None):
+        super().__init__(message)
+        self.tool_name = tool_name
+        self.invalid_input = invalid_input
