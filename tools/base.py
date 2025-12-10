@@ -131,26 +131,44 @@ class BaseTool(ABC):
             bool: True if safe, False otherwise.
         """
         try:
+            # Input validation
+            if not filepath or not isinstance(filepath, (str, Path)):
+                self.logger.warning("Invalid filepath provided: %s", filepath)
+                return False
+                
+            # Handle None and invalid inputs
+            if filepath is None:
+                return False
+                
             path_obj = Path(filepath)
-
             # Logic Change: Determine if we join or resolve directly
             if path_obj.is_absolute():
                 # If it's absolute, we check it directly
                 target_path = path_obj.resolve()
             else:
-                # If relative, we join, but first we check if the user
-                # accidently provided a path that implies the working dir
-                # (e.g. "path/to/cwd/file.txt") to prevent duplication.
+                # If relative, we join, but first we validate the input
                 str_path = str(filepath)
                 str_cwd = str(self.working_dir)
-
-                # Remove leading slash/cwd if duplicates the cwd
-                if str_path.startswith(str_cwd):
+                
+                # Validate input - reject paths with spaces, @ symbols, or other special chars that indicate terminal context
+                if any(char in str_path for char in ['@', ' protocol_core', 'nicholaspitzarella']):
+                    self.logger.warning("Rejected path containing terminal context: %s", str_path)
+                    return False
+                
+                # Validate scratch ID format (should be simple alphanumeric with underscores)
+                if str_path.startswith('auto_') and str_path.replace('_', '').replace('-', '').isalnum():
+                    # This is a valid scratch ID, use it directly
+                    target_path = (self.working_dir / ".scratch" / f"{str_path}.txt").resolve()
+                elif str_path.startswith(str_cwd):
+                    # Remove leading slash/cwd if duplicates the cwd (for normal file paths)
                     str_path = str_path[len(str_cwd) :].lstrip(os.sep)
-
-                target_path = (self.working_dir / str_path).resolve()
-
-            # 1. Path Traversal Check
+                    target_path = (self.working_dir / str_path).resolve()
+                else:
+                    # Normal relative path - validate it's a reasonable filename
+                    if '/' in str_path or '\\' in str_path or ' ' in str_path:
+                        self.logger.warning("Rejected path with invalid characters: %s", str_path)
+                        return False
+                    target_path = (self.working_dir / str_path).resolve()
             if not str(target_path).startswith(str(self.working_dir)):
                 self.logger.warning(
                     "Security: Path traversal blocked: %s -> %s", filepath, target_path
