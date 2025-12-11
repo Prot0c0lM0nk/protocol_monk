@@ -123,6 +123,7 @@ class BaseTool(ABC):
     def _is_safe_file_path(self, filepath: str) -> bool:
         """
         Check if file path is within working directory and not dangerous.
+        Also handles path duplication (e.g. if the input string includes the CWD).
 
         Args:
             filepath: The path to validate.
@@ -131,51 +132,53 @@ class BaseTool(ABC):
             bool: True if safe, False otherwise.
         """
         try:
-            # Input validation
+            # 1. Input Validation
             if not filepath or not isinstance(filepath, (str, Path)):
                 self.logger.warning("Invalid filepath provided: %s", filepath)
                 return False
-                
-            # Handle None and invalid inputs
-            if filepath is None:
+
+            # Normalize to string for initial checks
+            str_path = str(filepath)
+
+            # Block specific terminal context indicators (garbage inputs)
+            if any(char in str_path for char in ['@', ' protocol_core', 'nicholaspitzarella']):
+                self.logger.warning("Rejected path containing terminal context: %s", str_path)
                 return False
-                
+
             path_obj = Path(filepath)
-            # Logic Change: Determine if we join or resolve directly
+
+            # 2. Path Resolution & Duplication Handling
             if path_obj.is_absolute():
-                # If it's absolute, we check it directly
+                # If it's already an OS-level absolute path, resolve it directly.
                 target_path = path_obj.resolve()
             else:
-                # If relative, we join, but first we validate the input
-                str_path = str(filepath)
+                # Check for "Duplication Error" where relative string contains the full path
                 str_cwd = str(self.working_dir)
                 
-                # Validate input - reject paths with spaces, @ symbols, or other special chars that indicate terminal context
-                if any(char in str_path for char in ['@', ' protocol_core', 'nicholaspitzarella']):
-                    self.logger.warning("Rejected path containing terminal context: %s", str_path)
-                    return False
+                if str_path.startswith(str_cwd):
+                    # The string matches the CWD. Treat it as absolute to avoid doubling.
+                    # e.g. input="C:/Work/file.txt", cwd="C:/Work" -> Target="C:/Work/file.txt"
+                    target_path = Path(str_path).resolve()
                 
-                # Validate scratch ID format (should be simple alphanumeric with underscores)
-                if str_path.startswith('auto_') and str_path.replace('_', '').replace('-', '').isalnum():
-                    # This is a valid scratch ID, use it directly
+                elif str_path.startswith('auto_') and str_path.replace('_', '').replace('-', '').isalnum():
+                    # Preserve special handling for 'auto_' scratchpad files
                     target_path = (self.working_dir / ".scratch" / f"{str_path}.txt").resolve()
-                elif str_path.startswith(str_cwd):
-                    # Remove leading slash/cwd if duplicates the cwd (for normal file paths)
-                    str_path = str_path[len(str_cwd) :].lstrip(os.sep)
-                    target_path = (self.working_dir / str_path).resolve()
+                
                 else:
-                    # Normal relative path - validate it's a reasonable filename
-                    if '/' in str_path or '\\' in str_path or ' ' in str_path:
-                        self.logger.warning("Rejected path with invalid characters: %s", str_path)
-                        return False
+                    # Standard relative path. Join with CWD.
+                    # Note: We do NOT block '/' or spaces here anymore.
                     target_path = (self.working_dir / str_path).resolve()
+
+            # 3. Security Boundary Check
+            # The resolved path must start with the working directory.
+            # (We use str() comparison to be safe across python versions)
             if not str(target_path).startswith(str(self.working_dir)):
                 self.logger.warning(
                     "Security: Path traversal blocked: %s -> %s", filepath, target_path
                 )
                 return False
 
-            # 2. Dangerous Pattern Check
+            # 4. Dangerous Pattern Check
             path_str = str(target_path)
             for pattern in DANGEROUS_FILE_PATTERNS:
                 if pattern in path_str:

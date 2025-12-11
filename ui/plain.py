@@ -2,38 +2,68 @@
 """
 Plain text async UI implementation for Protocol Monk
 
-Uses print() and input() for basic terminal interaction.
-Designed to be simple and work in any terminal environment.
+Uses prompt_toolkit for robust terminal interaction (history, editing)
+while maintaining a "Plain" aesthetic for developer clarity.
 """
 import asyncio
-import json
 import sys
 from typing import Any, Dict, List, Union
+
+from prompt_toolkit import PromptSession
+from prompt_toolkit.patch_stdout import patch_stdout
 
 from ui.base import UI, ToolResult
 
 
 class PlainUI(UI):
-    """Async plain text UI implementation"""
+    """Async plain text UI implementation with developer-focused formatting"""
 
     def __init__(self):
         self.auto_confirm = False
         self._thinking = False
+        # Use PromptSession for history (up-arrow) and better input handling
+        self.session = PromptSession()
 
     async def start_thinking(self, message: str = "Thinking..."):
         """Indicate that the agent is processing."""
         self._thinking = True
-        print(f"{message}", end="\r", flush=True)
+        # Print thinking on the current line (which is implicitly the one after input)
+        print(f"[SYS] {message}", end="\r", flush=True)
 
     async def stop_thinking(self):
         """Stop the thinking indicator."""
         if self._thinking:
-            print(" " * 40, end="\r", flush=True)  # Clear the thinking message
+            # Clear the line completely and reset cursor to start
+            print("\r" + " " * 50 + "\r", end="", flush=True)
             self._thinking = False
+
+    async def print_stream(self, text: str):
+        """Stream text output. Handles the transition from thinking to speaking."""
+        if self._thinking:
+            # === TRANSITION: FROM THINKING TO SPEAKING ===
+            # 1. Clear the "Thinking..." line
+            print("\r" + " " * 50 + "\r", end="") 
+            self._thinking = False
+            
+            # 2. Print the requested spacing layout:
+            #    (User Input was on previous line)
+            #    (We are currently on the line that had 'Thinking...')
+            #    We want:
+            #    User: Input
+            #    [Blank Line]
+            #    [MONK] Response
+            
+            print() # This creates the [new line space] (The blank line)
+            print("[MONK] ", end="", flush=True) # The Agent Prefix
+            
+        print(text, end="", flush=True)
 
     async def confirm_tool_call(
         self, tool_call: Dict, auto_confirm: bool = False
     ) -> Union[bool, Dict]:
+        # Ensure we aren't "thinking" when asking for confirmation
+        await self.stop_thinking()
+
         if auto_confirm or self.auto_confirm:
             await self.display_tool_call(tool_call, auto_confirm=True)
             return True
@@ -41,56 +71,49 @@ class PlainUI(UI):
         await self.display_tool_call(tool_call, auto_confirm=False)
 
         # Simple y/n/m approval
-        response = await self._get_input(
-            "Execute this action? [Y/n/m] (m = suggest modification) "
+        response = await self.prompt_user(
+            "Execute this action? [Y/n/m] (m = suggest modification)"
         )
         response = response.strip().lower()
 
-        if response in ("y", "yes"):
+        if response in ("y", "yes", ""): # Default to yes on empty enter
             return True
         elif response == "m":
             # Modify option - get human suggestion
-            await self.print_info("\nWhat would you like to suggest to the model?")
+            await self.print_info("What would you like to suggest to the model?")
             await self.print_info("(Describe your suggestion in natural language)")
-            suggestion = await self.prompt_user("Suggestion: ")
+            suggestion = await self.prompt_user("Suggestion")
 
             if not suggestion.strip():
                 return False
 
-            # Return the suggestion as a modification request
-            # The model will see this and can modify its tool call accordingly
             return {
                 "modified": {
                     "action": tool_call["action"],
-                    "parameters": tool_call["parameters"],  # Keep original params
+                    "parameters": tool_call["parameters"],
                     "reasoning": tool_call.get("reasoning", ""),
-                    "human_suggestion": suggestion,  # Add human's suggestion
+                    "human_suggestion": suggestion,
                 }
             }
         else:
             return False
 
-    async def _get_input(self, prompt: str) -> str:
-        """Helper to get input in async context"""
-        # Use asyncio.to_thread to avoid blocking the event loop
-        try:
-            return await asyncio.to_thread(input, prompt)
-        except (KeyboardInterrupt, asyncio.CancelledError):
-            # Re-raise KeyboardInterrupt to be handled by main loop
-            raise KeyboardInterrupt()
-
     async def display_tool_call(self, tool_call: Dict, auto_confirm: bool = False):
+        # Ensure clean spacing before tool display
+        if self._thinking:
+            await self.stop_thinking()
+
         action = tool_call["action"]
         parameters = tool_call["parameters"]
         reasoning = tool_call.get("reasoning", "")
 
-        print(f"\nProposed Action: {action}")
+        print(f"\n[TOOL] Proposed Action: {action}")
 
         if reasoning:
-            print(f"Reasoning: {reasoning}")
+            print(f"       Reasoning: {reasoning}")
 
         if parameters:
-            print("\nParameters:")
+            print("       Parameters:")
             for key, value in parameters.items():
                 value_str = str(value)
                 if len(value_str) > 200:
@@ -101,14 +124,14 @@ class PlainUI(UI):
                     else:
                         value_str = value_str[:200] + "..."
 
-                print(f"  {key}: {value_str}")
+                print(f"         {key}: {value_str}")
 
         if auto_confirm:
-            print("(Auto-executing action)")
+            print("       (Auto-executing action)")
 
     async def display_tool_result(self, result: ToolResult, tool_name: str):
         if result.success:
-            print(f"\n✓ {tool_name} completed")
+            print(f"\n[TOOL] ✓ {tool_name} completed")
             output = result.output
             if len(output) > 1000:
                 lines = output.split("\n")
@@ -120,77 +143,62 @@ class PlainUI(UI):
             else:
                 print(output)
         else:
-            print(f"✗ {tool_name} failed")
+            print(f"\n[TOOL] ✗ {tool_name} failed")
             print(result.output)
 
     async def display_execution_start(self, count: int):
-        print(f"\nExecuting {count} tool(s)...")
+        print(f"\n[SYS] Executing {count} tool(s)...")
 
     async def display_progress(self, current: int, total: int):
-        print(f"\nTool {current}/{total}")
+        print(f"[SYS] Tool {current}/{total}")
 
     async def display_task_complete(self, summary: str = ""):
-        print("✓ Task completed")
+        print("\n[SYS] ✓ Task completed")
         if summary:
             print(summary)
 
     async def print_error(self, message: str):
-        print(f"Error: {message}")
+        print(f"[ERR] {message}")
 
     async def print_warning(self, message: str):
-        print(f"Warning: {message}")
+        print(f"[WARN] {message}")
 
     async def print_info(self, message: str):
-        # Don't prefix with "Info:" for decorative or empty messages
-        # Don't prefix with "Info:" for decorative or empty messages
-        if message.strip() and not message.strip().startswith("☦️"):
-            print(f"Info: {message}")
-        elif message.strip():
-            print(message)
+        if message.strip():
+            print(f"[SYS] {message}")
         else:
-            # Empty message - just print a newline
             print()
 
     async def set_auto_confirm(self, value: bool):
         self.auto_confirm = value
         status = "enabled" if value else "disabled"
-        print(f"Auto-confirm {status}")
-
-    async def print_stream(self, text: str):
-        """Stream text without newline"""
-        print(text, end="", flush=True)
+        print(f"[SYS] Auto-confirm {status}")
 
     async def display_startup_banner(self, greeting: str):
-        """Display startup banner/greeting"""
         print(greeting)
 
     async def display_startup_frame(self, frame: str):
-        """Display startup animation frame"""
-        print(frame)
+        if frame:
+            print(f"[INIT] {frame}")
 
     async def prompt_user(self, prompt: str) -> str:
-        """Prompt user for input"""
-        return await self._get_input(prompt)
+        """Prompt user for input using prompt_toolkit for better UX"""
+        # Enforce vertical separation: Always print a newline before a prompt
+        print() 
+        
+        # Format the prompt string to look like a standard shell prompt or query
+        formatted_prompt = f"{prompt}: " if not prompt.endswith(("?", ":", ">")) else f"{prompt} "
+        
+        try:
+            # Use patch_stdout to ensure background async prints don't mangle the prompt
+            with patch_stdout():
+                return await self.session.prompt_async(formatted_prompt)
+        except (KeyboardInterrupt, EOFError):
+            # Return empty string or handle as cancellation
+            return ""
 
     async def print_error_stderr(self, message: str):
-        """Print error to stderr"""
-        print(message, file=sys.stderr)
-
-    async def display_startup_banner(self, greeting: str):
-        """Display startup banner/greeting"""
-        print(greeting)
-
-    async def display_startup_frame(self, frame: str):
-        """Display startup animation frame"""
-        print(frame)
-
-    async def prompt_user(self, prompt: str) -> str:
-        """Prompt user for input"""
-        return await self._get_input(prompt)
-
-    async def print_error_stderr(self, message: str):
-        """Print error to stderr"""
-        print(message, file=sys.stderr)
+        print(f"[ERR] {message}", file=sys.stderr)
 
     async def display_model_list(self, models: List[Any], current_model: str):
         print(f"\n=== Available Models (Current: {current_model}) ===")
@@ -208,7 +216,6 @@ class PlainUI(UI):
     async def display_switch_report(
         self, report: Any, current_model: str, target_model: str
     ):
-        # Extract data (handle object vs dict)
         safe = getattr(
             report,
             "safe",
@@ -218,4 +225,4 @@ class PlainUI(UI):
         limit = getattr(report, "target_limit", 0)
 
         if not safe:
-            print(f"\n⚠️  WARNING: Context Overflow ({curr:,} > {limit:,})")
+            print(f"\n[WARN] Context Overflow ({curr:,} > {limit:,})")

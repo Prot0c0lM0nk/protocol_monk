@@ -17,7 +17,17 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from typing import Optional, Tuple
 
-from exceptions import ConfigurationError, SessionInitializationError, UIInitializationError, ToolRegistryError, ModelClientError, ConfigFileError, DirectorySelectionError, ModelConfigError, ValidationError
+from exceptions import (
+    ConfigurationError,
+    SessionInitializationError,
+    UIInitializationError,
+    ToolRegistryError,
+    ModelClientError,
+    ConfigFileError,
+    DirectorySelectionError,
+    ModelConfigError,
+    ValidationError,
+)
 from agent.command_dispatcher import CommandDispatcher
 from agent.model_manager import RuntimeModelManager
 
@@ -139,8 +149,10 @@ async def main():
         try:
             session = initialize_session()
         except Exception as e:
-            raise SessionInitializationError(f"Failed to initialize session: {e}") from e
-            
+            raise SessionInitializationError(
+                f"Failed to initialize session: {e}"
+            ) from e
+
         try:
             use_rich, use_tui = _parse_ui_flags()
             ui = _select_ui_mode(use_rich, use_tui)
@@ -269,7 +281,8 @@ async def _configure_model(ui: UI, use_tui: bool, use_rich: bool) -> str:
             )
         )
 
-    choice = await ui.prompt_user("Initialize with this model? (Y/n)")
+    # UPDATED: Prompt includes the model name
+    choice = await ui.prompt_user(f"Initialize with model '{current_model}'? (Y/n)")
     if choice.strip().lower() in ["n", "no"]:
         return await _select_new_model(ui, current_model)
 
@@ -289,7 +302,7 @@ async def _select_new_model(ui: UI, current_model: str) -> str:
         return current_model
 
     await ui.display_model_list(models, current_model)
-    new_model_name = await ui.prompt_user("Enter model name to select:")
+    new_model_name = await ui.prompt_user("Enter model name to select")
 
     if not new_model_name:
         return current_model
@@ -356,6 +369,7 @@ async def _plain_input_loop(agent: ProtocolAgent, dispatcher: CommandDispatcher)
     """Input loop using standard input."""
     while True:
         try:
+            # UPDATED: Prompt string is simpler, UI handles the prompt display
             user_input = await agent.ui.prompt_user("Next command")
             if not await process_user_input(agent, dispatcher, user_input):
                 break
@@ -369,7 +383,7 @@ async def _cleanup(
 ):
     """Ensure resources are closed properly."""
     logger = logging.getLogger(__name__)
-    
+
     # Close enhanced logger
     if enhanced_logger:
         try:
@@ -377,8 +391,10 @@ async def _cleanup(
         except (OSError, IOError) as e:
             logger.warning(f"Failed to close enhanced logger: {e}")
         except Exception as e:
-            logger.error(f"Unexpected error closing enhanced logger: {e}", exc_info=True)
-    
+            logger.error(
+                f"Unexpected error closing enhanced logger: {e}", exc_info=True
+            )
+
     # Close debug log
     try:
         close_debug_log()
@@ -386,7 +402,7 @@ async def _cleanup(
         logger.warning(f"Failed to close debug log: {e}")
     except Exception as e:
         logger.error(f"Unexpected error closing debug log: {e}", exc_info=True)
-    
+
     # Close agent model client
     if agent:
         try:
@@ -394,7 +410,9 @@ async def _cleanup(
         except (OSError, IOError) as e:
             logger.warning(f"Failed to close agent model client: {e}")
         except Exception as e:
-            logger.error(f"Unexpected error closing agent model client: {e}", exc_info=True)
+            logger.error(
+                f"Unexpected error closing agent model client: {e}", exc_info=True
+            )
 
 
 if __name__ == "__main__":
