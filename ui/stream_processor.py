@@ -1,5 +1,5 @@
+import re
 from enum import Enum
-
 from typing import Tuple
 
 
@@ -9,8 +9,12 @@ class StreamProcessorMode(Enum):
 
 
 class StreamProcessor:
-    SAFETY_MARGIN = 25
-    TOOL_SIGNATURE = '{"action":'
+    # 50 chars gives us enough buffer to catch '{\n  "action":' across token splits
+    SAFETY_MARGIN = 50 
+    
+    # Regex to catch { followed by whitespace/newlines and then "action"
+    # This handles: {"action":...} AND { \n "action":... }
+    TOOL_PATTERN = re.compile(r'\{\s*"action"')
 
     def __init__(self):
         self.buffer = ""
@@ -30,19 +34,21 @@ class StreamProcessor:
             self.buffer = ""
             return
 
-        # 2. Lookahead scan for the TOOL_SIGNATURE
-        signature_index = self.buffer.find(self.TOOL_SIGNATURE)
+        # 2. Regex Search for the start of a tool call
+        match = self.TOOL_PATTERN.search(self.buffer)
 
-        if signature_index != -1:
+        if match:
             # FOUND IT!
-            # Split buffer exactly at the start of the signature.
-            # Left side = Safe Text
-            # Right side (inclusive) = JSON Tool Call
-            safe_text = self.buffer[:signature_index]
+            start_index = match.start()
+            
+            # Split buffer exactly at the start of the '{'
+            # Left side = Safe Text (The conversation)
+            # Right side = JSON Tool Call (The "Sacred Action")
+            safe_text = self.buffer[:start_index]
 
             # Move safe text to visible, rest to tool buffer
             self.visible_text += safe_text
-            self.tool_buffer += self.buffer[signature_index:]
+            self.tool_buffer += self.buffer[start_index:]
 
             # Switch modes
             self.mode = StreamProcessorMode.TOOL_DETECTED
@@ -50,10 +56,12 @@ class StreamProcessor:
 
         else:
             # 3. The Typewriter Logic
-            # Only move text if we have enough to satisfy the safety margin
+            # We must hold back enough text (SAFETY_MARGIN) to ensure we don't
+            # accidentally print a partial '{' that turns out to be a tool call later.
+            
             if len(self.buffer) > self.SAFETY_MARGIN:
                 # Calculate how much we can safely reveal
-                # e.g. Buffer 30 chars, Margin 25 -> Reveal top 5 chars
+                # We keep the last SAFETY_MARGIN chars in the buffer just in case
                 safe_len = len(self.buffer) - self.SAFETY_MARGIN
 
                 self.visible_text += self.buffer[:safe_len]
@@ -61,6 +69,9 @@ class StreamProcessor:
 
     def flush(self):
         """Force the remaining buffer into visible text (call on stream end)."""
+        # Only flush if we NEVER detected a tool. 
+        # If we are in TOOL_DETECTED mode, the buffer is part of the tool 
+        # and should be hidden (handled by the tool renderer), not printed as text.
         if self.mode == StreamProcessorMode.TEXT:
             self.visible_text += self.buffer
             self.buffer = ""

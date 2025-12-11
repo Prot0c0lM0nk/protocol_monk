@@ -8,6 +8,9 @@ from rich.console import Group
 from rich.live import Live
 from typing import Any, Dict, List, Union
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.patch_stdout import patch_stdout
+
 # --- IMPORTS ---
 from .base import UI, ToolResult
 from .renderers.message import render_agent_message, render_user_message
@@ -29,6 +32,8 @@ class RichUI(UI):
         self._streaming_active = False
         self._thinking_status = None
         self.processor = None
+        # Unified Input Session
+        self.session = PromptSession()
 
     # --- 1. STREAMING ---
 
@@ -66,6 +71,7 @@ class RichUI(UI):
             if self.processor:
                 self.processor.flush()
                 visible_text, is_tool, tool_len = self.processor.get_view_data()
+                # Final update to ensure text completes
                 self._live_display.update(
                     generate_stream_panel(visible_text, is_tool, tool_len)
                 )
@@ -79,11 +85,7 @@ class RichUI(UI):
     # --- 2. THINKING & STATUS ---
 
     async def start_thinking(self):
-        """
-        Display the thinking spinner.
-        NOTE: We use internal logic here because it's non-blocking and persistent,
-        unlike 'thinking.py' which is a fixed-duration pause.
-        """
+        """Display the thinking spinner."""
         self._end_streaming()
         if not self._thinking_status:
             self._thinking_status = console.status(
@@ -94,33 +96,40 @@ class RichUI(UI):
             self._thinking_status.start()
 
     def _stop_thinking(self):
-
         if self._thinking_status:
             self._thinking_status.stop()
             self._thinking_status = None
 
-    # --- NEW: MODEL MANAGER RENDERERS ---
+    # --- 3. INPUT HANDLING (New) ---
 
-    async def display_model_list(self, models: List[Any], current_model: str):
-        """Render a matrix-style table of available models."""
+    async def prompt_user(self, prompt: str) -> str:
+        """Prompt user for input using prompt_toolkit inside Rich."""
         self._end_streaming()
         self._stop_thinking()
 
-        render_model_table(models, current_model)
+        # Display the prompt question nicely
+        console.print()
+        console.print(f"  [holy.gold]?[/] {prompt}")
 
-    async def display_switch_report(
-        self, report: Any, current_model: str, target_model: str
-    ):
-        """Render the Context Guardrail report."""
-        self._end_streaming()
-        self._stop_thinking()
-        render_switch_report(report, current_model, target_model)
-        if self._thinking_status:
-            self._thinking_status.stop()
-            self._thinking_status = None
+        # Use prompt_toolkit with patch_stdout to play nice with async printing
+        # Format: "  You › "
+        formatted_prompt = [
+            ("class:username", "  You "),
+            ("class:arrow", "› "),
+        ]
+        
+        # We need to construct the HTML/ANSI string manually for prompt_toolkit if we want colors,
+        # or just use simple text. For simplicity and reliability:
+        pt_prompt = "  You › "
+        
+        try:
+            with patch_stdout():
+                return await self.session.prompt_async(pt_prompt)
+        except (KeyboardInterrupt, EOFError):
+            return ""
 
-    # --- 3. DELEGATED RENDERING ---
-    # (Keep the rest of the methods as they were...)
+    # --- 4. DELEGATED RENDERING ---
+
     async def confirm_tool_call(
         self, tool_call: Dict, auto_confirm: bool = False
     ) -> Union[bool, Dict]:
@@ -130,37 +139,26 @@ class RichUI(UI):
         if auto_confirm or self._auto_confirm:
             return True
 
+        # Render the full, safe confirmation screen
         render_tool_call_pretty(
             tool_call.get("action"), tool_call.get("parameters", {})
         )
 
-        # Prompt with available options like plain UI
-        response = await asyncio.to_thread(
-            console.input,
-            "  [dim white]Execute this action?[/] [Y/n/m] (m = suggest modification) [holy.gold]›[/] ",
-        )
+        # Simple input for confirmation
+        response = await self.prompt_user("Execute this action? [Y/n/m]")
         response = response.strip().lower()
 
-        if response in ["y", "yes"]:
+        if response in ["y", "yes", ""]:
             console.print("  [success]✓ Approved[/]")
             return True
         elif response == "m":
-            # Modify option - get human suggestion
             console.print()
-            console.print(
-                "  [holy.gold]What would you like to suggest to the model?[/]"
-            )
-            console.print(
-                "  [dim white](Describe your suggestion in natural language)[/]"
-            )
-            suggestion = await asyncio.to_thread(
-                console.input, "  [dim white]Suggestion[/] [holy.gold]›[/] "
-            )
+            console.print("  [dim white](Describe your suggestion in natural language)[/]")
+            suggestion = await self.prompt_user("Suggestion")
 
             if not suggestion.strip():
                 return False
 
-            # Return the suggestion as a modification request
             return {
                 "modified": {
                     "action": tool_call.get("action", ""),
@@ -170,12 +168,27 @@ class RichUI(UI):
                 }
             }
         else:
-            # Handle 'n' and any other response as rejection
             return False
 
     async def display_tool_result(self, result: ToolResult, tool_name: str):
         self._end_streaming()
         render_tool_result(tool_name, result.success, result.output)
+
+    # --- 5. MODEL MANAGER RENDERERS ---
+
+    async def display_model_list(self, models: List[Any], current_model: str):
+        self._end_streaming()
+        self._stop_thinking()
+        render_model_table(models, current_model)
+
+    async def display_switch_report(
+        self, report: Any, current_model: str, target_model: str
+    ):
+        self._end_streaming()
+        self._stop_thinking()
+        render_switch_report(report, current_model, target_model)
+
+    # --- 6. STANDARD OUTPUT ---
 
     async def print_error(self, message: str):
         self._end_streaming()
@@ -189,19 +202,6 @@ class RichUI(UI):
         self._end_streaming()
         console.print(f"[monk.text]{message}[/]")
 
-    async def prompt_user(self, prompt: str) -> str:
-        self._end_streaming()
-        self._stop_thinking()
-
-        # FIX: Actually display the question!
-        console.print()
-        console.print(f"  [holy.gold]?[/] {prompt}")
-
-        # Then show the input cursor
-        return await asyncio.to_thread(
-            console.input, f"  [dim white]You[/] [holy.gold]›[/] "
-        )
-
     async def display_tool_call(self, tool_call: Dict, auto_confirm: bool = False):
         pass
 
@@ -214,29 +214,19 @@ class RichUI(UI):
     async def display_task_complete(self, summary: str = ""):
         self._end_streaming()
         self._stop_thinking()
-
-        # Create a nice summary panel
-        from rich.console import Group
         from rich.text import Text
+        from ui.styles import create_task_completion_panel
 
-        from ui.styles import console, create_monk_panel, create_task_completion_panel
-
-        # If the summary is a JSON-like string or complex, we could parse it here.
-        # For now, we assume 'summary' contains the text message from the finish tool.
         content = Text(summary if summary else "Mission Complete.", style="monk.text")
-
-        # Use the task completion panel factory function
         panel = create_task_completion_panel(content)
         console.print()
         console.print(panel)
-        console.print()
         console.print()
 
     async def set_auto_confirm(self, value: bool):
         self._auto_confirm = value
 
     async def display_startup_banner(self, greeting: str):
-        # Use the factory, but maybe override the title for the banner
         console.print(create_monk_panel(greeting, title="✠ Protocol Monk Online"))
 
     async def display_startup_frame(self, frame: str):
