@@ -4,6 +4,7 @@ Integration of NeuralSym guidance system with the agent context manager
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -217,30 +218,23 @@ class NeuralSymContextManager:
         if not self.guidance_system:
             return base_context
 
-        # 1. Extract latest user intent (heuristic)
-        # Find the last message from the user
-        last_user_msg = next(
-            (m for m in reversed(base_context) if m.get("role") == "user"), None
-        )
-
-        if not last_user_msg:
+        # 1. Validate context suitability before enhancement
+        if not self._validate_context_for_enhancement(base_context):
             return base_context
 
-        user_content = last_user_msg.get("content", "")
-        if not user_content:
+        # 2. Extract latest user intent using improved method
+        user_intent = self._extract_intent(base_context)
+        if not user_intent:
             return base_context
 
-        # Use first 200 chars as intent proxy for lookup
-        user_intent = user_content[:200]
-
-        # 2. Get Guidance
+        # 3. Get Guidance
         # We use context tags to help filter. "general" is default.
         guidance_text, _ = self.guidance_system.get_guidance(
             intent=user_intent, context_tags={"general"}, model_name=model_name
         )
 
         if guidance_text:
-            # 3. Inject as System Note
+            # 4. Inject as System Note
             # We construct a system note containing the guidance
             system_note = {
                 "role": "system",
@@ -258,6 +252,7 @@ class NeuralSymContextManager:
             return new_context
 
         return base_context
+        return base_context
 
     def close(self):
         """
@@ -268,3 +263,65 @@ class NeuralSymContextManager:
                 self.patterns.close()
             except Exception as e:
                 self.logger.warning(f"Error closing pattern analyzer: {e}")
+
+    def _extract_intent(self, base_context: List[Dict]) -> str:
+        """
+        NEW method for better intent extraction using sentence boundaries and word limits.
+
+        Args:
+            base_context: List of context messages
+
+        Returns:
+            str: Extracted user intent
+        """
+        # Find the last message from the user
+        last_user_msg = next(
+            (m for m in reversed(base_context) if m.get("role") == "user"), None
+        )
+
+        if not last_user_msg:
+            return ""
+
+        user_content = last_user_msg.get("content", "")
+        if not user_content:
+            return ""
+
+        # Use regex to find sentence boundaries
+        sentences = re.split(r'[.!?]+', user_content)
+        
+        # Take the first sentence or first 50 words if no clear sentence boundary
+        if sentences and sentences[0].strip():
+            intent = sentences[0].strip()
+        else:
+            # Split by spaces and take first 50 words
+            words = user_content.split()
+            intent = ' '.join(words[:50])
+        
+        # Limit to 200 characters max
+        return intent[:200]
+
+    def _validate_context_for_enhancement(self, base_context: List[Dict]) -> bool:
+        """
+        NEW validation method to ensure context is suitable for NeuralSym enhancement.
+
+        Args:
+            base_context: List of context messages to validate
+
+        Returns:
+            bool: True if context is suitable for enhancement, False otherwise
+        """
+        # Check if context is empty or too short
+        if not base_context or len(base_context) < 2:
+            return False
+        
+        # Check if system message is properly initialized
+        system_msg = next((msg for msg in base_context if msg.get('role') == 'system'), None)
+        if not system_msg or '[ERROR]' in system_msg.get('content', ''):
+            return False
+        
+        # Check if there's at least one user message
+        user_msg = next((msg for msg in base_context if msg.get('role') == 'user'), None)
+        if not user_msg:
+            return False
+        
+        return True

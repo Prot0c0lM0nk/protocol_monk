@@ -7,6 +7,7 @@ Acts as the central memory hub for the ProtocolAgent.
 """
 
 import asyncio
+import re
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional
@@ -137,8 +138,8 @@ class ContextManager:
         Raises:
             Exception: Various exceptions from file operations (caught internally)
         """
-        # Quick heuristic check before expensive operations
-        if len(content) >= 256 or "\n" in content:
+        # Use new validation method to check if content is likely a file path
+        if not self._is_likely_file_path(content):
             return
 
         try:
@@ -178,15 +179,17 @@ class ContextManager:
             content_preview = content[:50] + "..." if len(content) > 50 else content
             self.logger.debug("Adding %s message: %s", role, content_preview)
 
-            # 1. Estimate tokens
-            new_tokens = self.accountant.estimate(content)
+            # 1. Estimate tokens using temporary accountant to break circular dependency
+            temp_accountant = TokenAccountant(max_tokens=self.accountant.max_tokens)
+            new_tokens = temp_accountant.estimate(content)
 
-            # 2. Prune if budget exceeded
-            if not self.accountant.check_budget(new_tokens):
+            # 2. Prune if budget exceeded using temporary accountant for decision
+            if not temp_accountant.check_budget(new_tokens):
                 self.logger.info("Context approaching limit, pruning...")
                 self.conversation = self.pruner.prune(
-                    self.conversation, self.accountant
+                    self.conversation, temp_accountant
                 )
+                # Recalculate with main accountant after pruning
                 self.accountant.recalculate(self.system_message, self.conversation)
 
             # 3. Check for file updates
@@ -199,7 +202,7 @@ class ContextManager:
             msg = Message(role=role, content=content, importance=importance)
             self.conversation.append(msg)
 
-            # 5. Update token count
+            # 5. Update token count with main accountant
             self.accountant.add(new_tokens)
 
     async def add_user_message(self, content: str, importance: int = 4):
@@ -236,54 +239,64 @@ class ContextManager:
         Raises:
             NeuralSymIntegrationError: If NeuralSym enhancement fails for the model
         """
-        # 1. Check context size before proceeding
-        if model_name:
-            await self.check_context_before_generation(model_name)
+        async with self._lock:
+            # 1. Check context size within lock to prevent race conditions
+            if model_name:
+                await self.check_context_before_generation(model_name)
 
-        # 2. Get the base context (System + History)
-        base_context = await self._get_base_context()
+            # 2. Get the base context (System + History)
+            base_context = await self._get_base_context()
 
-        # 3. Check if we need to enhance it (Small Model Logic)
-        if model_name and self.neural_sym:
-            # Check if model is small (contains size indicators)
-            small_identifiers = [
-                "8b",
-                "4b",
-                "2b",
-                "1.7b",
-                "0.6b",
-                "small",
-                "mini",
-                "tiny",
-            ]
-            is_small_model = any(x in model_name.lower() for x in small_identifiers)
+            # 3. Check if we need to enhance it (Small Model Logic)
+            if model_name and self.neural_sym:
+                # Validate context suitability before enhancement
+                if not self._validate_context_for_enhancement(base_context):
+                    self.logger.debug("Context not suitable for NeuralSym enhancement")
+                    return base_context
 
-            if is_small_model:
-                try:
-                    return await self.neural_sym.get_enhanced_context(
-                        base_context, model_name
-                    )
-                except Exception as e:
-                    raise NeuralSymIntegrationError(
-                        f"NeuralSym enhancement failed for model {model_name}",
-                        operation="get_enhanced_context",
-                        model_name=model_name,
-                        original_error=e,
-                    ) from e
+                # Check if model is small (contains size identifiers)
+                small_identifiers = [
+                    "8b",
+                    "4b",
+                    "2b",
+                    "1.7b",
+                    "0.6b",
+                    "small",
+                    "mini",
+                    "tiny",
+                ]
+                is_small_model = any(x in model_name.lower() for x in small_identifiers)
+
+                if is_small_model:
+                    try:
+                        return await self.neural_sym.get_enhanced_context(
+                            base_context, model_name
+                        )
+                    except Exception as e:
+                        raise NeuralSymIntegrationError(
+                            f"NeuralSym enhancement failed for model {model_name}",
+                            operation="get_enhanced_context",
+                            model_name=model_name,
+                            original_error=e,
+                        ) from e
+            return base_context
         return base_context
 
     async def _get_base_context(self) -> List[Dict]:
         """
         Standard context construction without AI enhancement.
+        
+        NOTE: This method should ONLY be called from within an existing lock context
+        to avoid deadlocks.
 
         Returns:
             List[Dict]: Basic conversation context without enhancements
         """
-        async with self._lock:
-            context = [{"role": "system", "content": self.system_message}]
-            for msg in self.conversation:
-                context.append({"role": msg.role, "content": msg.content})
-            return context
+        # DO NOT acquire lock here - caller must already hold the lock
+        context = [{"role": "system", "content": self.system_message}]
+        for msg in self.conversation:
+            context.append({"role": msg.role, "content": msg.content})
+        return context
 
     async def clear(self):
         """
@@ -465,3 +478,98 @@ class ContextManager:
             )
 
         return check_result
+
+    def _is_likely_file_path(self, content: str) -> bool:
+        """
+        NEW validation method to reliably distinguish file paths from regular text content.
+
+        Args:
+            content: Content string to validate
+
+        Returns:
+            bool: True if content is likely a file path, False otherwise
+        """
+        # Quick heuristic checks
+        if not content or len(content) >= 256 or "\n" in content:
+            return False
+
+        # Check for common file path patterns
+        # Look for file extensions
+        common_extensions = {'.py', '.txt', '.md', '.json', '.yaml', '.yml', '.xml', '.csv',
+                           '.js', '.html', '.css', '.sh', '.bash', '.zsh', '.cfg', '.conf',
+                           '.ini', '.log', '.sql', '.gitignore', '.dockerignore'}
+        
+        # Check if content has a file extension
+        if '.' in content and any(content.endswith(ext) for ext in common_extensions):
+            return True
+        
+        # Check for path separators
+        if '/' in content or '\\' in content:
+            return True
+        
+        # Check if content looks like a relative path
+        if content.startswith('./') or content.startswith('../'):
+            return True
+        
+        # Check if content looks like an absolute path
+        if content.startswith('/') or (len(content) > 1 and content[1] == ':'):
+            return True
+        
+        return False
+
+    def _detect_context_poisoning(self, context: List[Dict]) -> bool:
+        """
+        NEW monitoring method to detect signs of corrupted context.
+
+        Args:
+            context: List of context messages to check
+
+        Returns:
+            bool: True if context poisoning is detected, False otherwise
+        """
+        # Check for repeated error messages
+        error_count = 0
+        for msg in context:
+            content = msg.get('content', '')
+            if 'error' in content.lower() or 'exception' in content.lower():
+                error_count += 1
+                # If more than 30% of messages contain errors, flag as poisoned
+                if error_count / len(context) > 0.3:
+                    return True
+        
+        # Check for excessive repetition of identical messages
+        content_hashes = {}
+        for msg in context:
+            content = msg.get('content', '')
+            content_hash = hash(content)
+            content_hashes[content_hash] = content_hashes.get(content_hash, 0) + 1
+            # If any message appears more than 3 times, flag as poisoned
+            if content_hashes[content_hash] > 3:
+                return True
+        
+        return False
+
+    def _validate_context_for_enhancement(self, context: List[Dict]) -> bool:
+        """
+        Validate if context is suitable for NeuralSym enhancement.
+
+        Args:
+            context: List of context messages to validate
+
+        Returns:
+            bool: True if context is suitable for enhancement, False otherwise
+        """
+        # Check if context is empty or too short
+        if not context or len(context) < 2:
+            return False
+        
+        # Check for context poisoning
+        if self._detect_context_poisoning(context):
+            return False
+        
+        # Check if system message is properly initialized
+        system_msg = next((msg for msg in context if msg.get('role') == 'system'), None)
+        if not system_msg or '[ERROR]' in system_msg.get('content', ''):
+            return False
+        
+        return True

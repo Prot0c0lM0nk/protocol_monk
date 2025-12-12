@@ -76,6 +76,7 @@ class TestFileTracker:
             str(test_file), "File: /completely/different/path.txt"
         )
 
+    @pytest.mark.asyncio
     async def test_replace_old_file_content(self, file_tracker, temp_dir):
         """Test replacing old file content with placeholder"""
         # Create a test file

@@ -57,12 +57,12 @@ class FileTracker:
         Returns:
             bool: True if exact path match found
         """
-        # For file paths, we want to match the exact path when it appears as a
-        # complete token but we're more flexible about boundaries since paths
-        # can appear in various contexts
+        # For file paths, we want to match the exact path when it appears in text
+        # but we're more flexible about boundaries since paths can appear in various contexts
         escaped_path = re.escape(filepath)
-        # Look for the path with flexible boundaries
-        pattern = escaped_path
+        # Look for the path with flexible boundaries - allow it to be preceded by space, colon, or other separators
+        # and followed by space, punctuation, or end of string
+        pattern = r'(?:^|[\s:>])' + escaped_path + r'(?:$|[\s.,;:!?])'
         match = re.search(pattern, text)
         return bool(match)
 
@@ -78,8 +78,19 @@ class FileTracker:
         """
         try:
             path = Path(filepath)
-            return path.exists() and path.is_file()
-        except Exception:
+            # Resolve the path to handle relative paths and symlinks
+            resolved_path = path.resolve()
+            # Resolve working directory as well for consistent comparison
+            resolved_working_dir = self.working_dir.resolve()
+            # Check if the resolved path exists, is a file, and is within working directory
+            return (
+                resolved_path.exists()
+                and resolved_path.is_file()
+                and str(resolved_path).startswith(str(resolved_working_dir))
+            )
+        except Exception as e:
+            self.logger.warning(f"Error validating file path {filepath}: {e}")
+            return False
             return False
 
     async def replace_old_file_content(
