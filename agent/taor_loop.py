@@ -70,11 +70,11 @@ class TAORLoop:
                         continue
                     else:
                         # Real errors (Auth, 404, etc) should still crash/stop
-                        self.agent.ui.print_error(f"🛑 Model Error: {e}")
+                        await self.agent.ui.print_error(f"🛑 Model Error: {e}")
                         return False
 
                 except OrchestrationError as e:
-                     self.agent.ui.print_error(f"🛑 Logic Error: {e}")
+                     await self.agent.ui.print_error(f"🛑 Logic Error: {e}")
                      return False
                 # --- END: ERROR TRAP ---
 
