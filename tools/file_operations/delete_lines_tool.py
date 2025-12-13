@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from tools.base import BaseTool, ExecutionStatus, ToolResult, ToolSchema
+from tools.path_validator import PathValidator
 
 
 class DeleteLinesTool(BaseTool):
@@ -17,6 +18,7 @@ class DeleteLinesTool(BaseTool):
     def __init__(self, working_dir: Path):
         super().__init__(working_dir)
         self.logger = logging.getLogger(__name__)
+        self.path_validator = PathValidator(working_dir)
 
     @property
     def schema(self) -> ToolSchema:
@@ -107,20 +109,17 @@ class DeleteLinesTool(BaseTool):
                 ),
             )
 
-        # Path Cleaning
-        str_cwd = str(self.working_dir)
-        if str(filepath).startswith(str_cwd):
-            filepath = str(filepath)[len(str_cwd) :].lstrip(os.sep)
-
-        if not self._is_safe_file_path(filepath):
+        # Use centralized path validator
+        cleaned_path, error = self.path_validator.validate_and_clean_path(filepath)
+        if error:
             return (
                 None,
                 None,
                 None,
-                ToolResult.security_blocked(
-                    f"🔒 File path blocked: {filepath} (Unsafe path)"
-                ),
+                ToolResult.security_blocked(f"Invalid path: {error}")
             )
+            
+        filepath = cleaned_path
 
         return filepath, start, end, None
 

@@ -11,6 +11,7 @@ from asyncio import Lock
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from agent.enhanced_tool_buffer import EnhancedToolCallBuffer
 
 from exceptions import (
     ToolExecutionError,
@@ -41,6 +42,23 @@ class ToolExecutor:
         auto_confirm: bool = False,
         ui_callback: Optional[Callable] = None,
     ):
+        """
+        Initialize the tool executor with registry and configuration.
+
+        Args:
+            tool_registry: Registry of available tools
+            working_dir: Working directory for file operations
+            auto_confirm: Whether to auto-confirm tool executions (default: False)
+            ui_callback: Callback for UI interactions (default: None)
+        """
+        self.tool_registry = tool_registry
+        self.working_dir = working_dir
+        self.auto_confirm = auto_confirm
+        self.ui_callback = ui_callback
+        self.logger = logging.getLogger(__name__)
+        self.execution_lock = Lock()
+        # Initialize enhanced tool buffer
+        self.tool_buffer = EnhancedToolCallBuffer()
         """
         Initialize the tool executor with registry and configuration.
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from tools.base import BaseTool, ExecutionStatus, ToolResult, ToolSchema
+from tools.path_validator import PathValidator
 
 
 class ReadFileTool(BaseTool):
@@ -19,6 +20,7 @@ class ReadFileTool(BaseTool):
     def __init__(self, working_dir: Path):
         super().__init__(working_dir)
         self.logger = logging.getLogger(__name__)
+        self.path_validator = PathValidator(working_dir)
 
     @property
     def schema(self) -> ToolSchema:
@@ -64,10 +66,12 @@ class ReadFileTool(BaseTool):
                 "❌ Missing required parameter: 'filepath'", missing_params=["filepath"]
             )
 
-        # Path Cleaning: Remove redundant working_dir prefix
-        str_cwd = str(self.working_dir)
-        if str(filepath).startswith(str_cwd):
-            filepath = str(filepath)[len(str_cwd) :].lstrip(os.sep)
+        # Use centralized path validator
+        cleaned_path, error = self.path_validator.validate_and_clean_path(filepath)
+        if error:
+            return ToolResult.security_blocked(f"Invalid path: {error}")
+            
+        filepath = cleaned_path
 
         # 1. Read File
         lines, error = self._validate_and_read(filepath)
@@ -100,8 +104,8 @@ class ReadFileTool(BaseTool):
             Tuple[List[str], Optional[ToolResult]]: A tuple containing either
             the list of lines or None, and an error result if failed.
         """
-        if not self._is_safe_file_path(filepath):
-            return [], ToolResult.security_blocked(f"Unsafe file path: {filepath}")
+        # Path validation already handled in execute()
+        # Proceed directly to reading the file
 
         full_path = self.working_dir / filepath
 

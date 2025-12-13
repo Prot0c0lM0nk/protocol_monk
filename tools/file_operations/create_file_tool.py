@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Optional, Tuple
+from tools.path_validator import PathValidator
 
 from tools.base import BaseTool, ToolResult, ToolSchema
 from tools.file_operations.auto_stage_large_content import auto_stage_large_content
@@ -18,6 +19,7 @@ class CreateFileTool(BaseTool):
     def __init__(self, working_dir: Path):
         super().__init__(working_dir)
         self.logger = logging.getLogger(__name__)
+        self.path_validator = PathValidator(working_dir)
 
     @property
     def schema(self) -> ToolSchema:
@@ -70,21 +72,19 @@ class CreateFileTool(BaseTool):
                 "❌ Missing required parameter: 'filepath'", missing_params=["filepath"]
             )
 
-        # Path Cleaning
-        str_cwd = str(self.working_dir)
-        if str(filepath).startswith(str_cwd):
-            filepath = str(filepath)[len(str_cwd) :].lstrip(os.sep)
+        # Use centralized path validator
+        cleaned_path, error = self.path_validator.validate_and_clean_path(filepath)
+        if error:
+            return ToolResult.security_blocked(f"Invalid path: {error}")
+            
+        filepath = cleaned_path
 
         # 1. Resolve Content
         content, error = self._resolve_content(kwargs)
         if error:
             return error
 
-        # 2. Security Check
-        if not self._is_safe_file_path(filepath):
-            return ToolResult.security_blocked(
-                f"🔒 File path blocked due to security policy: {filepath}"
-            )
+        # Path validation completed, proceed with operation
 
         # 3. Perform Write
         return self._perform_atomic_write(filepath, content)

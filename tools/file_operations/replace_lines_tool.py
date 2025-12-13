@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from tools.base import BaseTool, ExecutionStatus, ToolResult, ToolSchema
+from tools.path_validator import PathValidator
 from tools.file_operations.auto_stage_large_content import (
     auto_stage_large_content
 )
@@ -21,6 +22,7 @@ class ReplaceLinesTool(BaseTool):
         super().__init__(working_dir)
         self.context_manager = context_manager
         self.logger = logging.getLogger(__name__)
+        self.path_validator = PathValidator(working_dir)
 
     @property
     def schema(self) -> ToolSchema:
@@ -127,16 +129,15 @@ class ReplaceLinesTool(BaseTool):
                 ),
             )
 
-        # Path Cleaning
-        str_cwd = str(self.working_dir)
-        if str(filepath).startswith(str_cwd):
-            filepath = str(filepath)[len(str_cwd):].lstrip(os.sep)
-
-        if not self._is_safe_file_path(filepath):
+        # Use centralized path validator
+        cleaned_path, error = self.path_validator.validate_and_clean_path(filepath)
+        if error:
             return (
                 None, None, None, None,
-                ToolResult.security_blocked(f"🔒 File path blocked: {filepath}"),
+                ToolResult.security_blocked(f"Invalid path: {error}")
             )
+            
+        filepath = cleaned_path
 
         content, error = self._resolve_content(**kwargs)
         if error:
