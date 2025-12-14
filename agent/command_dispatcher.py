@@ -55,6 +55,10 @@ class CommandDispatcher:
             await self.agent.clear_conversation()
             return True
 
+        if cmd.startswith("/file"):
+            await self._handle_file_upload()
+            return True
+
         if cmd.startswith("/model"):
             await self._handle_model_switch()
             return True
@@ -70,6 +74,7 @@ class CommandDispatcher:
 /status   - View current state
 /model    - Switch to a different model
 /clear    - Clear conversation history
+/file     - Upload a file to the workspace
 /quit     - Exit with blessing
 """
         await self.ui.print_info(help_text)
@@ -213,6 +218,97 @@ class CommandDispatcher:
 
         await self.ui.print_info("Model switch cancelled.")
         return False
+    
+    async def _handle_file_upload(self):
+        """Handle file upload command with user interaction."""
+        await self.ui.print_info("📁 File Upload Protocol")
+        await self.ui.print_info("Enter the path to the file you want to upload:")
+
+        file_path = await self.ui.prompt_user("File path: ")
+        file_path = file_path.strip()
+
+        if not file_path:
+            await self.ui.print_error("No file path provided.")
+            return
+
+        # Import here to avoid circular imports
+        import os
+        import shutil
+        from pathlib import Path
+
+        # Check if file exists
+        if not os.path.exists(file_path):
+            await self.ui.print_error(f"File not found: {file_path}")
+            return
+
+        if not os.path.isfile(file_path):
+            await self.ui.print_error(f"Path is not a file: {file_path}")
+            return
+
+        # Get workspace directory from session
+        session = get_active_session()
+        workspace_dir = str(session.working_dir)
+
+        # Create filename and destination path
+        filename = os.path.basename(file_path)
+        destination = os.path.join(workspace_dir, filename)
+
+        # Check if file already exists
+        if os.path.exists(destination):
+            overwrite = await self.ui.prompt_user(
+                f"File '{filename}' already exists. Overwrite? (y/n): "
+            )
+            if overwrite.strip().lower() != 'y':
+                await self.ui.print_info("File upload cancelled.")
+                return
+
+        try:
+            # Copy the file to workspace
+            shutil.copy2(file_path, destination)
+
+            # Get file size for confirmation
+            file_size = os.path.getsize(destination)
+            size_str = f"{file_size:,} bytes"
+            if file_size > 1024:
+                size_str = f"{file_size / 1024:.1f} KB"
+            if file_size > 1024 * 1024:
+                size_str = f"{file_size / (1024 * 1024):.1f} MB"
+
+            # Success messages
+            await self.ui.print_info("✅ File uploaded successfully!")
+            await self.ui.print_info(f"📄 {filename} ({size_str})")
+            await self.ui.print_info(f"📍 Location: {destination}")
+
+            # Add file content to conversation
+            try:
+                with open(destination, 'r', encoding='utf-8') as f:
+                    file_content = f.read()
+
+                # Add file content to conversation with appropriate formatting
+                file_info = f"File uploaded: {filename}\n```\n{file_content}\n```"
+                await self.agent.context_manager.add_user_message(file_info, importance=4)
+                await self.ui.print_info("📖 File content added to conversation context")
+
+            except UnicodeDecodeError:
+                # Handle binary files gracefully
+                file_info = f"File uploaded: {filename} (binary file, content not displayed)"
+                await self.agent.context_manager.add_user_message(file_info, importance=4)
+                await self.ui.print_info("📎 Binary file uploaded (content not displayed)")
+            except Exception as e:
+                self.logger.warning(f"Could not add file content to conversation: {e}")
+                # Still report success since file was uploaded
+
+            # Log the file upload
+            self.logger.info(f"File uploaded: {filename} ({file_size} bytes) to {destination}")
+
+        except PermissionError:
+            await self.ui.print_error("Permission denied. Check file access rights.")
+        except shutil.SameFileError:
+            await self.ui.print_info("File is already in the workspace.")
+        except Exception as ex:
+            await self.ui.print_error(f"File upload failed: {str(ex)}")
+            self.logger.error("File upload error: %s", ex, exc_info=True)
+
 
     async def _handle_model_switch(self):
         """Handle the model switch command with guardrail workflow."""
