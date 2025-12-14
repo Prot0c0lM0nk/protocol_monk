@@ -285,7 +285,7 @@ class ContextManager:
     async def _get_base_context(self) -> List[Dict]:
         """
         Standard context construction without AI enhancement.
-        
+
         NOTE: This method should ONLY be called from within an existing lock context
         to avoid deadlocks.
 
@@ -495,26 +495,46 @@ class ContextManager:
 
         # Check for common file path patterns
         # Look for file extensions
-        common_extensions = {'.py', '.txt', '.md', '.json', '.yaml', '.yml', '.xml', '.csv',
-                           '.js', '.html', '.css', '.sh', '.bash', '.zsh', '.cfg', '.conf',
-                           '.ini', '.log', '.sql', '.gitignore', '.dockerignore'}
-        
+        common_extensions = {
+            ".py",
+            ".txt",
+            ".md",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".xml",
+            ".csv",
+            ".js",
+            ".html",
+            ".css",
+            ".sh",
+            ".bash",
+            ".zsh",
+            ".cfg",
+            ".conf",
+            ".ini",
+            ".log",
+            ".sql",
+            ".gitignore",
+            ".dockerignore",
+        }
+
         # Check if content has a file extension
-        if '.' in content and any(content.endswith(ext) for ext in common_extensions):
+        if "." in content and any(content.endswith(ext) for ext in common_extensions):
             return True
-        
+
         # Check for path separators
-        if '/' in content or '\\' in content:
+        if "/" in content or "\\" in content:
             return True
-        
+
         # Check if content looks like a relative path
-        if content.startswith('./') or content.startswith('../'):
+        if content.startswith("./") or content.startswith("../"):
             return True
-        
+
         # Check if content looks like an absolute path
-        if content.startswith('/') or (len(content) > 1 and content[1] == ':'):
+        if content.startswith("/") or (len(content) > 1 and content[1] == ":"):
             return True
-        
+
         return False
 
     def _detect_context_poisoning(self, context: List[Dict]) -> bool:
@@ -530,23 +550,23 @@ class ContextManager:
         # Check for repeated error messages
         error_count = 0
         for msg in context:
-            content = msg.get('content', '')
-            if 'error' in content.lower() or 'exception' in content.lower():
+            content = msg.get("content", "")
+            if "error" in content.lower() or "exception" in content.lower():
                 error_count += 1
                 # If more than 30% of messages contain errors, flag as poisoned
                 if error_count / len(context) > 0.3:
                     return True
-        
+
         # Check for excessive repetition of identical messages
         content_hashes = {}
         for msg in context:
-            content = msg.get('content', '')
+            content = msg.get("content", "")
             content_hash = hash(content)
             content_hashes[content_hash] = content_hashes.get(content_hash, 0) + 1
             # If any message appears more than 3 times, flag as poisoned
             if content_hashes[content_hash] > 3:
                 return True
-        
+
         return False
 
     def _validate_context_for_enhancement(self, context: List[Dict]) -> bool:
@@ -562,14 +582,14 @@ class ContextManager:
         # Check if context is empty or too short
         if not context or len(context) < 2:
             return False
-        
+
         # Check for context poisoning
         if self._detect_context_poisoning(context):
             return False
-        
+
         # Check if system message is properly initialized
-        system_msg = next((msg for msg in context if msg.get('role') == 'system'), None)
-        if not system_msg or '[ERROR]' in system_msg.get('content', ''):
+        system_msg = next((msg for msg in context if msg.get("role") == "system"), None)
+        if not system_msg or "[ERROR]" in system_msg.get("content", ""):
             return False
-        
+
         return True

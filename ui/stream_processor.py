@@ -10,8 +10,8 @@ class StreamProcessorMode(Enum):
 
 class StreamProcessor:
     # 50 chars gives us enough buffer to catch '{\n  "action":' across token splits
-    SAFETY_MARGIN = 50 
-    
+    SAFETY_MARGIN = 50
+
     # Regex to catch { followed by whitespace/newlines and then "action"
     # This handles: {"action":...} AND { \n "action":... }
     TOOL_PATTERN = re.compile(r'\{\s*"action"')
@@ -40,7 +40,7 @@ class StreamProcessor:
         if match:
             # FOUND IT!
             start_index = match.start()
-            
+
             # Split buffer exactly at the start of the '{'
             # Left side = Safe Text (The conversation)
             # Right side = JSON Tool Call (The "Sacred Action")
@@ -58,7 +58,7 @@ class StreamProcessor:
             # 3. The Typewriter Logic
             # We must hold back enough text (SAFETY_MARGIN) to ensure we don't
             # accidentally print a partial '{' that turns out to be a tool call later.
-            
+
             if len(self.buffer) > self.SAFETY_MARGIN:
                 # Calculate how much we can safely reveal
                 # We keep the last SAFETY_MARGIN chars in the buffer just in case
@@ -69,8 +69,8 @@ class StreamProcessor:
 
     def flush(self):
         """Force the remaining buffer into visible text (call on stream end)."""
-        # Only flush if we NEVER detected a tool. 
-        # If we are in TOOL_DETECTED mode, the buffer is part of the tool 
+        # Only flush if we NEVER detected a tool.
+        # If we are in TOOL_DETECTED mode, the buffer is part of the tool
         # and should be hidden (handled by the tool renderer), not printed as text.
         if self.mode == StreamProcessorMode.TEXT:
             self.visible_text += self.buffer

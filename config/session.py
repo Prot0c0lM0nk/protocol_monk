@@ -67,6 +67,7 @@ class ConfigFileHandler:
     @staticmethod
     def get_config_file_path() -> Path:
         return Path(".protocol_config.json")
+
     @staticmethod
     def load_saved_config() -> Optional[Dict[str, Any]]:
         config_file = ConfigFileHandler.get_config_file_path()
@@ -78,13 +79,13 @@ class ConfigFileHandler:
                 raise ConfigFileError(
                     f"Invalid JSON format in config file {config_file}: {e}",
                     file_path=config_file,
-                    operation="load"
+                    operation="load",
                 ) from e
             except (OSError, IOError) as e:
                 raise ConfigFileError(
                     f"Failed to read config file {config_file}: {e}",
                     file_path=config_file,
-                    operation="load"
+                    operation="load",
                 ) from e
         return None
 
@@ -98,13 +99,13 @@ class ConfigFileHandler:
             raise ConfigFileError(
                 f"Failed to save config file {config_file}: {e}",
                 file_path=config_file,
-                operation="save"
+                operation="save",
             ) from e
         except (TypeError, ValueError) as e:
             raise ConfigFileError(
                 f"Invalid configuration data for JSON serialization: {e}",
                 file_path=config_file,
-                operation="save"
+                operation="save",
             ) from e
 
 
@@ -130,12 +131,12 @@ def list_desktop_directories() -> list[Path]:
     except (OSError, IOError) as e:
         raise DirectorySelectionError(
             f"Failed to list directories in desktop path {desktop}: {e}",
-            directory_path=desktop
+            directory_path=desktop,
         ) from e
     except PermissionError as e:
         raise DirectorySelectionError(
             f"Permission denied accessing desktop path {desktop}: {e}",
-            directory_path=desktop
+            directory_path=desktop,
         ) from e
     return sorted(directories)
 
@@ -166,7 +167,7 @@ def select_directory_interactive() -> Optional[Path]:
         except ValueError as e:
             raise DirectorySelectionError(
                 f"Invalid choice input '{choice_input}'. Please enter a number.",
-                directory_path=None
+                directory_path=None,
             ) from e
 
         if choice == 0:
@@ -182,23 +183,22 @@ def select_directory_interactive() -> Optional[Path]:
                         return path
                     raise DirectorySelectionError(
                         f"Invalid directory path '{path_str}'. Path does not exist or is not a directory.",
-                        directory_path=path
+                        directory_path=path,
                     )
                 except OSError as e:
                     raise DirectorySelectionError(
                         f"Failed to resolve directory path '{path_str}': {e}",
-                        directory_path=path_str
+                        directory_path=path_str,
                     ) from e
             return None
         else:
             raise DirectorySelectionError(
                 f"Invalid choice {choice}. Please choose a number between 0 and {len(directories) + 1}.",
-                directory_path=None
+                directory_path=None,
             )
     except KeyboardInterrupt:
         raise DirectorySelectionError(
-            "Directory selection cancelled by user.",
-            directory_path=None
+            "Directory selection cancelled by user.", directory_path=None
         )
 
 

@@ -62,7 +62,7 @@ class FileTracker:
         escaped_path = re.escape(filepath)
         # Look for the path with flexible boundaries - allow it to be preceded by space, colon, or other separators
         # and followed by space, punctuation, or end of string
-        pattern = r'(?:^|[\s:>])' + escaped_path + r'(?:$|[\s.,;:!?])'
+        pattern = r"(?:^|[\s:>])" + escaped_path + r"(?:$|[\s.,;:!?])"
         match = re.search(pattern, text)
         return bool(match)
 

@@ -89,7 +89,7 @@ class CommandDispatcher:
         else:
             env_info = "general directory"
 
-        token_percentage = (stats['estimated_tokens'] / stats['token_limit'] * 100)
+        token_percentage = stats["estimated_tokens"] / stats["token_limit"] * 100
 
         status_text = f"""Current State:
 

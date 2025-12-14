@@ -5,6 +5,7 @@ from typing import List, Dict, Tuple, Optional
 import json
 import re
 
+
 @dataclass
 class ToolBufferState:
     """State for an individual tool call buffer.
@@ -16,11 +17,13 @@ class ToolBufferState:
         is_complete: Whether the buffer contains a complete tool call
         error: Error message if parsing failed
     """
+
     content: str = ""
     start_pos: int = -1
     end_pos: int = -1
     is_complete: bool = False
     error: Optional[str] = None
+
 
 class EnhancedToolCallBuffer:
     """Robust tool call detection with support for overlapping tool calls and better error recovery.
@@ -39,9 +42,9 @@ class EnhancedToolCallBuffer:
 
         # Patterns for detecting tool call starts
         self.start_patterns = [
-            r'```json\\s*\\{',  # Markdown code block with JSON
-            r'\\{\\s*\"action\"\\s*:',  # JSON object with action field
-            r'\\[\\s*\\{\\s*\"action\"\\s*:'  # Array of JSON objects
+            r"```json\\s*\\{",  # Markdown code block with JSON
+            r"\\{\\s*\"action\"\\s*:",  # JSON object with action field
+            r"\\[\\s*\\{\\s*\"action\"\\s*:",  # Array of JSON objects
         ]
 
     def add_chunk(self, chunk: str) -> Tuple[List[str], List[Dict]]:
@@ -105,7 +108,9 @@ class EnhancedToolCallBuffer:
 
         return starts
 
-    def _check_buffer_completion(self, buffer: ToolBufferState) -> Tuple[bool, List[Dict]]:
+    def _check_buffer_completion(
+        self, buffer: ToolBufferState
+    ) -> Tuple[bool, List[Dict]]:
         """Check if a buffer contains a complete tool call.
 
         Args:
@@ -156,7 +161,7 @@ class EnhancedToolCallBuffer:
             pass
 
         # If that fails, try to extract JSON from within markdown code blocks
-        markdown_matches = re.findall(r'```(?:json)?\\s*([\\s\\S]*?)\\s*```', text)
+        markdown_matches = re.findall(r"```(?:json)?\\s*([\\s\\S]*?)\\s*```", text)
         if markdown_matches:
             try:
                 data = json.loads(markdown_matches[0])
@@ -194,20 +199,20 @@ class EnhancedToolCallBuffer:
         escape = False
 
         for char in text:
-            if char == '\"' and not escape:
+            if char == '"' and not escape:
                 in_string = not in_string
 
             if not in_string:
-                if char in '{[':
+                if char in "{[":
                     stack.append(char)
-                elif char in '}]':
+                elif char in "}]":
                     if not stack:
                         return False
                     last = stack.pop()
-                    if (char == '}' and last != '{') or (char == ']' and last != '['):
+                    if (char == "}" and last != "{") or (char == "]" and last != "["):
                         return False
 
-            escape = (char == '\\\\' and not escape)
+            escape = char == "\\\\" and not escape
 
         return not stack and not in_string
 
@@ -221,19 +226,19 @@ class EnhancedToolCallBuffer:
             Fixed text with common JSON formatting issues resolved
         """
         # Remove trailing commas
-        fixed = re.sub(r',\\s*([}\\]]\\s*)$', r'\\1', text)
+        fixed = re.sub(r",\\s*([}\\]]\\s*)$", r"\\1", text)
 
         # Fix unquoted keys
-        fixed = re.sub(r'(\\{|\\,)\\s*(\\w+)\\s*:', r'\\1\"\\2\":', fixed)
+        fixed = re.sub(r"(\\{|\\,)\\s*(\\w+)\\s*:", r"\\1\"\\2\":", fixed)
 
         # Fix single quotes to double quotes
         fixed = re.sub(r"'([^']*)'", r'"\\1"', fixed)
 
         # Add missing closing braces
-        open_braces = fixed.count('{')
-        close_braces = fixed.count('}')
+        open_braces = fixed.count("{")
+        close_braces = fixed.count("}")
         if open_braces > close_braces:
-            fixed += '}' * (open_braces - close_braces)
+            fixed += "}" * (open_braces - close_braces)
 
         return fixed
 

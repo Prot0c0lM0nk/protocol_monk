@@ -77,7 +77,7 @@ class AppendToFileTool(BaseTool):
         cleaned_path, error = self.path_validator.validate_and_clean_path(filepath)
         if error:
             return ToolResult.security_blocked(f"Invalid path: {error}")
-            
+
         filepath = cleaned_path
 
         # 1. Resolve Content

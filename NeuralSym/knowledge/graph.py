@@ -24,6 +24,7 @@ class GraphManagerError(MonkBaseError):
 
     pass
 
+
 import logging
 from dataclasses import asdict
 from pathlib import Path

@@ -162,7 +162,7 @@ class ToolExecutor:
         try:
             return await asyncio.wait_for(
                 self.tool_registry.execute_tool(action, **parameters),
-                timeout=settings.model.request_timeout
+                timeout=settings.model.request_timeout,
             )
         except asyncio.TimeoutError:
             raise ToolExecutionError(
@@ -191,15 +191,14 @@ class ToolExecutor:
         # Validate required fields
         if "action" not in tool_call or not tool_call["action"]:
             raise ToolInputValidationError(
-                "Missing 'action' field",
-                tool_name=tool_call.get("name", "unknown")
+                "Missing 'action' field", tool_name=tool_call.get("name", "unknown")
             )
         if "parameters" not in tool_call:
             raise ToolInputValidationError(
                 "Missing 'parameters' field",
-                tool_name=tool_call.get("action", "unknown")
+                tool_name=tool_call.get("action", "unknown"),
             )
-        
+
         # Tool-specific validation (e.g., line numbers must be positive)
         if tool_call["action"] == "replace_lines":
             params = tool_call["parameters"]
@@ -207,9 +206,9 @@ class ToolExecutor:
                 raise ToolInputValidationError(
                     "Line numbers must be positive",
                     tool_name="replace_lines",
-                    invalid_input=params
+                    invalid_input=params,
                 )
-        
+
         if "action" in tool_call and "parameters" in tool_call:
             return tool_call
         if "name" in tool_call and "arguments" in tool_call:

@@ -117,10 +117,10 @@ class InsertInFileTool(BaseTool):
                 None,
                 None,
                 ToolResult.invalid_params(
-                     "❌ Missing required params.",
-                     missing_params=["filepath", "after_line"],
-                 ),
-             )
+                    "❌ Missing required params.",
+                    missing_params=["filepath", "after_line"],
+                ),
+            )
 
         # Use centralized path validator
         cleaned_path, error = self.path_validator.validate_and_clean_path(filepath)
@@ -129,9 +129,9 @@ class InsertInFileTool(BaseTool):
                 None,
                 None,
                 None,
-                ToolResult.security_blocked(f"Invalid path: {error}")
+                ToolResult.security_blocked(f"Invalid path: {error}"),
             )
-            
+
         filepath = cleaned_path
 
         content, error = self._resolve_content(**kwargs)
@@ -139,7 +139,7 @@ class InsertInFileTool(BaseTool):
             return None, None, None, error
 
         return filepath, target_line, content, None
-    
+
     def _resolve_content(self, **kwargs) -> Tuple[Optional[str], Optional[ToolResult]]:
         """
         Resolve content from scratch, memory, or inline.

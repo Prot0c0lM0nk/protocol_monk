@@ -17,7 +17,7 @@ class ModelScanner:
     async def scan_local_models(self) -> List[str]:
         """
         Query Ollama for available local models.
-        
+
         Returns:
             List[str]: List of available model names
         """
@@ -41,13 +41,12 @@ class ModelScanner:
     ) -> Dict[str, ModelInfo]:
         """
         Merge model map data with local availability information.
-        
+
         Args:
             map_data: Model map data with ModelInfo objects
             local_data: List of locally available model names
-            
+
         Returns:
             Dict[str, ModelInfo]: Merged model availability data
         """
         return map_data
-

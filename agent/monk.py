@@ -163,13 +163,12 @@ class ProtocolAgent:
             for msg in context:
                 if msg.get("role") == "system":
                     if seen_system:
-                        continue          # skip duplicates
+                        continue  # skip duplicates
                     seen_system = True
                 filtered.append(msg)
             context = filtered
 
             self.logger.error("FILTERED MESSAGES: %s", json.dumps(filtered, indent=2))
-
 
             self.enhanced_logger.log_context_snapshot(context)
             return context
@@ -214,14 +213,18 @@ class ProtocolAgent:
             return await self._get_model_response(context)  # Retry
         except ModelResponseParseError as e:
             e.log_error()
-            await self.ui.print_error("Model returned invalid data. Using fallback response.")
+            await self.ui.print_error(
+                "Model returned invalid data. Using fallback response."
+            )
             fallback_response = "Fallback: I encountered an error processing your request. Please try again."
             await self.context_manager.add_message("assistant", fallback_response)
             return fallback_response
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.exception("Model unavailable. Using fallback response.")
             await self.ui.print_error("Model unavailable. Using fallback response.")
-            fallback_response = "Fallback: The model is currently unavailable. Please try again later."
+            fallback_response = (
+                "Fallback: The model is currently unavailable. Please try again later."
+            )
             await self.context_manager.add_message("assistant", fallback_response)
             return fallback_response
         except KeyboardInterrupt:
@@ -251,7 +254,10 @@ class ProtocolAgent:
                 raise ModelResponseParseError(
                     message="Invalid action format",
                     raw_response=str(action),
-                    details={"expected": "dict with 'action' key", "got": type(action).__name__},
+                    details={
+                        "expected": "dict with 'action' key",
+                        "got": type(action).__name__,
+                    },
                 )
         return actions, has_json
 

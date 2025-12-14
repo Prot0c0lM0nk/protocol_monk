@@ -15,10 +15,10 @@ class ModelConfigLoader:
     ):
         """
         Initialize the model loader with file paths.
-        
+
         Args:
             model_map_file: Path to model map JSON file (default: "model_map.json")
-            model_options_file: Path to model options JSON file 
+            model_options_file: Path to model options JSON file
                 (default: "model_options.json")
         """
         self.model_map_file = Path(model_map_file)
@@ -29,7 +29,7 @@ class ModelConfigLoader:
     def load_model_map(self) -> Dict[str, ModelInfo]:
         """
         Load model map and convert to ModelInfo objects.
-        
+
         Returns:
             Dict[str, ModelInfo]: Model map with ModelInfo objects
         """
@@ -55,7 +55,7 @@ class ModelConfigLoader:
     def load_options(self) -> Dict[str, Any]:
         """
         Load model options configuration.
-        
+
         Returns:
             Dict[str, Any]: Model options configuration
         """
@@ -69,10 +69,10 @@ class ModelConfigLoader:
     def get_model_limit(self, model_name: str) -> int:
         """
         Get the context window limit for a specific model.
-        
+
         Args:
             model_name: Name of the model to get limit for
-            
+
         Returns:
             int: Context window limit in tokens
         """

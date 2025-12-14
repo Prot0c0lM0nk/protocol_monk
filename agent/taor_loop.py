@@ -9,7 +9,12 @@ import asyncio
 import json
 import logging
 from typing import Dict
-from exceptions import ModelError, OrchestrationError, UserCancellationError, ContextOverflowError
+from exceptions import (
+    ModelError,
+    OrchestrationError,
+    UserCancellationError,
+    ContextOverflowError,
+)
 
 # pylint: disable=protected-access
 
@@ -53,19 +58,25 @@ class TAORLoop:
         try:
             while iteration < self.max_autonomous_iterations:
                 iteration += 1
-                
+
                 # --- START: ERROR TRAP FOR 500/503 ---
                 try:
                     should_continue = await self._execute_cycle(iteration)
                     if not should_continue:
                         return True  # Normal completion or handled stop
-                
+
                 except ModelError as e:
                     error_msg = str(e)
                     # Check for 500 (Internal Error), 503 (Unavailable), or Overloaded
-                    if "500" in error_msg or "503" in error_msg or "Overloaded" in error_msg:
-                        self.agent.ui.print_warning(f"⚠️ Service Error (Cloud 500/503). Retrying in 5s...")
-                        await asyncio.sleep(5) # Give the server a break
+                    if (
+                        "500" in error_msg
+                        or "503" in error_msg
+                        or "Overloaded" in error_msg
+                    ):
+                        self.agent.ui.print_warning(
+                            f"⚠️ Service Error (Cloud 500/503). Retrying in 5s..."
+                        )
+                        await asyncio.sleep(5)  # Give the server a break
                         iteration -= 1  # Don't burn an iteration on a server glitch
                         continue
                     else:
@@ -74,8 +85,8 @@ class TAORLoop:
                         return False
 
                 except OrchestrationError as e:
-                     await self.agent.ui.print_error(f"🛑 Logic Error: {e}")
-                     return False
+                    await self.agent.ui.print_error(f"🛑 Logic Error: {e}")
+                    return False
                 # --- END: ERROR TRAP ---
 
         except KeyboardInterrupt:
@@ -108,7 +119,7 @@ class TAORLoop:
             )
             await self.agent.context_manager.clear_old_messages()
             context = await self.agent._prepare_context()
-        
+
         if context is None:
             raise OrchestrationError(
                 "Failed to prepare context for model call",
@@ -118,11 +129,11 @@ class TAORLoop:
         # CRITICAL: We let the exception bubble up here so the run_loop catches it.
         # We do NOT return False on exception anymore.
         response = await self.agent._get_model_response(context)
-        
+
         if response is None:
             # Interrupted / Empty
             return False
-            
+
         # 2. PARSE (Extract Intent)
         actions, _ = self.agent._parse_response(response)
 
@@ -150,7 +161,7 @@ class TAORLoop:
             if self._consecutive_failures >= self.max_consecutive_failures:
                 return False  # Stop loop
             return True  # Continue loop
-        
+
         # Normal finish (Agent just talked)
         return False
 

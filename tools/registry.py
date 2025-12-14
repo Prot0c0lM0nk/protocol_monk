@@ -19,11 +19,7 @@ class ToolRegistry:
     """Manages discovery, loading, and execution of tools."""
 
     def __init__(
-        self,
-        working_dir: Path,
-        context_manager=None,
-        agent_logger=None,
-        **kwargs
+        self, working_dir: Path, context_manager=None, agent_logger=None, **kwargs
     ):
         """
         Initialize the registry.
@@ -100,9 +96,7 @@ class ToolRegistry:
             self._register_tools_from_module(module)
 
         except Exception as e:  # pylint: disable=broad-exception-caught
-            self.logger.error(
-                "Failed to load tools from %s: %s", file_path.name, e
-            )
+            self.logger.error("Failed to load tools from %s: %s", file_path.name, e)
 
     def _register_tools_from_module(self, module):
         """
@@ -143,9 +137,7 @@ class ToolRegistry:
             tool_params = inspect.signature(tool_class.__init__).parameters
 
             # Only pass what the tool asks for
-            init_args = {
-                k: v for k, v in dependencies.items() if k in tool_params
-            }
+            init_args = {k: v for k, v in dependencies.items() if k in tool_params}
 
             tool_instance = tool_class(**init_args)
             self._tools[tool_instance.schema.name] = tool_instance
@@ -204,22 +196,17 @@ class ToolRegistry:
         tool = await self.get_tool(name)
         if not tool:
             available = list(self._tools.keys())
-            raise ToolNotFoundError(
-                f"Tool '{name}' not found. Available: {available}"
-            )
+            raise ToolNotFoundError(f"Tool '{name}' not found. Available: {available}")
 
         missing = self._validate_tool_params(tool, kwargs)
         if missing:
             return ToolResult.invalid_params(
-                f"Missing required parameters: {missing}",
-                missing_params=missing
+                f"Missing required parameters: {missing}", missing_params=missing
             )
 
         return await self._run_tool_execution(tool, name, kwargs)
 
-    def _validate_tool_params(
-        self, tool: BaseTool, kwargs: Dict
-    ) -> List[str]:
+    def _validate_tool_params(self, tool: BaseTool, kwargs: Dict) -> List[str]:
         """
         Check for missing required parameters.
 

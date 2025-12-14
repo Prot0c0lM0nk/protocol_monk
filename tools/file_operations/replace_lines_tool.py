@@ -10,9 +10,7 @@ from typing import List, Optional, Tuple
 
 from tools.base import BaseTool, ExecutionStatus, ToolResult, ToolSchema
 from tools.path_validator import PathValidator
-from tools.file_operations.auto_stage_large_content import (
-    auto_stage_large_content
-)
+from tools.file_operations.auto_stage_large_content import auto_stage_large_content
 
 
 class ReplaceLinesTool(BaseTool):
@@ -48,10 +46,7 @@ class ReplaceLinesTool(BaseTool):
                     "type": "integer",
                     "description": "End line (1-based, inclusive)",
                 },
-                "new_content": {
-                    "type": "string",
-                    "description": "New content"
-                },
+                "new_content": {"type": "string", "description": "New content"},
                 "new_content_from_memory": {
                     "type": "string",
                     "description": "Memory key",
@@ -101,11 +96,7 @@ class ReplaceLinesTool(BaseTool):
     def _validate_inputs(
         self, kwargs: dict
     ) -> Tuple[
-        Optional[str],
-        Optional[int],
-        Optional[int],
-        Optional[str],
-        Optional[ToolResult]
+        Optional[str], Optional[int], Optional[int], Optional[str], Optional[ToolResult]
     ]:
         """
         Validate parameters and resolve content source.
@@ -122,7 +113,10 @@ class ReplaceLinesTool(BaseTool):
 
         if not filepath or not start or not end:
             return (
-                None, None, None, None,
+                None,
+                None,
+                None,
+                None,
                 ToolResult.invalid_params(
                     "❌ Missing required params.",
                     missing_params=["filepath", "line_start", "line_end"],
@@ -133,10 +127,13 @@ class ReplaceLinesTool(BaseTool):
         cleaned_path, error = self.path_validator.validate_and_clean_path(filepath)
         if error:
             return (
-                None, None, None, None,
-                ToolResult.security_blocked(f"Invalid path: {error}")
+                None,
+                None,
+                None,
+                None,
+                ToolResult.security_blocked(f"Invalid path: {error}"),
             )
-            
+
         filepath = cleaned_path
 
         content, error = self._resolve_content(**kwargs)
@@ -145,9 +142,7 @@ class ReplaceLinesTool(BaseTool):
 
         return filepath, start, end, content, None
 
-    def _resolve_content(
-        self, **kwargs
-    ) -> Tuple[Optional[str], Optional[ToolResult]]:
+    def _resolve_content(self, **kwargs) -> Tuple[Optional[str], Optional[ToolResult]]:
         """
         Resolve content from scratch, memory, or inline.
 
@@ -192,21 +187,13 @@ class ReplaceLinesTool(BaseTool):
         try:
             return path.read_text(encoding="utf-8"), None
         except OSError as e:
-            return None, ToolResult.internal_error(
-                f"❌ Error reading scratch: {e}"
-            )
+            return None, ToolResult.internal_error(f"❌ Error reading scratch: {e}")
 
-    def _read_memory(
-        self, key: str
-    ) -> Tuple[Optional[str], Optional[ToolResult]]:
+    def _read_memory(self, key: str) -> Tuple[Optional[str], Optional[ToolResult]]:
         if not self.context_manager:
-            return None, ToolResult.internal_error(
-                "❌ Memory system unavailable."
-            )
+            return None, ToolResult.internal_error("❌ Memory system unavailable.")
         if key not in self.context_manager.working_memory:
-            return None, ToolResult.invalid_params(
-                f"❌ Memory key '{key}' not found."
-            )
+            return None, ToolResult.invalid_params(f"❌ Memory key '{key}' not found.")
         return self.context_manager.working_memory[key], None
 
     def _apply_replacement(
@@ -228,15 +215,14 @@ class ReplaceLinesTool(BaseTool):
             content = full_path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return (
-                "", [],
+                "",
+                [],
                 ToolResult.command_failed(
                     f"❌ File not found: {full_path.name}", exit_code=1
                 ),
             )
         except OSError as e:
-            return "", [], ToolResult.internal_error(
-                f"❌ Error reading file: {e}"
-            )
+            return "", [], ToolResult.internal_error(f"❌ Error reading file: {e}")
 
         lines = content.splitlines()
         start_idx = start - 1
@@ -244,11 +230,11 @@ class ReplaceLinesTool(BaseTool):
 
         if start_idx < 0 or end_idx > len(lines) or start_idx >= end_idx:
             return (
-                "", [],
+                "",
+                [],
                 ToolResult(
                     ExecutionStatus.COMMAND_FAILED,
-                    f"❌ Invalid range: {start}-{end} "
-                    f"(File: {len(lines)} lines)",
+                    f"❌ Invalid range: {start}-{end} " f"(File: {len(lines)} lines)",
                 ),
             )
 
@@ -263,9 +249,7 @@ class ReplaceLinesTool(BaseTool):
 
         return final_content, old_lines, None
 
-    def _perform_atomic_write(
-        self, path: Path, content: str
-    ) -> Optional[ToolResult]:
+    def _perform_atomic_write(self, path: Path, content: str) -> Optional[ToolResult]:
         """
         Perform robust atomic write.
 
@@ -289,11 +273,7 @@ class ReplaceLinesTool(BaseTool):
             return ToolResult.internal_error(f"❌ File system error: {e}")
 
     def _format_success(
-        self,
-        filepath: str,
-        line_range: Tuple[int, int],
-        old: List[str],
-        new: List[str]
+        self, filepath: str, line_range: Tuple[int, int], old: List[str], new: List[str]
     ) -> ToolResult:
         """
         Create success result with diff.

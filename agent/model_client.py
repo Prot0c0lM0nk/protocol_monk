@@ -49,12 +49,14 @@ class ModelClient:
 
         self.ollama_url = settings.api.ollama_url
         self.timeout = settings.model.request_timeout
-        
+
         # 1. Load the default options first
-        self.model_options = settings.model_options.chat_options.copy() # Good practice to copy mutable dicts
+        self.model_options = (
+            settings.model_options.chat_options.copy()
+        )  # Good practice to copy mutable dicts
 
         # 2. CRITICAL FIX: Run the full setup logic immediately.
-        # This looks up the model in your model_map.json and applies 
+        # This looks up the model in your model_map.json and applies
         # the specific context window (e.g., 40k) right now.
         self.set_model(model_name)
 
@@ -148,7 +150,7 @@ class ModelClient:
                 buffer = self._update_buffer(buffer)
 
         # --- BUG FIX START: Flush remaining buffer ---
-        # If the server closed the connection but left data in the buffer 
+        # If the server closed the connection but left data in the buffer
         # (because it didn't end with a newline), force process it now.
         if buffer.strip():
             self.logger.debug("Flushing remaining buffer: %s", buffer)

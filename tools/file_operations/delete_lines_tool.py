@@ -116,9 +116,9 @@ class DeleteLinesTool(BaseTool):
                 None,
                 None,
                 None,
-                ToolResult.security_blocked(f"Invalid path: {error}")
+                ToolResult.security_blocked(f"Invalid path: {error}"),
             )
-            
+
         filepath = cleaned_path
 
         return filepath, start, end, None

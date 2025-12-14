@@ -141,8 +141,13 @@ class BaseTool(ABC):
             str_path = str(filepath)
 
             # Block specific terminal context indicators (garbage inputs)
-            if any(char in str_path for char in ['@', ' protocol_core', 'nicholaspitzarella']):
-                self.logger.warning("Rejected path containing terminal context: %s", str_path)
+            if any(
+                char in str_path
+                for char in ["@", " protocol_core", "nicholaspitzarella"]
+            ):
+                self.logger.warning(
+                    "Rejected path containing terminal context: %s", str_path
+                )
                 return False
 
             path_obj = Path(filepath)
@@ -154,16 +159,21 @@ class BaseTool(ABC):
             else:
                 # Check for "Duplication Error" where relative string contains the full path
                 str_cwd = str(self.working_dir)
-                
+
                 if str_path.startswith(str_cwd):
                     # The string matches the CWD. Treat it as absolute to avoid doubling.
                     # e.g. input="C:/Work/file.txt", cwd="C:/Work" -> Target="C:/Work/file.txt"
                     target_path = Path(str_path).resolve()
-                
-                elif str_path.startswith('auto_') and str_path.replace('_', '').replace('-', '').isalnum():
+
+                elif (
+                    str_path.startswith("auto_")
+                    and str_path.replace("_", "").replace("-", "").isalnum()
+                ):
                     # Preserve special handling for 'auto_' scratchpad files
-                    target_path = (self.working_dir / ".scratch" / f"{str_path}.txt").resolve()
-                
+                    target_path = (
+                        self.working_dir / ".scratch" / f"{str_path}.txt"
+                    ).resolve()
+
                 else:
                     # Standard relative path. Join with CWD.
                     # Note: We do NOT block '/' or spaces here anymore.

@@ -7,6 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class JSONParserV2:
     """Enhanced JSON parsing with retry logic and better error recovery.
 
@@ -47,14 +48,14 @@ class JSONParserV2:
 
             try:
                 # Try direct JSON parsing first
-                if text_to_parse.startswith('[') and text_to_parse.endswith(']'):
+                if text_to_parse.startswith("[") and text_to_parse.endswith("]"):
                     data = json.loads(text_to_parse)
                     if isinstance(data, list):
                         valid_objects = self._validate_tool_calls(data)
                         return valid_objects, errors
 
                 # Try parsing as single object
-                if text_to_parse.startswith('{') and text_to_parse.endswith('}'):
+                if text_to_parse.startswith("{") and text_to_parse.endswith("}"):
                     data = json.loads(text_to_parse)
                     if isinstance(data, dict):
                         valid_objects = self._validate_tool_calls([data])
@@ -92,7 +93,7 @@ class JSONParserV2:
             List of valid JSON objects found in markdown blocks or None if none found
         """
         # Try to find JSON in markdown code blocks
-        code_blocks = re.findall(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+        code_blocks = re.findall(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
         if not code_blocks:
             return None
 
@@ -119,35 +120,39 @@ class JSONParserV2:
             Text with common JSON formatting issues resolved
         """
         # Remove non-printable characters
-        text = ''.join(char for char in text if 32 <= ord(char) <= 126 or char in '\n\r\t')
+        text = "".join(
+            char for char in text if 32 <= ord(char) <= 126 or char in "\n\r\t"
+        )
 
         # Fix trailing commas
-        text = re.sub(r',(\s*[}\]])\s*', r'\1', text)
+        text = re.sub(r",(\s*[}\]])\s*", r"\1", text)
 
         # Fix unquoted keys
-        text = re.sub(r'(\{\|\\[|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', text)
+        text = re.sub(r"(\{\|\\[|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r'\1"\2":', text)
 
         # Fix single quotes to double quotes for keys and string values
         text = re.sub(r"'([^']*)'(?=\s*:)", r'"\1"', text)  # Keys
         text = re.sub(r"'([^']*)'(?=\s*[,}\]]))", r'"\1"', text)  # String values
 
         # Fix missing commas between objects in arrays
-        text = re.sub(r'}\s*(?={)', '}, ', text)
+        text = re.sub(r"}\s*(?={)", "}, ", text)
 
         # Add missing closing braces/brackets
-        open_braces = text.count('{')
-        close_braces = text.count('}')
+        open_braces = text.count("{")
+        close_braces = text.count("}")
         if open_braces > close_braces:
-            text += '}' * (open_braces - close_braces)
+            text += "}" * (open_braces - close_braces)
 
-        open_brackets = text.count('[')
-        close_brackets = text.count(']')
+        open_brackets = text.count("[")
+        close_brackets = text.count("]")
         if open_brackets > close_brackets:
-            text += ']' * (open_brackets - close_brackets)
+            text += "]" * (open_brackets - close_brackets)
 
         return text
 
-    def _extract_with_fallback(self, text: str, errors: List[str]) -> Tuple[List[Dict], List[str]]:
+    def _extract_with_fallback(
+        self, text: str, errors: List[str]
+    ) -> Tuple[List[Dict], List[str]]:
         """Final attempt to extract JSON using more aggressive methods.
 
         Args:
@@ -198,23 +203,26 @@ class JSONParserV2:
                 continue
 
             # Check for required fields
-            if 'action' not in call:
+            if "action" not in call:
                 continue
 
             # Ensure parameters is a dictionary if present
-            if 'parameters' in call and not isinstance(call['parameters'], dict):
+            if "parameters" in call and not isinstance(call["parameters"], dict):
                 continue
 
             # Ensure reasoning is a string if present
-            if 'reasoning' in call and not isinstance(call['reasoning'], str):
+            if "reasoning" in call and not isinstance(call["reasoning"], str):
                 continue
 
             valid_calls.append(call)
 
         return valid_calls
 
+
 # Convenience function for simple use cases
-def extract_json_with_retry(text: str, max_attempts: int = 3) -> Tuple[List[Dict], List[str]]:
+def extract_json_with_retry(
+    text: str, max_attempts: int = 3
+) -> Tuple[List[Dict], List[str]]:
     """Extract JSON objects from text with retry logic.
 
     Args:

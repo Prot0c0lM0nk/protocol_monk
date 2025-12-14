@@ -287,16 +287,16 @@ class NeuralSymContextManager:
             return ""
 
         # Use regex to find sentence boundaries
-        sentences = re.split(r'[.!?]+', user_content)
-        
+        sentences = re.split(r"[.!?]+", user_content)
+
         # Take the first sentence or first 50 words if no clear sentence boundary
         if sentences and sentences[0].strip():
             intent = sentences[0].strip()
         else:
             # Split by spaces and take first 50 words
             words = user_content.split()
-            intent = ' '.join(words[:50])
-        
+            intent = " ".join(words[:50])
+
         # Limit to 200 characters max
         return intent[:200]
 
@@ -313,15 +313,19 @@ class NeuralSymContextManager:
         # Check if context is empty or too short
         if not base_context or len(base_context) < 2:
             return False
-        
+
         # Check if system message is properly initialized
-        system_msg = next((msg for msg in base_context if msg.get('role') == 'system'), None)
-        if not system_msg or '[ERROR]' in system_msg.get('content', ''):
+        system_msg = next(
+            (msg for msg in base_context if msg.get("role") == "system"), None
+        )
+        if not system_msg or "[ERROR]" in system_msg.get("content", ""):
             return False
-        
+
         # Check if there's at least one user message
-        user_msg = next((msg for msg in base_context if msg.get('role') == 'user'), None)
+        user_msg = next(
+            (msg for msg in base_context if msg.get("role") == "user"), None
+        )
         if not user_msg:
             return False
-        
+
         return True

@@ -20,18 +20,18 @@ def render_tool_call_pretty(action: str, params: dict):
     SECURITY: Full display of scripts/commands. No truncation.
     """
     items = []
-    
+
     # 1. Header Text
     items.append(Text(f"I must invoke the machine: {action}", style="monk.text"))
-    items.append(Text("")) # Spacer
+    items.append(Text(""))  # Spacer
 
     # 2. Parameter Rendering
-    # We iterate through params. Simple ones go in a table. 
+    # We iterate through params. Simple ones go in a table.
     # Complex/Code ones get their own Syntax block.
-    
+
     simple_params = {}
     complex_params = {}
-    
+
     for key, value in params.items():
         str_val = str(value)
         # Threshold: Multi-line or > 80 chars gets its own block
@@ -45,35 +45,32 @@ def render_tool_call_pretty(action: str, params: dict):
         param_table = Table(box=None, show_header=False, padding=(0, 2))
         param_table.add_column("Key", style="holy.gold")
         param_table.add_column("Value", style="tech.cyan")
-        
+
         for key, value in simple_params.items():
             if isinstance(value, bool):
                 val_str = "✅ Yes" if value else "❌ No"
             else:
                 val_str = str(value)
             param_table.add_row(f"• {key.replace('_', ' ').title()}", val_str)
-        
+
         items.append(param_table)
-        items.append(Text("")) # Spacer
+        items.append(Text(""))  # Spacer
 
     # B. Render Complex Parameters (Syntax/Blocks)
     for key, value in complex_params.items():
         items.append(Text(f"• {key.replace('_', ' ').title()}:", style="holy.gold"))
-        
+
         # Detect language (basic heuristic)
         lexer = "python" if "py" in key or "script" in key else "bash"
-        if action == "run_programming_task": lexer = "python"
-        
+        if action == "run_programming_task":
+            lexer = "python"
+
         # Render full code block
         code_block = Syntax(
-            value, 
-            lexer, 
-            theme="monokai", 
-            line_numbers=True,
-            word_wrap=True
+            value, lexer, theme="monokai", line_numbers=True, word_wrap=True
         )
         items.append(Panel(code_block, border_style="dim white"))
-        items.append(Text("")) # Spacer
+        items.append(Text(""))  # Spacer
 
     # 3. Footer
     items.append(Text("Authorize this action? [Y/n]", style="holy.gold"))
@@ -100,7 +97,7 @@ def render_tool_result(tool_name, success, output):
         console.print(f"  [success]✓ {tool_name}[/] [dim]execution successful[/]")
         # Show output if it exists
         if output:
-            lines = output.split('\n')
+            lines = output.split("\n")
             if len(lines) > 10:
                 # Truncate to 10 lines
                 preview = "\n".join(lines[:10])

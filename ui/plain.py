@@ -42,9 +42,9 @@ class PlainUI(UI):
         if self._thinking:
             # === TRANSITION: FROM THINKING TO SPEAKING ===
             # 1. Clear the "Thinking..." line
-            print("\r" + " " * 50 + "\r", end="") 
+            print("\r" + " " * 50 + "\r", end="")
             self._thinking = False
-            
+
             # 2. Print the requested spacing layout:
             #    (User Input was on previous line)
             #    (We are currently on the line that had 'Thinking...')
@@ -52,10 +52,10 @@ class PlainUI(UI):
             #    User: Input
             #    [Blank Line]
             #    [MONK] Response
-            
-            print() # This creates the [new line space] (The blank line)
-            print("[MONK] ", end="", flush=True) # The Agent Prefix
-            
+
+            print()  # This creates the [new line space] (The blank line)
+            print("[MONK] ", end="", flush=True)  # The Agent Prefix
+
         print(text, end="", flush=True)
 
     async def confirm_tool_call(
@@ -76,7 +76,7 @@ class PlainUI(UI):
         )
         response = response.strip().lower()
 
-        if response in ("y", "yes", ""): # Default to yes on empty enter
+        if response in ("y", "yes", ""):  # Default to yes on empty enter
             return True
         elif response == "m":
             # Modify option - get human suggestion
@@ -184,11 +184,13 @@ class PlainUI(UI):
     async def prompt_user(self, prompt: str) -> str:
         """Prompt user for input using prompt_toolkit for better UX"""
         # Enforce vertical separation: Always print a newline before a prompt
-        print() 
-        
+        print()
+
         # Format the prompt string to look like a standard shell prompt or query
-        formatted_prompt = f"{prompt}: " if not prompt.endswith(("?", ":", ">")) else f"{prompt} "
-        
+        formatted_prompt = (
+            f"{prompt}: " if not prompt.endswith(("?", ":", ">")) else f"{prompt} "
+        )
+
         try:
             # Use patch_stdout to ensure background async prints don't mangle the prompt
             with patch_stdout():

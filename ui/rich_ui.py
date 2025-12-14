@@ -117,11 +117,11 @@ class RichUI(UI):
             ("class:username", "  You "),
             ("class:arrow", "› "),
         ]
-        
+
         # We need to construct the HTML/ANSI string manually for prompt_toolkit if we want colors,
         # or just use simple text. For simplicity and reliability:
         pt_prompt = "  You › "
-        
+
         try:
             with patch_stdout():
                 return await self.session.prompt_async(pt_prompt)
@@ -153,7 +153,9 @@ class RichUI(UI):
             return True
         elif response == "m":
             console.print()
-            console.print("  [dim white](Describe your suggestion in natural language)[/]")
+            console.print(
+                "  [dim white](Describe your suggestion in natural language)[/]"
+            )
             suggestion = await self.prompt_user("Suggestion")
 
             if not suggestion.strip():

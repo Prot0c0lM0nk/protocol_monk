@@ -8,6 +8,7 @@ All context-related exceptions inherit from MonkBaseError.
 from typing import Any
 
 from exceptions.base import MonkBaseError
+
 """
 Context Exception Definitions for MonkCode
 
@@ -38,7 +39,6 @@ class ContextCorruptionError(ContextError):
     def __init__(self, message, corruption_type=None):
         super().__init__(message)
         self.corruption_type = corruption_type
-
 
 
 class ContextValidationError(ContextError):

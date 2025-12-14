@@ -22,12 +22,10 @@ class ConfigurationError(AgentError):
     pass
 
 
-
 class OrchestrationError(AgentError):
     """Raised when orchestration logic fails."""
 
     pass
-
 
 
 class ScratchManagerError(AgentError):
@@ -46,21 +44,27 @@ class ScratchManagerError(AgentError):
         self.scratch_id = scratch_id
         self.file_path = file_path
         self.original_error = original_error
+
+
 class SessionInitializationError(AgentError):
     """Raised when session initialization fails."""
+
     pass
 
 
 class UIInitializationError(AgentError):
     """Raised when UI initialization fails."""
+
     pass
 
 
 class ToolRegistryError(AgentError):
     """Raised when tool registry initialization fails."""
+
     pass
 
 
 class ModelClientError(AgentError):
     """Raised when model client initialization fails."""
+
     pass
