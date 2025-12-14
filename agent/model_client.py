@@ -109,6 +109,20 @@ class ModelClient:
         self.selected_provider = provider
         self._client = self._create_provider_client(provider, self.model_name)
         self.current_provider = provider  # Backward compatibility
+    
+    def get_provider_info(self) -> Dict[str, Any]:
+        """
+        Get current provider information for status display.
+        
+        Returns:
+            Dict[str, Any]: Provider information including name and capabilities
+        """
+        return {
+            "provider_name": self.current_provider,
+            "model_name": self.model_name,
+            "supports_streaming": True,  # Both providers support streaming
+            "supports_tools": self._client.supports_tools() if self._client else False,
+        }
     async def get_response_async(
         self, conversation_context: List[Dict], stream: bool = True
     ) -> AsyncGenerator[str, None]:
@@ -146,22 +160,19 @@ class ModelClient:
         """
         self.model_name = model_name
         
-        # Re-initialize client for new model
-        self._initialize_client()
+        # Re-initialize client for new model with same provider
+        self._client = self._create_provider_client(self.selected_provider, model_name)
         
         # For backward compatibility, also set on the client if it supports it
         if hasattr(self._client, 'set_model'):
             self._client.set_model(model_name)
-    
     async def close(self) -> None:
         """
         Close the model client and clean up resources.
         """
         if self._client:
             await self._client.close()
-        
-        await self._provider_registry.close_all()
-    
+        # No registry to close - using direct provider creation for user-controlled switching
     def get_response(self, conversation_context: List[Dict], stream: bool = True):
         """
         Synchronous generator for backward compatibility.

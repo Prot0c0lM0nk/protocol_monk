@@ -35,6 +35,7 @@ class ProtocolAgent:
         self,
         working_dir: str = ".",
         model_name: str = settings.model.default_model,
+        provider: str = "ollama",
         tool_registry=None,
         ui: Optional[UI] = None,
     ):
@@ -44,14 +45,14 @@ class ProtocolAgent:
         Args:
             working_dir: Working directory for file operations (default: ".")
             model_name: LLM model to use (default: from settings)
+            provider: LLM provider to use (default: "ollama")
             tool_registry: Tool registry instance (optional)
             ui: User interface instance (optional)
-
-        Raises:
             ModelConfigurationError: If model client initialization fails
         """
         self.working_dir = Path(working_dir).resolve()
         self.current_model = model_name
+        self.current_provider = provider
         self.ui = ui or PlainUI()
         self.logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ class ProtocolAgent:
         self.scratch_manager = ScratchManager(self.working_dir)
 
         try:
-            self.model_client = ModelClient(model_name=model_name)
+            self.model_client = ModelClient(model_name=model_name, provider=provider)
         except ModelConfigurationError as e:
             print(f"Error: Failed to initialize model client: {e.message}")
             raise
@@ -326,3 +327,54 @@ class ProtocolAgent:
         if model_info:
             self.context_manager.accountant.max_tokens = model_info.context_window
             self.context_manager.pruner.max_tokens = model_info.context_window
+
+    async def set_provider(self, provider: str) -> bool:
+        """
+        Switch the current provider while maintaining the same model.
+        
+        Args:
+            provider: Name of the provider to switch to ("ollama" or "openrouter")
+            
+        Returns:
+            bool: True if switch was successful, False otherwise
+            
+        Raises:
+            ProviderConfigurationError: If provider is not available or misconfigured
+        """
+        try:
+            # Validate provider
+            if provider not in ["ollama", "openrouter"]:
+                raise ModelConfigurationError(
+                    f"Unknown provider: {provider}. Available: ollama, openrouter",
+                    details={"requested_provider": provider}
+                )
+            
+            # Check provider requirements
+            if provider == "openrouter":
+                if not settings.environment.openrouter_api_key:
+                    raise ModelConfigurationError(
+                        "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.",
+                        details={"provider": provider}
+                    )
+            
+            # Get current model before switching
+            current_model = self.current_model
+            
+            # Switch provider using model client's switch_provider method
+            self.model_client.switch_provider(provider)
+            
+            # Re-initialize the model with new provider
+            await self.set_model(current_model)
+            
+            self.logger.info(f"Provider switched to: {provider} with model: {current_model}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Provider switch failed: {e}")
+            if isinstance(e, ModelConfigurationError):
+                raise
+            else:
+                raise ModelConfigurationError(
+                    f"Failed to switch provider to {provider}: {e}",
+                    details={"provider": provider, "original_error": str(e)}
+                ) from e

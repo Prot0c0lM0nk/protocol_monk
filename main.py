@@ -185,7 +185,7 @@ async def main():
 
         # 3. Model Selection (Interactive)
         try:
-            selected_model = await _configure_model(ui, use_tui, use_rich)
+            selected_model, selected_provider = await _configure_model(ui, use_tui, use_rich)
         except Exception as e:
             raise ModelClientError(f"Failed to configure model: {e}") from e
 
@@ -194,6 +194,7 @@ async def main():
             agent = ProtocolAgent(
                 working_dir=session.working_dir,
                 model_name=selected_model,
+                provider=selected_provider,
                 tool_registry=tool_registry,
                 ui=ui,
             )
@@ -276,12 +277,29 @@ def _select_ui_mode(use_rich: bool, use_tui: bool) -> UI:
 
 
 
-async def _configure_model(ui: UI, use_tui: bool, use_rich: bool) -> str:
-    """Handle the interactive model selection at startup."""
+async def _configure_model(ui: UI, use_tui: bool, use_rich: bool) -> tuple[str, str]:
+    """Handle the interactive model and provider selection at startup."""
+    
+    # Provider selection step
+    current_provider = "ollama"  # Default provider
+    if not use_tui:
+        provider_choice = await ui.prompt_user(f"Select provider (current: {current_provider}, enter 'ollama' or 'openrouter'): ")
+        if provider_choice.strip().lower() in ["ollama", "openrouter"]:
+            current_provider = provider_choice.strip().lower()
+            await ui.print_info(f"Provider set to: {current_provider}")
+        elif provider_choice.strip():
+            await ui.print_warning(f"Unknown provider '{provider_choice}'. Using default: {current_provider}")
+    
+    # Validate OpenRouter API key if selected
+    if current_provider == "openrouter" and not settings.environment.openrouter_api_key:
+        await ui.print_warning("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
+        await ui.print_info("Falling back to ollama provider.")
+        current_provider = "ollama"
+    
     current_model = settings.model.default_model
 
     if use_tui:
-        return current_model
+        return current_model, current_provider
 
     if use_rich:
         from rich.panel import Panel  # pylint: disable=import-outside-toplevel
@@ -301,12 +319,12 @@ async def _configure_model(ui: UI, use_tui: bool, use_rich: bool) -> str:
     # UPDATED: Prompt includes the model name
     choice = await ui.prompt_user(f"Initialize with model '{current_model}'? (Y/n)")
     if choice.strip().lower() in ["n", "no"]:
-        return await _select_new_model(ui, current_model)
+        return await _select_new_model(ui, current_model, current_provider)
 
-    return current_model
+    return current_model, current_provider
 
 
-async def _select_new_model(ui: UI, current_model: str) -> str:
+async def _select_new_model(ui: UI, current_model: str, current_provider: str) -> tuple[str, str]:
     """Prompt user to select a different model."""
     model_manager = RuntimeModelManager()
     available_models = model_manager.get_available_models()
@@ -316,13 +334,13 @@ async def _select_new_model(ui: UI, current_model: str) -> str:
         await ui.print_warning(
             "No models detected (Scanner empty). Continuing with default."
         )
-        return current_model
+        return current_model, current_provider
 
     await ui.display_model_list(models, current_model)
     new_model_name = await ui.prompt_user("Enter model name to select")
 
     if not new_model_name:
-        return current_model
+        return current_model, current_provider
 
     valid_names = [
         getattr(m, "name", m.get("name") if isinstance(m, dict) else str(m))
@@ -332,10 +350,10 @@ async def _select_new_model(ui: UI, current_model: str) -> str:
     if new_model_name in valid_names:
         settings.model.update_model(new_model_name)
         await ui.print_info(f"✓ Target updated to: {new_model_name}")
-        return new_model_name
+        return new_model_name, current_provider
 
     await ui.print_warning(f"Model '{new_model_name}' not found. Using default.")
-    return current_model
+    return current_model, current_provider
 
 
 async def _run_tui(agent: ProtocolAgent):

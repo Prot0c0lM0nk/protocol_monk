@@ -54,9 +54,19 @@ class OpenRouterModelClient(BaseModelClient):
         super().__init__(model_name, provider_config)
         
         # OpenRouter-specific configuration
-        self.api_key = self._get_api_key()
         self.base_url = "https://openrouter.ai/api/v1"
         self.chat_url = f"{self.base_url}/chat/completions"
+        
+        # Validate API key during initialization
+        try:
+            self.api_key = self._get_api_key()
+        except ProviderConfigurationError as e:
+            # Re-raise with more context
+            raise ProviderConfigurationError(
+                f"Cannot initialize OpenRouter client: {e.message}",
+                provider_name="openrouter",
+                details=e.details
+            ) from e
         
         # Model options (OpenRouter uses OpenAI-compatible format)
         self.model_options = {

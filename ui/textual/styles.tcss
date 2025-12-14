@@ -1,47 +1,286 @@
-/* Global Orthodox Theme */
+/* Global Orthodox Theme for Protocol Monk */
 Screen {
     background: $surface;
     color: $text;
 }
 
-/* Colors */
-$primary: green;          /* Matrix Text */
-$secondary: purple;       /* Borders */
-$accent: gold;            /* Icons/User Focus */
-$error: red;
+/* Colors - Orthodox Monastery Palette */
+$primary: #008000;
+$secondary: #800080;
+$accent: #FFD700;
+$error: #DC143C;
+$warning: #FF8C00;
+$success: #228B22;
+$surface: #1A1A1A;
+$panel: #2D2D2D;
+$text: #E8E8E8;
+$text-muted: #A0A0A0;
 
-/* Widgets */
+/* Main Application */
+MonkCodeTUI {
+    background: $surface;
+}
+
+Header {
+    background: $primary;
+    color: $text;
+    text-style: bold;
+    content-align: center middle;
+}
+
+Footer {
+    background: $secondary;
+    color: $text;
+    dock: bottom;
+}
+
+#main-container {
+    background: $surface;
+    layout: vertical;
+}
+
+/* Status Bar */
+#status-bar {
+    background: $panel;
+    color: $text;
+    border-bottom: solid $secondary;
+    height: auto;
+    padding: 0 1;
+}
+
+#status {
+    color: $accent;
+}
+
+#model-info {
+    color: $text-muted;
+}
+
+/* Messages Container */
+#messages-container {
+    background: $surface;
+}
+
+/* Thinking Indicator */
+#thinking-indicator {
+    background: $secondary;
+    color: $accent;
+    content-align: center middle;
+    text-style: italic;
+}
+
+/* Chat Messages */
+ChatMessage {
+    width: 100%;
+    height: auto;
+    margin: 1 0;
+}
+
+.message-header {
+    color: $accent;
+    border-bottom: dashed $secondary;
+    margin-bottom: 1;
+    padding-bottom: 1;
+}
+
+.message-content {
+    padding: 1 0;
+}
+
+/* User Messages */
+.message.user {
+    background: #0064c819;
+    border-right: thick $accent;
+    padding: 1;
+}
+
+/* Assistant Messages */
+.message.assistant {
+    background: #6400c819;
+    border-left: thick $primary;
+    padding: 1;
+}
+
+/* Tool-related Messages */
+.message.tool-call {
+    background: #c8640019;
+    border-left: thick $warning;
+    padding: 1;
+}
+
+.message.tool-result {
+    background: #00c86419;
+    border-left: thick $success;
+    padding: 1;
+}
+
+/* System Messages */
+.message.error {
+    background: #c8000019;
+    border-left: thick $error;
+    padding: 1;
+}
+
+.message.warning {
+    background: #c8c80019;
+    border-left: thick $warning;
+    padding: 1;
+}
+
+.message.info {
+    background: #0064c819;
+    border-left: thick $primary;
+    padding: 1;
+}
+
+.message.system {
+    background: #64646419;
+    border: dashed $secondary;
+    content-align: center middle;
+    padding: 1;
+}
+
+/* Special Greeting Message */
+.message.greeting {
+    background: #ffd7000d;
+    border: none;
+    content-align: center middle;
+    text-style: italic;
+    margin: 2;
+    padding: 2;
+}
+
+.message.greeting .message-content {
+    color: $accent;
+    text-style: bold;
+}
+
+/* Input Panel */
 InputPanel {
     dock: bottom;
     height: auto;
     border-top: solid $secondary;
+    background: $panel;
     padding: 1;
 }
 
-MessageList {
-    height: 1fr;
-    scrollbar-color: $primary;
+InputPanel TextArea {
+    background: $surface;
+    color: $text;
+    border: solid $secondary;
 }
 
-/* Message Bubbles */
-.message {
-    padding: 1;
-    margin: 1;
-    border: tall $background;
+InputPanel TextArea:focus {
+    border: double $accent;
 }
-.message.user {
-    text-align: right;
+
+#character-count {
+    color: $text-muted;
+}
+
+InputPanel Button {
+    background: $primary;
+    color: $text;
+}
+
+InputPanel Button:hover {
+    background: $accent;
+    color: $surface;
+}
+
+InputPanel Button:disabled {
+    background: $panel;
+    color: $text-muted;
+}
+
+#send {
+    background: $success;
+}
+
+#clear {
+    background: $error;
+}
+
+.validation-error {
+    border: tall $error;
+}
+
+.validation-warning {
+    border: tall $warning;
+}
+
+/* Approval Screen Modal */
+ApprovalScreen {
+    align: center middle;
+}
+
+#approval-dialog {
+    background: $surface;
+    border: round $primary;
+    padding: 1;
+    width: 80;
+}
+
+#tool-header {
+    background: $primary;
+    color: $text;
+    content-align: center middle;
+    text-style: bold;
+    padding: 1;
+}
+
+#tool-info {
+    background: $panel;
+    padding: 1;
+    border: solid $secondary;
+}
+
+.tool-name {
     color: $accent;
-    border-left: none;
-    border-right: tall $accent;
+    text-style: bold;
 }
-.message.assistant {
-    text-align: left;
-    color: $primary;
-    border-left: tall $primary;
-    border-right: none;
+
+.argument-item {
+    background: $surface;
+    margin: 1 0;
+    padding: 1;
+    border-left: solid $secondary;
 }
-.message.tool {
-    color: $secondary;
-    border: dashed $secondary;
+
+#approve {
+    background: $success;
+    color: $text;
+}
+
+#deny {
+    background: $error;
+    color: $text;
+}
+
+#modify {
+    background: $warning;
+    color: $text;
+}
+
+/* Scrollbars */
+ScrollBar {
+    width: 1;
+    background: $panel;
+}
+
+ScrollBarSlider {
+    background: $primary;
+}
+
+ScrollBarSlider:hover {
+    background: $accent;
+}
+
+/* Button States */
+Button:focus {
+    border: double $accent;
+}
+
+Button:disabled {
+    opacity: 0.5;
 }

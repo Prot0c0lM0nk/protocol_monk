@@ -1,4 +1,5 @@
 from typing import Dict, List
+import logging
 
 from agent.model_manager.loader import ModelConfigLoader
 from agent.model_manager.scanner import ModelScanner
@@ -9,11 +10,47 @@ from agent.model_manager.structs import ModelInfo, SwitchReport
 class RuntimeModelManager:
     """Facade for the model manager package."""
 
-    def __init__(self):
-        self.loader = ModelConfigLoader()
+    def __init__(self, provider: str = "ollama"):
+        """
+        Initialize the model manager with provider-specific configuration.
+        
+        Args:
+            provider: The provider name ("ollama", "openrouter", etc.)
+        """
+        self.provider = provider
+        self.logger = logging.getLogger(__name__)
+        self.loader = self._create_loader_for_provider(provider)
         self.scanner = ModelScanner()
         self.model_map = self.loader.load_model_map()
         self.selector = ModelSelector(self.model_map)
+
+    def _create_loader_for_provider(self, provider: str) -> ModelConfigLoader:
+        """
+        Create a ModelConfigLoader with the appropriate model map file for the provider.
+        
+        Args:
+            provider: The provider name
+            
+        Returns:
+            ModelConfigLoader: Configured loader for the provider
+        """
+        # Map providers to their model map files
+        provider_map_files = {
+            "ollama": "ollama_map.json",
+            "openrouter": "openrouter_map.json",
+            "default": "model_map.json"  # Fallback to original
+        }
+        
+        # Use provider-specific map if available, otherwise fall back to default
+        model_map_file = provider_map_files.get(provider, provider_map_files["default"])
+        
+        # Check if the provider-specific file exists, fall back to default if not
+        from pathlib import Path
+        if not Path(model_map_file).exists():
+            self.logger.warning(f"Model map file '{model_map_file}' not found for provider '{provider}', using default")
+            model_map_file = provider_map_files["default"]
+        
+        return ModelConfigLoader(model_map_file=model_map_file)
 
     def get_available_models(self) -> Dict[str, ModelInfo]:
         """
