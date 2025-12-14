@@ -131,6 +131,18 @@ async def process_user_input(
             await agent.ui.print_info("")
     return True
 
+def parse_arguments():
+    """Parse command line arguments."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Protocol Monk - Terminal AI Coding Assistant")
+    parser.add_argument("--rich", action="store_true", help="Use Rich UI")
+    parser.add_argument("--tui", action="store_true", help="Use Textual TUI")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+
+    return parser.parse_args()
+
+
 
 # =============================================================================
 # MAIN ORCHESTRATION
@@ -154,7 +166,9 @@ async def main():
             ) from e
 
         try:
-            use_rich, use_tui = _parse_ui_flags()
+            args = parse_arguments()
+            use_rich = args.rich
+            use_tui = args.tui
             ui = _select_ui_mode(use_rich, use_tui)
         except Exception as e:
             raise UIInitializationError(f"Failed to initialize UI: {e}") from e
@@ -253,10 +267,13 @@ def _parse_ui_flags() -> Tuple[bool, bool]:
 def _select_ui_mode(use_rich: bool, use_tui: bool) -> UI:
     """Instantiate the appropriate UI class."""
     if use_tui:
-        return PlainUI()  # TUI creates its own UI later, placeholder
+        # For TUI, we'll create a placeholder UI that will be replaced
+        # when the Textual app initializes
+        return PlainUI()
     if use_rich:
         return RichUI()
     return PlainUI()
+
 
 
 async def _configure_model(ui: UI, use_tui: bool, use_rich: bool) -> str:
@@ -323,8 +340,21 @@ async def _select_new_model(ui: UI, current_model: str) -> str:
 
 async def _run_tui(agent: ProtocolAgent):
     """Launch the Textual User Interface."""
+    # Import here to avoid circular imports
+    from ui.textual.app import MonkCodeTUI
+
+    # Create and run the Textual app
     app = MonkCodeTUI(agent)
-    await app.run_async()
+
+    # Run the app with asyncio.run() to properly handle the event loop
+    # We need to use asyncio.run() because Textual's run() method
+    # creates its own event loop
+    try:
+        await app.run_async()
+    except Exception as e:
+        print(f"Error running TUI: {e}", file=sys.stderr)
+        raise
+
 
 
 async def _run_cli(agent: ProtocolAgent, use_rich: bool):
