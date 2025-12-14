@@ -25,7 +25,7 @@ from config.static import settings
 from ui.base import UI
 from ui.plain import PlainUI
 from utils.enhanced_logger import EnhancedLogger
-from utils.json_parser import extract_json_with_feedback
+from utils.json_parser_v2 import extract_json_with_retry
 
 
 class ProtocolAgent:
@@ -242,7 +242,8 @@ class ProtocolAgent:
         Returns:
             Tuple[List[Dict], bool]: Actions list and JSON content flag
         """
-        actions, has_json = extract_json_with_feedback(text)
+        actions, errors = extract_json_with_retry(text)
+        has_json = len(actions) > 0
         if not isinstance(actions, list):
             raise ModelResponseParseError(
                 message="Invalid actions format",

@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from tools.file_operations.scratch_coordination import try_scratch_manager_stage
+
 
 def auto_stage_large_content(
     content: str, working_dir: Path, threshold: int = 1000
@@ -27,6 +29,12 @@ def auto_stage_large_content(
     if not content or len(content) <= threshold:
         return None
 
+    # Try ScratchManager first
+    scratch_id = try_scratch_manager_stage(content, working_dir, threshold)
+    if scratch_id:
+        return scratch_id
+
+    # Fallback to existing hardcoded logic
     try:
         scratch_dir = working_dir / ".scratch"
         scratch_dir.mkdir(exist_ok=True)

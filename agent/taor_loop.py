@@ -14,6 +14,7 @@ from exceptions import (
     OrchestrationError,
     UserCancellationError,
     ContextOverflowError,
+    ToolInputValidationError,
 )
 
 # pylint: disable=protected-access
@@ -175,6 +176,12 @@ class TAORLoop:
         except UserCancellationError:
             await self.agent.ui.print_warning("⛔ Task Aborted.")
             return False
+        except ToolInputValidationError as e:
+            await self.agent.ui.print_warning(f"⚠️  Invalid tool format: {e.message}")
+            # Add feedback to context for model retry
+            feedback = f"Tool call validation failed: {e.message}. Please ensure all tool calls have both 'action' and 'parameters' fields."
+            await self.agent.context_manager.add_message("system", feedback)
+            return True  # Continue loop for retry
 
         # 4. OBSERVE (Record Results)
         had_failure = await self.agent._record_results(summary)

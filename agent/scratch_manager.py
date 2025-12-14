@@ -3,6 +3,7 @@ import shutil
 import logging
 import time
 from pathlib import Path
+from typing import Optional
 
 from exceptions import ScratchManagerError
 
@@ -18,8 +19,9 @@ class ScratchManager:
         self.scratch_dir = self.working_dir / ".scratch"
         self.logger = logging.getLogger(__name__)
 
-        # Hygiene: Clean up on startup
-        self.cleanup()
+        # Don't clean up on startup to avoid race conditions
+        # Files will be cleaned up by explicit cleanup calls or session end
+        # self.cleanup()  # Removed to prevent race conditions
 
         # Ensure directory exists for this session
         self.scratch_dir.mkdir(exist_ok=True)
@@ -97,9 +99,18 @@ class ScratchManager:
         """
         try:
             file_path = self.scratch_dir / f"{scratch_id}.txt"
+            self.logger.debug(f"Attempting to read scratch file: {file_path}")
+
             if file_path.exists():
-                return file_path.read_text(encoding="utf-8")
+                content = file_path.read_text(encoding="utf-8")
+                self.logger.debug(
+                    f"Successfully read {len(content)} chars from {scratch_id}"
+                )
+                return content
             else:
+                self.logger.error(
+                    f"Scratch file not found: {scratch_id} at path {file_path}"
+                )
                 raise ScratchManagerError(
                     f"Scratch file not found: {scratch_id}",
                     operation="read_content",
@@ -114,3 +125,46 @@ class ScratchManager:
                 scratch_id=scratch_id,
                 original_error=e,
             ) from e
+        """
+        Get the full file path for a scratch file.
+        
+        Args:
+            scratch_id: The ID of the scratch file
+            
+        Returns:
+            Path: The full path to the scratch file
+        """
+        return self.scratch_dir / f"{scratch_id}.txt"
+
+    def scratch_exists(self, scratch_id: str) -> bool:
+        """
+        Check if a scratch file exists.
+
+        Args:
+            scratch_id: The ID of the scratch file to check
+
+        Returns:
+            bool: True if the scratch file exists, False otherwise
+        """
+        scratch_path = self.get_scratch_path(scratch_id)
+        return scratch_path.exists()
+
+    def safe_read_content(self, scratch_id: str) -> Optional[str]:
+        """
+        Safely read content from a scratch file without raising exceptions.
+
+        This method is designed for tool integration where we want to
+        attempt reading via ScratchManager but fall back to other methods
+        if it fails.
+
+        Args:
+            scratch_id: Unique identifier for the scratch file
+
+        Returns:
+            Optional[str]: Content if successful, None if file not found or error occurs
+        """
+        try:
+            return self.read_content(scratch_id)
+        except Exception as e:
+            self.logger.debug(f"Safe read failed for scratch {scratch_id}: {e}")
+            return None

@@ -8,7 +8,8 @@ import os
 from pathlib import Path
 from typing import Optional, Tuple
 from tools.path_validator import PathValidator
-
+from tools.file_operations.auto_stage_large_content import auto_stage_large_content
+from tools.file_operations.scratch_coordination import try_scratch_manager_read
 from tools.base import BaseTool, ToolResult, ToolSchema
 from tools.file_operations.auto_stage_large_content import auto_stage_large_content
 
@@ -132,6 +133,12 @@ class CreateFileTool(BaseTool):
             Tuple[str, Optional[ToolResult]]: The content of the file and
             an optional error result.
         """
+        # Try ScratchManager first
+        content = try_scratch_manager_read(scratch_id, self.working_dir)
+        if content is not None:
+            return content, None
+
+        # Fallback to existing hardcoded logic
         scratch_path = self.working_dir / ".scratch" / f"{scratch_id}.txt"
 
         if not scratch_path.exists():

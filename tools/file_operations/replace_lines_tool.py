@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from tools.file_operations.scratch_coordination import try_scratch_manager_read
 from tools.base import BaseTool, ExecutionStatus, ToolResult, ToolSchema
 from tools.path_validator import PathValidator
 from tools.file_operations.auto_stage_large_content import auto_stage_large_content
@@ -179,6 +180,12 @@ class ReplaceLinesTool(BaseTool):
     def _read_scratch(
         self, scratch_id: str
     ) -> Tuple[Optional[str], Optional[ToolResult]]:
+        # Try ScratchManager first
+        content = try_scratch_manager_read(scratch_id, self.working_dir)
+        if content is not None:
+            return content, None
+
+        # Fallback to existing hardcoded logic
         path = self.working_dir / ".scratch" / f"{scratch_id}.txt"
         if not path.exists():
             return None, ToolResult.invalid_params(

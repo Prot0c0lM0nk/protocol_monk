@@ -128,11 +128,11 @@ class JSONParserV2:
         text = re.sub(r",(\s*[}\]])\s*", r"\1", text)
 
         # Fix unquoted keys
-        text = re.sub(r"(\{\|\\[|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r'\1"\2":', text)
+        text = re.sub(r"(\{|\[|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r'\1"\2":', text)
 
         # Fix single quotes to double quotes for keys and string values
         text = re.sub(r"'([^']*)'(?=\s*:)", r'"\1"', text)  # Keys
-        text = re.sub(r"'([^']*)'(?=\s*[,}\]]))", r'"\1"', text)  # String values
+        text = re.sub(r"'([^']*)'(?=\s*[,}\]])", r'"\1"', text)  # String values
 
         # Fix missing commas between objects in arrays
         text = re.sub(r"}\s*(?={)", "}, ", text)
@@ -205,7 +205,8 @@ class JSONParserV2:
             # Check for required fields
             if "action" not in call:
                 continue
-
+            if "parameters" not in call:
+                continue  # Parameters field is required
             # Ensure parameters is a dictionary if present
             if "parameters" in call and not isinstance(call["parameters"], dict):
                 continue

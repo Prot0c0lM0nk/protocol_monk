@@ -42,9 +42,9 @@ class EnhancedToolCallBuffer:
 
         # Patterns for detecting tool call starts
         self.start_patterns = [
-            r"```json\\s*\\{",  # Markdown code block with JSON
-            r"\\{\\s*\"action\"\\s*:",  # JSON object with action field
-            r"\\[\\s*\\{\\s*\"action\"\\s*:",  # Array of JSON objects
+            r"```json\s*\{",  # Markdown code block with JSON
+            r"\{\s*\"action\"\s*:",  # JSON object with action field
+            r"\[\s*\{\s*\"action\"\s*:",  # Array of JSON objects
         ]
 
     def add_chunk(self, chunk: str) -> Tuple[List[str], List[Dict]]:
@@ -265,3 +265,22 @@ class EnhancedToolCallBuffer:
         """
         self.active_buffers = []
         self.completed_tools = []
+
+    def flush(self) -> List[str]:
+        """Flush any remaining content in the buffer.
+
+        Returns:
+            List of remaining content chunks
+        """
+        remaining = []
+
+        # Check if there are any active buffers with content
+        for buffer in self.active_buffers:
+            if buffer.content.strip():
+                # Add incomplete buffer content as regular text
+                remaining.append(buffer.content)
+
+        # Reset the buffer state
+        self.reset()
+
+        return remaining

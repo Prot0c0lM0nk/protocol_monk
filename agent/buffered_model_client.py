@@ -8,7 +8,7 @@ by buffering incomplete JSON and yielding complete tool calls as single units.
 import json
 import logging
 from typing import AsyncGenerator, Optional, List
-from agent.tool_call_buffer import ToolCallBuffer
+from agent.enhanced_tool_buffer import EnhancedToolCallBuffer
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class BufferedModelResponse:
             original_generator: The original streaming response from model
         """
         self.original_generator = original_generator
-        self.tool_buffer = ToolCallBuffer()
+        self.tool_buffer = EnhancedToolCallBuffer()
         self.pending_content = []
 
     async def __aiter__(self):
@@ -97,16 +97,16 @@ def extract_tool_calls_safely(text: str) -> List[dict]:
     Returns:
         List of extracted tool call dictionaries
     """
-    from utils.json_parser import extract_json_from_text
+    from utils.json_parser_v2 import extract_json_with_retry
 
     try:
         # Try normal extraction first
-        objects, errors = extract_json_from_text(text)
+        objects, errors = extract_json_with_retry(text)
 
         if errors and not objects:
             # If normal extraction failed, try to fix common streaming issues
             fixed_text = _fix_streaming_json(text)
-            objects, errors = extract_json_from_text(fixed_text)
+            objects, errors = extract_json_with_retry(fixed_text)
 
         # Filter for valid tool call objects
         tool_calls = []

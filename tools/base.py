@@ -160,25 +160,39 @@ class BaseTool(ABC):
                 # Check for "Duplication Error" where relative string contains the full path
                 str_cwd = str(self.working_dir)
 
-                if str_path.startswith(str_cwd):
-                    # The string matches the CWD. Treat it as absolute to avoid doubling.
-                    # e.g. input="C:/Work/file.txt", cwd="C:/Work" -> Target="C:/Work/file.txt"
-                    target_path = Path(str_path).resolve()
+                # Enhanced duplication detection - normalize paths for comparison
+                try:
+                    # Normalize both paths for accurate comparison
+                    normalized_input = Path(str_path).resolve()
+                    normalized_cwd = self.working_dir.resolve()
 
-                elif (
-                    str_path.startswith("auto_")
-                    and str_path.replace("_", "").replace("-", "").isalnum()
-                ):
-                    # Preserve special handling for 'auto_' scratchpad files
-                    target_path = (
-                        self.working_dir / ".scratch" / f"{str_path}.txt"
-                    ).resolve()
-
-                else:
-                    # Standard relative path. Join with CWD.
-                    # Note: We do NOT block '/' or spaces here anymore.
-                    target_path = (self.working_dir / str_path).resolve()
-
+                    # Check if input path is already within working directory
+                    if str(normalized_input).startswith(str(normalized_cwd)):
+                        # Input is already absolute within working dir - use as-is
+                        target_path = normalized_input
+                    elif str_path.startswith(str_cwd):
+                        # The string matches the CWD but might need normalization
+                        # e.g. input="C:/Work/file.txt", cwd="C:/Work" -> Target="C:/Work/file.txt"
+                        target_path = Path(str_path).resolve()
+                    elif (
+                        str_path.startswith("auto_")
+                        and str_path.replace("_", "").replace("-", "").isalnum()
+                    ):
+                        # Preserve special handling for 'auto_' scratchpad files
+                        target_path = (
+                            self.working_dir / ".scratch" / f"{str_path}.txt"
+                        ).resolve()
+                    else:
+                        # Standard relative path handling
+                        target_path = (self.working_dir / str_path).resolve()
+                except Exception:
+                    # Fallback to original logic if normalization fails
+                    if str_path.startswith(str_cwd):
+                        # The string matches the CWD. Treat it as absolute to avoid doubling.
+                        target_path = Path(str_path).resolve()
+                    else:
+                        # Standard relative path. Join with CWD.
+                        target_path = (self.working_dir / str_path).resolve()
             # 3. Security Boundary Check
             # The resolved path must start with the working directory.
             # (We use str() comparison to be safe across python versions)
