@@ -186,7 +186,32 @@ class ApiConfig:
         self.ollama_url = os.getenv(
             "PROTOCOL_OLLAMA_URL", "http://localhost:11434/api/chat"
         )
-
+        
+        # Provider configuration
+        self.provider_chain = os.getenv(
+            "PROTOCOL_PROVIDER_CHAIN", "ollama,openrouter"
+        ).split(",")
+        
+        self.enable_provider_failover = os.getenv(
+            "PROTOCOL_ENABLE_FAILOVER", "true"
+        ).lower() == "true"
+        
+        self.provider_timeout = int(os.getenv("PROTOCOL_PROVIDER_TIMEOUT", "420"))
+        
+        # Provider-specific settings
+        self.providers = {
+            "ollama": {
+                "timeout": int(os.getenv("PROTOCOL_OLLAMA_TIMEOUT", "420")),
+                "max_retries": int(os.getenv("PROTOCOL_OLLAMA_RETRIES", "3")),
+                "retry_delay": float(os.getenv("PROTOCOL_OLLAMA_RETRY_DELAY", "1.0")),
+            },
+            "openrouter": {
+                "timeout": int(os.getenv("PROTOCOL_OPENROUTER_TIMEOUT", "420")),
+                "max_retries": int(os.getenv("PROTOCOL_OPENROUTER_RETRIES", "3")),
+                "retry_delay": float(os.getenv("PROTOCOL_OPENROUTER_RETRY_DELAY", "1.0")),
+                "api_key": os.getenv("OPENROUTER_API_KEY"),
+            },
+        }
 
 # =============================================================================
 # FILESYSTEM CONFIGURATION

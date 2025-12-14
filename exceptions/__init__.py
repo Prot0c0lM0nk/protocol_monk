@@ -18,6 +18,18 @@ from .model import (
     ModelRateLimitError,
 )
 
+# Provider exceptions
+from .provider import (
+    ProviderError,
+    ProviderNotAvailableError,
+    ProviderConfigurationError,
+    ProviderAuthenticationError,
+    ProviderRateLimitError,
+    ProviderModelNotSupportedError,
+    ProviderConnectionError,
+    ProviderResponseError,
+)
+
 # Tool exceptions
 from .tools import (
     ToolError,
@@ -122,4 +134,13 @@ __all__ = [
     "UIInitializationError",
     "ToolRegistryError",
     "ModelClientError",
+    # Provider
+    "ProviderError",
+    "ProviderNotAvailableError",
+    "ProviderConfigurationError",
+    "ProviderAuthenticationError",
+    "ProviderRateLimitError",
+    "ProviderModelNotSupportedError",
+    "ProviderConnectionError",
+    "ProviderResponseError",
 ]

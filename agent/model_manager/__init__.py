@@ -45,3 +45,45 @@ class RuntimeModelManager:
             SwitchReport: Assessment report with safety status and limits
         """
         return self.selector.assess_switch(current_usage, target_model_name)
+
+
+    def get_models_by_provider(self) -> Dict[str, List[str]]:
+        """
+        Get models grouped by provider.
+        
+        Returns:
+            Dict[str, List[str]]: Dictionary mapping provider names to model lists
+        """
+        provider_models = {
+            "ollama": [],
+            "openrouter": [],
+            "generic": []  # For models without specific provider
+        }
+        
+        for model_name, model_info in self.model_map.items():
+            provider = getattr(model_info, 'provider', 'generic')
+            if provider not in provider_models:
+                provider_models[provider] = []
+            provider_models[provider].append(model_name)
+        
+        return provider_models
+    
+    def get_provider_for_model(self, model_name: str) -> str:
+        """
+        Get the provider for a specific model.
+        
+        Args:
+            model_name: Name of the model
+            
+        Returns:
+            str: Provider name ("ollama", "openrouter", or "generic")
+        """
+        model_info = self.model_map.get(model_name)
+        if model_info:
+            return getattr(model_info, 'provider', 'generic')
+        
+        # Heuristic: determine provider based on model name pattern
+        if "/" in model_name or any(x in model_name.lower() for x in ["gpt", "claude", "gemini"]):
+            return "openrouter"
+        else:
+            return "ollama"

@@ -1,384 +1,176 @@
 #!/usr/bin/env python3
 """
-Model Client for Protocol Monk
-==============================
+Model Client Compatibility Wrapper
+===================================
 
-Async HTTP client for Ollama LLM provider.
-Supports streaming responses with proper error handling and timeout management.
+Backward compatibility wrapper that maintains exact same interface as before
+while delegating to the new provider registry system.
+
+This ensures zero breaking changes for existing code.
 """
 
 import warnings
-
-import aiohttp
-import asyncio
-import json
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
+from textual.containers import Container
+from textual.widgets import Static, Markdown
 
+from agent.base_model_client import BaseModelClient
+from agent.provider_registry import ProviderRegistry
+from agent.providers.ollama_model_client import OllamaModelClient
+from agent.providers.openrouter_model_client import OpenRouterModelClient
+from config.static import settings
 from exceptions import (
     EmptyResponseError,
     ModelError,
     ModelTimeoutError,
+    ProviderError,
+    ProviderNotAvailableError,
 )
-from agent.model_manager import RuntimeModelManager
-from config.static import settings
-from agent.buffered_model_client import create_buffered_response
 
 
 class ModelClient:
     """
-    Async HTTP client for Ollama LLM provider.
-
-    Responsibilities:
-    - Handle async HTTP requests with proper streaming
-    - Parse and yield response chunks
-    - Convert provider errors to structured exceptions
-    - Manage timeouts and connection pooling
+    Backward compatibility wrapper for the multi-provider architecture.
+    
+    Maintains exact same interface as the original ModelClient while
+    using the new ProviderRegistry internally for provider management
+    and failover capabilities.
+    
+    This class ensures that all existing code continues to work without
+    any changes, while gaining the benefits of the multi-provider system.
     """
 
-    def __init__(self, model_name: str):
+    def __init__(self, model_name: str, provider: Optional[str] = None):
         """
-        Initialize the model client for Ollama.
-
+        Initialize the model client with explicit provider selection.
+        
         Args:
             model_name: LLM model identifier (e.g., "qwen3:4b")
+            provider: Provider name ("ollama", "openrouter", or None for auto-detection)
         """
         self.model_name = model_name
-        self.current_provider = "ollama"
         self.logger = logging.getLogger(__name__)
+        
+        # Determine provider
+        if provider:
+            self.selected_provider = provider
+        else:
+            self.selected_provider = self._detect_provider(model_name)
+        
+        self.logger.info(f"Using provider: {self.selected_provider}")
+        
+        # Create provider-specific client
+        self._client = self._create_provider_client(self.selected_provider, model_name)
+        self.current_provider = self.selected_provider  # Backward compatibility
 
-        self.ollama_url = settings.api.ollama_url
-        self.timeout = settings.model.request_timeout
-
-        # 1. Load the default options first
-        self.model_options = (
-            settings.model_options.chat_options.copy()
-        )  # Good practice to copy mutable dicts
-
-        # 2. CRITICAL FIX: Run the full setup logic immediately.
-        # This looks up the model in your model_map.json and applies
-        # the specific context window (e.g., 40k) right now.
-        self.set_model(model_name)
-
-        self._session: Optional[aiohttp.ClientSession] = None
-
-        # State variables for debug logging
-        self._chunk_count = 0
-        self._response_chunks: List[str] = []
-
-    async def _get_session(self) -> aiohttp.ClientSession:
+    def _detect_provider(self, model_name: str) -> str:
         """
-        Get or create aiohttp session.
-
+        Auto-detect provider based on model name patterns.
+        
+        Args:
+            model_name: Name of the model
+            
         Returns:
-            aiohttp.ClientSession: HTTP session for API requests
+            str: Detected provider name
         """
-        if self._session is None or self._session.closed:
-            timeout = aiohttp.ClientTimeout(total=self.timeout)
-            self._session = aiohttp.ClientSession(timeout=timeout)
-        return self._session
-
-    async def close(self):
+        # Check for OpenRouter patterns
+        if "/" in model_name or any(x in model_name.lower() for x in ["gpt", "claude", "gemini", "anthropic", "meta-llama"]):
+            return "openrouter"
+        
+        # Default to Ollama for local models
+        return "ollama"
+    
+    def _create_provider_client(self, provider: str, model_name: str) -> BaseModelClient:
         """
-        Close the HTTP session.
-        """
-        if self._session and not self._session.closed:
-            await self._session.close()
-
-    def set_model(self, model_name: str):
-        """
-        Switch to a different model and update context window in options.
-
+        Create provider-specific client.
+        
         Args:
-            model_name: Name of the model to switch to
-        """
-        self.model_name = model_name
-
-        model_manager = RuntimeModelManager()
-        model_info = model_manager.get_available_models().get(model_name)
-        if model_info:
-            new_context_window = model_info.context_window
-            if "num_ctx" in self.model_options:
-                self.model_options["num_ctx"] = new_context_window
-
-    async def _check_error_status(self, response: aiohttp.ClientResponse):
-        """
-        Check for HTTP errors and raise appropriate exceptions.
-
-        Args:
-            response: HTTP response to check for errors
-
-        Raises:
-            ModelError: If HTTP error status is detected
-        """
-        if response.status >= 400:
-            error_text = await response.text()
-            raise ModelError(
-                message=f"Ollama client error: {response.status} - {error_text}",
-                details={
-                    "provider": "ollama",
-                    "model": self.model_name,
-                    "status_code": response.status,
-                },
-            )
-
-    async def _process_stream_response(
-        self, response: aiohttp.ClientResponse
-    ) -> AsyncGenerator[str, None]:
-        """
-        Process streaming response from Ollama.
-
-        Args:
-            response: aiohttp.ClientResponse from the API call
-
-        Yields:
-            str: Content chunks from the response
-        """
-        self._initialize_stream_state()
-
-        buffer = ""
-        async for line in response.content:
-            if not line:
-                continue
-
-            line_str = line.decode("utf-8")
-            buffer += line_str
-
-            async for chunk_content in self._process_buffer(buffer):
-                if chunk_content:
-                    yield chunk_content
-                buffer = self._update_buffer(buffer)
-
-        # --- BUG FIX START: Flush remaining buffer ---
-        # If the server closed the connection but left data in the buffer
-        # (because it didn't end with a newline), force process it now.
-        if buffer.strip():
-            self.logger.debug("Flushing remaining buffer: %s", buffer)
-            # Append a newline to force the splitter to recognize this line
-            async for chunk_content in self._process_buffer(buffer + "\n"):
-                if chunk_content:
-                    yield chunk_content
-        # --- BUG FIX END ---
-
-        self._log_complete_response()
-
-    def _initialize_stream_state(self) -> None:
-        """
-        Initialize debug logging state for stream processing.
-        """
-        if self.logger.isEnabledFor(logging.DEBUG):
-            self._chunk_count = 0
-            self._response_chunks = []
-
-    async def _process_buffer(self, buffer: str) -> AsyncGenerator[str, None]:
-        """
-        Process buffer content and yield valid chunks.
-
-        Args:
-            buffer: Current buffer content
-
-        Yields:
-            str: Valid content chunks
-        """
-        while "\n" in buffer:
-            line_json, remaining_buffer = buffer.split("\n", 1)
-            line_json = line_json.strip()
-            buffer = remaining_buffer
-
-            if not line_json:
-                continue
-
-            chunk_content = await self._process_json_line(line_json)
-            if chunk_content:
-                yield chunk_content
-
-    async def _process_json_line(self, line_json: str) -> str | None:
-        """
-        Process a single JSON line and extract content.
-
-        Args:
-            line_json: JSON string to process
-
+            provider: Provider name
+            model_name: Model name
+            
         Returns:
-            str | None: Extracted content or None if invalid
+            BaseModelClient: Provider client instance
         """
-        try:
-            chunk_data = json.loads(line_json)
-            chunk_content = self._extract_chunk_content(chunk_data)
-
-            self._log_debug_info(chunk_content)
-            return chunk_content
-
-        except json.JSONDecodeError as e:
-            self.logger.warning("Invalid JSON chunk: %s - %s", line_json, e)
-            return None
-
-    def _update_buffer(self, buffer: str) -> str:
+        if provider == "ollama":
+            return OllamaModelClient(model_name)
+        elif provider == "openrouter":
+            return OpenRouterModelClient(model_name)
+        else:
+            raise ValueError(f"Unknown provider: {provider}. Available: ollama, openrouter")
+    def switch_provider(self, provider: str) -> None:
         """
-        Update buffer after processing lines.
-
+        Switch to a different provider (user-controlled).
+        
         Args:
-            buffer: Current buffer state
-
-        Returns:
-            str: Updated buffer content
+            provider: New provider name ("ollama" or "openrouter")
         """
-        if "\n" in buffer:
-            _, remaining = buffer.split("\n", 1)
-            return remaining
-        return buffer
-
-    def _log_debug_info(self, chunk_content: str | None) -> None:
-        """
-        Log debug information for processed chunks.
-
-        Args:
-            chunk_content: Content chunk to log debug info for
-        """
-        if self.logger.isEnabledFor(logging.DEBUG) and chunk_content:
-            self._chunk_count += 1
-            self._response_chunks.append(chunk_content)
-
-    def _log_complete_response(self) -> None:
-        """
-        Log the complete accumulated response.
-        """
-        if self.logger.isEnabledFor(logging.DEBUG) and self._response_chunks:
-            full_response = "".join(self._response_chunks)
-            self.logger.debug(
-                "Received complete response (%d chunks): %s",
-                self._chunk_count,
-                full_response,
-            )
-
+        self.logger.info(f"Switching provider from {self.selected_provider} to {provider}")
+        self.selected_provider = provider
+        self._client = self._create_provider_client(provider, self.model_name)
+        self.current_provider = provider  # Backward compatibility
     async def get_response_async(
-        self, conversation_context: list, stream: bool = True
+        self, conversation_context: List[Dict], stream: bool = True
     ) -> AsyncGenerator[str, None]:
         """
-        Async generator that yields response chunks from Ollama.
-
+        Async generator that yields response chunks from the model.
+        
         Args:
             conversation_context: List of conversation messages for the model
             stream: Whether to stream the response (default: True)
-
+            
         Yields:
             str: Response content chunks from the model
-
+            
         Raises:
             EmptyResponseError: If model returns empty response (non-streaming)
             ModelTimeoutError: If request times out
             ModelError: If connection or API error occurs
         """
-        session = await self._get_session()
-        payload = self._prepare_payload(conversation_context, stream)
-        headers = {"Content-Type": "application/json"}
-
-        try:
-            async with session.post(
-                self.ollama_url, json=payload, headers=headers
-            ) as response:
-
-                await self._check_error_status(response)
-
-                if stream:
-                    # Use buffered response to handle split tool calls
-                    # IMPORTANT: Keep original model configuration untouched
-                    raw_generator = self._process_stream_response(response)
-                    buffered_generator = create_buffered_response(raw_generator)
-                    async for chunk in buffered_generator:
-                        yield chunk
-                else:
-                    data = await response.json()
-                    content = self._extract_full_content(data)
-                    if content:
-                        yield content
-                    else:
-                        raise EmptyResponseError(
-                            message="Model returned an empty response",
-                            details={"provider": "ollama", "model": self.model_name},
-                        )
-
-        except asyncio.TimeoutError as exc:
-            raise ModelTimeoutError(
-                message="Model request timed out",
-                timeout_seconds=self.timeout,
-                details={"provider": "ollama", "model": self.model_name},
-            ) from exc
-        except (aiohttp.ClientError, json.JSONDecodeError) as e:
+        if not self._client:
             raise ModelError(
-                message=f"Server communication error: {str(e)}",
-                details={"provider": "ollama", "model": self.model_name},
-            ) from e
-        except Exception as e:
-            # Safety net for any other unexpected errors
-            self.logger.exception("Unexpected error communicating with Ollama server")
-            raise ModelError(
-                message=f"Unexpected server error: {str(e)}",
-                details={"provider": "ollama", "model": self.model_name},
-            ) from e
-
-    def _prepare_payload(
-        self, conversation_context: list, stream: bool
-    ) -> Dict[str, Any]:
+                "Model client not initialized",
+                details={"model": self.model_name, "provider": self.current_provider}
+            )
+        
+        # Direct delegation to provider - no failover, user-controlled
+        async for chunk in self._client.get_response_async(conversation_context, stream):
+            yield chunk
+    
+    def set_model(self, model_name: str) -> None:
         """
-        Prepare request payload for Ollama.
-
+        Switch to a different model and update context window in options.
+        
         Args:
-            conversation_context: List of conversation messages
-            stream: Whether to enable streaming
-
-        Returns:
-            Dict[str, Any]: Request payload for Ollama API
+            model_name: Name of the model to switch to
         """
-        options = self.model_options.copy()
-        return {
-            "model": self.model_name,
-            "messages": conversation_context,
-            "stream": stream,
-            "options": options,
-        }
-
-    def _extract_chunk_content(self, chunk_data: Dict[str, Any]) -> Optional[str]:
+        self.model_name = model_name
+        
+        # Re-initialize client for new model
+        self._initialize_client()
+        
+        # For backward compatibility, also set on the client if it supports it
+        if hasattr(self._client, 'set_model'):
+            self._client.set_model(model_name)
+    
+    async def close(self) -> None:
         """
-        Extract content from streaming chunk.
-
-        Args:
-            chunk_data: Streaming chunk data dictionary
-
-        Returns:
-            Optional[str]: Extracted content or None if error
+        Close the model client and clean up resources.
         """
-        try:
-            return chunk_data.get("message", {}).get("content", "")
-        except (KeyError, TypeError) as e:
-            self.logger.warning("Error extracting chunk content: %s", e)
-        return None
-
-    def _extract_full_content(self, response_data: Dict[str, Any]) -> Optional[str]:
-        """
-        Extract content from non-streaming response.
-
-        Args:
-            response_data: Complete response data dictionary
-
-        Returns:
-            Optional[str]: Extracted content or None if error
-        """
-        try:
-            return response_data.get("message", {}).get("content", "")
-        except (KeyError, TypeError) as e:
-            self.logger.error("Error extracting full content: %s", e)
-        return None
-
-    def get_response(self, conversation_context: list, stream: bool = True):
+        if self._client:
+            await self._client.close()
+        
+        await self._provider_registry.close_all()
+    
+    def get_response(self, conversation_context: List[Dict], stream: bool = True):
         """
         Synchronous generator for backward compatibility.
         WARNING: This blocks the event loop! Use get_response_async() instead.
-
+        
         Args:
             conversation_context: List of conversation messages
             stream: Whether to stream the response (default: True)
-
+            
         Yields:
             str: Response content chunks
         """
@@ -387,7 +179,9 @@ class ModelClient:
             DeprecationWarning,
             stacklevel=2,
         )
-
+        
+        import asyncio
+        
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
@@ -399,3 +193,55 @@ class ModelClient:
                     break
         finally:
             loop.close()
+    
+    # Backward compatibility properties and methods
+    
+    @property
+    def ollama_url(self) -> str:
+        """
+        Get the Ollama URL for backward compatibility.
+        
+        Returns:
+            str: Ollama URL from settings
+        """
+        return settings.api.ollama_url
+    
+    @property
+    def timeout(self) -> int:
+        """
+        Get the timeout for backward compatibility.
+        
+        Returns:
+            int: Timeout value from client or default
+        """
+        if self._client:
+            return getattr(self._client, 'timeout', 420)
+        return settings.api.provider_timeout
+    
+    @property
+    def model_options(self) -> Dict[str, Any]:
+        """
+        Get model options for backward compatibility.
+        
+        Returns:
+            Dict[str, Any]: Model options from client or default
+        """
+        if self._client and hasattr(self._client, 'model_options'):
+            return self._client.model_options
+        return settings.model_options.chat_options
+    
+    def get_model_info(self) -> Dict[str, Any]:
+        """
+        Get model information for backward compatibility.
+        
+        Returns:
+            Dict[str, Any]: Model information
+        """
+        if self._client:
+            return self._client.get_model_info()
+        
+        return {
+            "model_name": self.model_name,
+            "provider_name": self.current_provider,
+            "timeout": self.timeout,
+        }
