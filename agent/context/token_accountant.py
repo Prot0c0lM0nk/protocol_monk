@@ -36,7 +36,9 @@ class TokenAccountant:
         # We default to 'qwen' family as the safe baseline for our specific use case
         try:
             self.estimator = SmartTokenEstimator(model_family="qwen")
-            self.logger.info("SmartTokenEstimator initialized successfully with qwen model family")
+            self.logger.info(
+                "SmartTokenEstimator initialized successfully with qwen model family"
+            )
         except Exception as e:
             self.logger.warning(
                 f"Failed to initialize SmartTokenEstimator with qwen: {e}. Attempting fallback..."
@@ -44,7 +46,9 @@ class TokenAccountant:
             try:
                 # Try generic model as fallback
                 self.estimator = SmartTokenEstimator(model_family="generic")
-                self.logger.warning("SmartTokenEstimator initialized with generic model as fallback")
+                self.logger.warning(
+                    "SmartTokenEstimator initialized with generic model as fallback"
+                )
             except Exception as fallback_error:
                 self.logger.error(
                     f"CRITICAL: All token estimation methods failed. Using basic character fallback: {fallback_error}"
@@ -52,7 +56,9 @@ class TokenAccountant:
                 # Final fallback: basic character-based estimation
                 self.estimator = None
                 self._fallback_enabled = True
-                self.logger.warning("Using basic character-based token estimation as last resort")
+                self.logger.warning(
+                    "Using basic character-based token estimation as last resort"
+                )
 
     def estimate(self, text: str) -> int:
         """
@@ -75,7 +81,9 @@ class TokenAccountant:
                 return self.estimator.estimate_tokens(text)
             elif self._fallback_enabled:
                 # Fallback to basic character-based estimation
-                estimated_tokens = max(1, int(len(text) / self._fallback_chars_per_token))
+                estimated_tokens = max(
+                    1, int(len(text) / self._fallback_chars_per_token)
+                )
                 self.logger.debug(
                     f"Using fallback estimation: {len(text)} chars -> {estimated_tokens} tokens"
                 )
@@ -95,6 +103,7 @@ class TokenAccountant:
                 f"Emergency fallback: {len(text)} chars -> {estimated_tokens} tokens"
             )
             return estimated_tokens
+
     def add(self, tokens: int):
         """
         Add tokens to the total count.

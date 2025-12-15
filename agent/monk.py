@@ -331,13 +331,13 @@ class ProtocolAgent:
     async def set_provider(self, provider: str) -> bool:
         """
         Switch the current provider while maintaining the same model.
-        
+
         Args:
             provider: Name of the provider to switch to ("ollama" or "openrouter")
-            
+
         Returns:
             bool: True if switch was successful, False otherwise
-            
+
         Raises:
             ProviderConfigurationError: If provider is not available or misconfigured
         """
@@ -346,29 +346,31 @@ class ProtocolAgent:
             if provider not in ["ollama", "openrouter"]:
                 raise ModelConfigurationError(
                     f"Unknown provider: {provider}. Available: ollama, openrouter",
-                    details={"requested_provider": provider}
+                    details={"requested_provider": provider},
                 )
-            
+
             # Check provider requirements
             if provider == "openrouter":
                 if not settings.environment.openrouter_api_key:
                     raise ModelConfigurationError(
                         "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.",
-                        details={"provider": provider}
+                        details={"provider": provider},
                     )
-            
+
             # Get current model before switching
             current_model = self.current_model
-            
+
             # Switch provider using model client's switch_provider method
             self.model_client.switch_provider(provider)
-            
+
             # Re-initialize the model with new provider
             await self.set_model(current_model)
-            
-            self.logger.info(f"Provider switched to: {provider} with model: {current_model}")
+
+            self.logger.info(
+                f"Provider switched to: {provider} with model: {current_model}"
+            )
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Provider switch failed: {e}")
             if isinstance(e, ModelConfigurationError):
@@ -376,5 +378,5 @@ class ProtocolAgent:
             else:
                 raise ModelConfigurationError(
                     f"Failed to switch provider to {provider}: {e}",
-                    details={"provider": provider, "original_error": str(e)}
+                    details={"provider": provider, "original_error": str(e)},
                 ) from e

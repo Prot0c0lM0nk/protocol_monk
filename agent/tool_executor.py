@@ -59,7 +59,6 @@ class ToolExecutor:
         self.execution_lock = Lock()
         # Initialize enhanced tool buffer
         self.tool_buffer = EnhancedToolCallBuffer()
-        
 
     async def _default_ui_callback(self, event: str, _data: Dict[str, Any]) -> Any:
         """

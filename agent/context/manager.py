@@ -145,22 +145,28 @@ class ContextManager:
 
         try:
             possible_file = self.tracker.working_dir / content
-            
+
             # ATOMIC VALIDATION: Try to open the file instead of checking existence
             # This eliminates the TOCTOU race condition between exists() and is_file()
-            with possible_file.open('r') as f:
+            with possible_file.open("r") as f:
                 # If we can open it, it exists and is a file - safe to process
                 await self.tracker.replace_old_file_content(
                     str(possible_file), self.conversation
                 )
-                
         except (FileNotFoundError, IsADirectoryError, PermissionError):
             # File doesn't exist, is a directory, or we can't access it
             # These are expected exceptions for invalid paths - silently ignore
             pass
-            
+
         except Exception as e:
-            # Validate file path and raise proper exception if it looks like a path
+            # Log unexpected errors before deciding whether to raise
+            self.logger.warning(
+                "Unexpected error while checking file path '%s': %s",
+                content,
+                str(e),
+                exc_info=True,
+            )
+            # Only raise if content looks like a deliberate path attempt
             if (
                 not content
                 or content.startswith(".")
@@ -172,6 +178,7 @@ class ContextManager:
                     validation_type="file_path",
                     invalid_value=content,
                 ) from e
+
     async def add_message(
         self, role: str, content: str, importance: Optional[int] = None
     ):

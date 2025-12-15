@@ -83,22 +83,24 @@ class FileTracker:
             resolved_path = path.resolve()
             # Resolve working directory as well for consistent comparison
             resolved_working_dir = self.working_dir.resolve()
-            
+
             # ATOMIC VALIDATION: Try to open the file instead of checking existence
             # This eliminates the TOCTOU race condition between exists() and is_file()
-            with resolved_path.open('r') as f:
+            with resolved_path.open("r") as f:
                 # If we can open it, it exists and is a file
                 pass
-            
+
             # Verify it's within working directory boundaries
             return str(resolved_path).startswith(str(resolved_working_dir))
-            
+
         except (FileNotFoundError, IsADirectoryError, PermissionError):
             # File doesn't exist, is a directory, or we can't access it
             return False
         except Exception as e:
             # Log unexpected errors but don't expose internal details
-            self.logger.warning(f"Error validating file path {filepath}: {type(e).__name__}")
+            self.logger.warning(
+                f"Error validating file path {filepath}: {type(e).__name__}"
+            )
             return False
 
     async def replace_old_file_content(

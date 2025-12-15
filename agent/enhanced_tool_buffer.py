@@ -6,6 +6,7 @@ import asyncio
 import json
 import re
 
+
 @dataclass
 class ToolBufferState:
     """State for an individual tool call buffer.
@@ -48,7 +49,6 @@ class EnhancedToolCallBuffer:
         ]
 
     async def add_chunk(self, chunk: str) -> Tuple[List[str], List[Dict]]:
-        
         """Add a text chunk to the buffer and process for tool calls.
 
         Args:
@@ -80,7 +80,9 @@ class EnhancedToolCallBuffer:
                     buffer.content += chunk
 
                     # Check if this buffer is now complete
-                    buffer.is_complete, tool_calls = self._check_buffer_completion(buffer)
+                    buffer.is_complete, tool_calls = self._check_buffer_completion(
+                        buffer
+                    )
                     if buffer.is_complete:
                         self.completed_tools.extend(tool_calls)
 
