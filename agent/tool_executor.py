@@ -348,25 +348,29 @@ class ToolExecutor:
         if not tool_calls:
             return ExecutionSummary()
 
-        summary = ExecutionSummary()
-        await self.ui_callback("execution_start", {"count": len(tool_calls)})
+        async with self.execution_lock:
+            if not tool_calls:
+                return ExecutionSummary()
 
-        for i, tool_call in enumerate(tool_calls):
-            await self.ui_callback(
-                "progress", {"current": i + 1, "total": len(tool_calls)}
-            )
+            summary = ExecutionSummary()
+            await self.ui_callback("execution_start", {"count": len(tool_calls)})
 
-            result, should_finish = await self._process_single_tool(tool_call)
+            for i, tool_call in enumerate(tool_calls):
+                await self.ui_callback(
+                    "progress", {"current": i + 1, "total": len(tool_calls)}
+                )
 
-            if should_finish:
-                summary.should_finish = True
-                break
+                result, should_finish = await self._process_single_tool(tool_call)
 
-            if result:
-                summary.results.append(result)
+                if should_finish:
+                    summary.should_finish = True
+                    break
 
-        await self.ui_callback("execution_complete", {})
-        return summary
+                if result:
+                    summary.results.append(result)
+
+            await self.ui_callback("execution_complete", {})
+            return summary
 
     async def set_auto_confirm(self, value: bool):
         """

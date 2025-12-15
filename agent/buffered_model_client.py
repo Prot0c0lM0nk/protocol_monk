@@ -36,7 +36,7 @@ class BufferedModelResponse:
         """Iterate over the buffered response."""
         async for chunk in self.original_generator:
             # Process chunk through tool buffer
-            content_chunks, completed_tool = self.tool_buffer.add_chunk(chunk)
+            content_chunks, completed_tool = await self.tool_buffer.add_chunk(chunk)
 
             # Yield any completed content
             for content in content_chunks:

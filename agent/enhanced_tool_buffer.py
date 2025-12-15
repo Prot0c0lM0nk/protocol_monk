@@ -2,9 +2,9 @@
 
 from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional
+import asyncio
 import json
 import re
-
 
 @dataclass
 class ToolBufferState:
@@ -39,7 +39,7 @@ class EnhancedToolCallBuffer:
         """Initialize the buffer with empty states."""
         self.active_buffers: List[ToolBufferState] = []
         self.completed_tools: List[Dict] = []
-
+        self.buffer_lock = asyncio.Lock()
         # Patterns for detecting tool call starts
         self.start_patterns = [
             r"```json\s*\{",  # Markdown code block with JSON
@@ -47,7 +47,8 @@ class EnhancedToolCallBuffer:
             r"\[\s*\{\s*\"action\"\s*:",  # Array of JSON objects
         ]
 
-    def add_chunk(self, chunk: str) -> Tuple[List[str], List[Dict]]:
+    async def add_chunk(self, chunk: str) -> Tuple[List[str], List[Dict]]:
+        
         """Add a text chunk to the buffer and process for tool calls.
 
         Args:
@@ -58,37 +59,38 @@ class EnhancedToolCallBuffer:
             - List of text chunks that aren't part of tool calls
             - List of completed tool calls found in the chunk
         """
-        # Add to all active buffers
-        text_chunks = []
-        current_pos = 0
+        async with self.buffer_lock:
+            # Add to all active buffers
+            text_chunks = []
+            current_pos = 0
 
-        # First, detect any new tool starts in this chunk
-        new_starts = self._detect_tool_starts(chunk)
+            # First, detect any new tool starts in this chunk
+            new_starts = self._detect_tool_starts(chunk)
 
-        # Create new buffers for new starts
-        for start_pos in new_starts:
-            self.active_buffers.append(ToolBufferState(start_pos=start_pos))
+            # Create new buffers for new starts
+            for start_pos in new_starts:
+                self.active_buffers.append(ToolBufferState(start_pos=start_pos))
 
-        # Sort buffers by start position to maintain order
-        self.active_buffers.sort(key=lambda b: b.start_pos)
+            # Sort buffers by start position to maintain order
+            self.active_buffers.sort(key=lambda b: b.start_pos)
 
-        # Distribute text to buffers and collect completed tools
-        for buffer in self.active_buffers:
-            if not buffer.is_complete:
-                buffer.content += chunk
+            # Distribute text to buffers and collect completed tools
+            for buffer in self.active_buffers:
+                if not buffer.is_complete:
+                    buffer.content += chunk
 
-                # Check if this buffer is now complete
-                buffer.is_complete, tool_calls = self._check_buffer_completion(buffer)
-                if buffer.is_complete:
-                    self.completed_tools.extend(tool_calls)
+                    # Check if this buffer is now complete
+                    buffer.is_complete, tool_calls = self._check_buffer_completion(buffer)
+                    if buffer.is_complete:
+                        self.completed_tools.extend(tool_calls)
 
-        # Extract text that's not part of any tool call
-        text_chunks = self._extract_non_tool_text(chunk)
+            # Extract text that's not part of any tool call
+            text_chunks = self._extract_non_tool_text(chunk)
 
-        # Clean up completed buffers
-        self.active_buffers = [b for b in self.active_buffers if not b.is_complete]
+            # Clean up completed buffers
+            self.active_buffers = [b for b in self.active_buffers if not b.is_complete]
 
-        return text_chunks, self.completed_tools
+            return text_chunks, self.completed_tools
 
     def _detect_tool_starts(self, text: str) -> List[int]:
         """Detect all potential tool call start positions in the text.
