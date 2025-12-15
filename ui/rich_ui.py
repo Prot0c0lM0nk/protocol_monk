@@ -32,9 +32,17 @@ class RichUI(UI):
         self._streaming_active = False
         self._thinking_status = None
         self.processor = None
-        # Unified Input Session
-        self.session = PromptSession()
-
+        # Unified Input Session with Unicode support
+        from prompt_toolkit.output import create_output
+        from prompt_toolkit.input import create_input
+        
+        # Ensure proper Unicode handling
+        self.session = PromptSession(
+            input=create_input(),
+            output=create_output(),
+            mouse_support=False,
+            complete_while_typing=False
+        )
     # --- 1. STREAMING ---
 
     def _start_streaming(self):
@@ -112,19 +120,27 @@ class RichUI(UI):
         console.print(f"  [holy.gold]?[/] {prompt}")
 
         # Use prompt_toolkit with patch_stdout to play nice with async printing
-        # Format: "  You › "
-        formatted_prompt = [
-            ("class:username", "  You "),
-            ("class:arrow", "› "),
-        ]
-
-        # We need to construct the HTML/ANSI string manually for prompt_toolkit if we want colors,
-        # or just use simple text. For simplicity and reliability:
-        pt_prompt = "  You › "
-
+        # Format: "  You › " (with Unicode fallback)
+        
+        # Check if terminal supports Unicode
+        import sys
+        try:
+            # Test if we can encode the Orthodox cross
+            '☦'.encode(sys.stdout.encoding or 'utf-8')
+            prompt_symbol = '☦'
+        except (UnicodeEncodeError, AttributeError):
+            # Fallback to ASCII
+            prompt_symbol = '>'
+        
+        pt_prompt = f"  {prompt_symbol}> "
         try:
             with patch_stdout():
                 return await self.session.prompt_async(pt_prompt)
+        except UnicodeEncodeError as e:
+            # Fallback to simple ASCII prompt if Unicode fails
+            console.print(f"[warning]Unicode prompt failed, falling back to ASCII: {e}[/]")
+            fallback_prompt = "  > "
+            return await self.session.prompt_async(fallback_prompt)
         except (KeyboardInterrupt, EOFError):
             return ""
 
