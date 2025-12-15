@@ -402,7 +402,13 @@ class OllamaModelClient(BaseModelClient):
     def get_response(self, conversation_context: List[Dict[str, str]], stream: bool = True):
         """
         Synchronous generator for backward compatibility.
-        WARNING: This blocks the event loop! Use get_response_async() instead.
+        
+        WARNING: This method exists only for backward compatibility. It will:
+        - Block the current thread while waiting for responses  
+        - May cause UI freezes in GUI applications
+        - Should be avoided in favor of get_response_async()
+        
+        For GUI applications, use get_response_async() with proper async/await patterns.
         
         Args:
             conversation_context: List of conversation messages
@@ -410,21 +416,47 @@ class OllamaModelClient(BaseModelClient):
             
         Yields:
             str: Response content chunks
+            
+        Raises:
+            RuntimeError: If called from within an existing event loop
+            ModelError: If the model request fails
         """
         warnings.warn(
-            "get_response() is deprecated. Use get_response_async() instead.",
+            "get_response() is deprecated and may block the event loop. "
+            "Use get_response_async() instead for better performance and reliability.",
             DeprecationWarning,
             stacklevel=2,
         )
         
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        import asyncio
+        
+        # Check if we're already in an event loop - prevent nested loop corruption
         try:
-            async_gen = self.get_response_async(conversation_context, stream)
-            while True:
-                try:
-                    yield loop.run_until_complete(async_gen.__anext__())
-                except StopAsyncIteration:
-                    break
-        finally:
-            loop.close()
+            existing_loop = asyncio.get_running_loop()
+            raise RuntimeError(
+                "get_response() cannot be called from within an existing event loop. "
+                "Use get_response_async() instead, or call this method from a different thread."
+            )
+        except RuntimeError as e:
+            # This is expected - we're not in a loop
+            if "no running event loop" not in str(e).lower():
+                raise
+        
+        # Use asyncio.run() for proper event loop lifecycle management
+        # This approach works well with the buffering system that processes
+        # complete tool calls before yielding
+        async def _collect_all_chunks():
+            """Collect all chunks from the async generator"""
+            chunks = []
+            async for chunk in self.get_response_async(conversation_context, stream):
+                chunks.append(chunk)
+            return chunks
+        
+        try:
+            # Run the async generator and collect all chunks
+            all_chunks = asyncio.run(_collect_all_chunks())
+            for chunk in all_chunks:
+                yield chunk
+        except Exception as e:
+            self.logger.error(f"Error in get_response: {e}")
+            raise ModelError(f"Failed to get model response: {e}") from e

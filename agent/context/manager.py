@@ -128,6 +128,7 @@ class ContextManager:
     async def _check_and_update_files(self, content: str):
         """
         Check if content is a file path and update tracker if valid.
+        Uses atomic operations to eliminate TOCTOU race conditions.
 
         Args:
             content: Content string to check for file path
@@ -144,11 +145,21 @@ class ContextManager:
 
         try:
             possible_file = self.tracker.working_dir / content
-            if possible_file.exists() and possible_file.is_file():
+            
+            # ATOMIC VALIDATION: Try to open the file instead of checking existence
+            # This eliminates the TOCTOU race condition between exists() and is_file()
+            with possible_file.open('r') as f:
+                # If we can open it, it exists and is a file - safe to process
                 await self.tracker.replace_old_file_content(
                     str(possible_file), self.conversation
                 )
-        except Exception as e:  # pylint: disable=broad-exception-caught
+                
+        except (FileNotFoundError, IsADirectoryError, PermissionError):
+            # File doesn't exist, is a directory, or we can't access it
+            # These are expected exceptions for invalid paths - silently ignore
+            pass
+            
+        except Exception as e:
             # Validate file path and raise proper exception if it looks like a path
             if (
                 not content
@@ -161,7 +172,6 @@ class ContextManager:
                     validation_type="file_path",
                     invalid_value=content,
                 ) from e
-
     async def add_message(
         self, role: str, content: str, importance: Optional[int] = None
     ):

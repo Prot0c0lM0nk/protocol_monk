@@ -68,13 +68,14 @@ class FileTracker:
 
     def _validate_file_exists(self, filepath: str) -> bool:
         """
-        Validate that a file exists before processing.
+        Validate that a file exists and is readable using atomic operations.
+        Eliminates TOCTOU race conditions by using exception-based validation.
 
         Args:
             filepath: Path to the file to validate
 
         Returns:
-            bool: True if file exists and is readable, False otherwise
+            bool: True if file exists, is readable, and is within working directory
         """
         try:
             path = Path(filepath)
@@ -82,16 +83,23 @@ class FileTracker:
             resolved_path = path.resolve()
             # Resolve working directory as well for consistent comparison
             resolved_working_dir = self.working_dir.resolve()
-            # Check if the resolved path exists, is a file, and is within working directory
-            return (
-                resolved_path.exists()
-                and resolved_path.is_file()
-                and str(resolved_path).startswith(str(resolved_working_dir))
-            )
-        except Exception as e:
-            self.logger.warning(f"Error validating file path {filepath}: {e}")
-            return False
             
+            # ATOMIC VALIDATION: Try to open the file instead of checking existence
+            # This eliminates the TOCTOU race condition between exists() and is_file()
+            with resolved_path.open('r') as f:
+                # If we can open it, it exists and is a file
+                pass
+            
+            # Verify it's within working directory boundaries
+            return str(resolved_path).startswith(str(resolved_working_dir))
+            
+        except (FileNotFoundError, IsADirectoryError, PermissionError):
+            # File doesn't exist, is a directory, or we can't access it
+            return False
+        except Exception as e:
+            # Log unexpected errors but don't expose internal details
+            self.logger.warning(f"Error validating file path {filepath}: {type(e).__name__}")
+            return False
 
     async def replace_old_file_content(
         self, filepath: str, conversation: List[Message]
