@@ -19,10 +19,13 @@ class PathValidator:
         self.working_dir = working_dir.resolve()
         self.validation_cache: Dict[str, Tuple[str, Optional[str]]] = {}
         self.working_dir_hash = hashlib.md5(str(self.working_dir).encode()).hexdigest()
-    def validate_and_clean_path(self, filepath: str, must_exist: bool = False) -> Tuple[str, Optional[str]]:
+
+    def validate_and_clean_path(
+        self, filepath: str, must_exist: bool = False
+    ) -> Tuple[str, Optional[str]]:
         """
         Validate and clean a file path in one centralized operation.
-        
+
         Smart blessing approach - accepts valid paths while maintaining security.
         Now with caching to break circular dependencies and existence checking
         for operations that require real files.
@@ -45,7 +48,7 @@ class PathValidator:
 
         # Pre-normalize common patterns before validation
         normalized_path = self._normalize_leading_slash(filepath)
-        
+
         # First check security before any manipulation
         is_safe, security_error = self._is_safe_path(normalized_path)
         if not is_safe:
@@ -68,7 +71,7 @@ class PathValidator:
             error_msg = "Path resolved outside working directory"
             self.validation_cache[cache_key] = (cleaned_path, error_msg)
             return cleaned_path, error_msg
-            
+
         # Existence check if required
         if must_exist and not abs_path.exists():
             error_msg = f"Path does not exist: {cleaned_path}"
@@ -163,8 +166,12 @@ class PathValidator:
             if cleaned.startswith(str(self.working_dir)):
                 # Make sure we're not accidentally stripping part of a filename
                 # by checking if what follows is a path separator
-                remaining = cleaned[len(str(self.working_dir)):]
-                if remaining.startswith('/') or remaining.startswith('\\') or not remaining:
+                remaining = cleaned[len(str(self.working_dir)) :]
+                if (
+                    remaining.startswith("/")
+                    or remaining.startswith("\\")
+                    or not remaining
+                ):
                     cleaned = remaining.lstrip("/\\")
         except (ValueError, TypeError):
             # If we can't safely process it, leave it as-is
@@ -189,7 +196,9 @@ class PathValidator:
         """
         # Reject empty path explicitly - never default to working directory
         if not filepath or filepath.isspace():
-            raise ValueError("Empty path is not allowed. Please specify a file or directory path.")
+            raise ValueError(
+                "Empty path is not allowed. Please specify a file or directory path."
+            )
 
         # Create absolute path by joining with working directory
         abs_path = (self.working_dir / filepath).resolve()
@@ -211,22 +220,25 @@ class PathValidator:
     def _get_validation_key(self, filepath: str) -> str:
         """Generate cache key for validation results."""
         return f"{self.working_dir_hash}:{filepath}"
-    
+
     def _normalize_leading_slash(self, filepath: str) -> str:
         """
-        Convert leading slash to relative path.
-        
+        Convert leading slash to relative path for paths that appear absolute
+        but are actually relative to working directory.
+
         /agent/file.py becomes agent/file.py (relative to working directory)
+        This handles the common user input pattern of leading slashes on relative paths.
         """
-        if filepath.startswith('/') and not os.path.isabs(filepath):
-            # This is a relative path with leading slash, not absolute
-            return filepath.lstrip('/')
+        if filepath.startswith("/"):
+            # Strip leading slash - let the absolute path checker in _is_safe_path
+            # determine if this is truly absolute or just a relative path with leading slash
+            return filepath.lstrip("/")
         return filepath
-    
+
     def _is_harmless_traversal(self, filepath: str) -> bool:
         """
         Check if .. pattern actually escapes working directory.
-        
+
         Returns True if the pattern is harmless (doesn't escape),
         False if it could be dangerous.
         """
