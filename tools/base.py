@@ -218,3 +218,193 @@ class BaseTool(ABC):
         except (OSError, ValueError) as e:
             self.logger.error("Path validation error: %s", e)
             return False
+
+
+
+# Path Validation Resilience Helpers
+# Added as part of Path Validation Healing Ritual - Section 4.4
+
+def normalize_path_input(path: str) -> str:
+    """
+    Common path preprocessing to handle user input patterns.
+    
+    Handles:
+    - Strip quotes (single/double)
+    - Convert backslashes to forward slashes
+    - Remove leading/trailing whitespace
+    - Handle leading slash as relative path
+    
+    Args:
+        path: Raw user input path
+        
+    Returns:
+        Normalized path string
+    """
+    if not path or not isinstance(path, str):
+        return ""
+    
+    # Strip quotes and whitespace
+    normalized = path.strip().strip('"\'')
+    
+    # Convert backslashes to forward slashes (Windows compatibility)
+    normalized = normalized.replace('\\', '/')
+    
+    # Handle leading slash as relative path (not absolute)
+    if normalized.startswith('/') and not normalized.startswith('//'):
+        # Remove leading slash to make it relative to working directory
+        normalized = normalized[1:]
+    
+    return normalized
+
+
+def generate_path_suggestion(original: str, error: str) -> str:
+    """
+    Generate user-friendly corrections for common path errors.
+    
+    Args:
+        original: The original path that failed validation
+        error: The error message from validation
+        
+    Returns:
+        Helpful suggestion string
+    """
+    suggestions = []
+    
+    # Common error patterns and suggestions
+    if "leading slash" in error.lower() or original.startswith('/'):
+        suggestions.append("Try removing the leading slash: use 'path/to/file' instead of '/path/to/file'")
+    
+    if "backslash" in error.lower() or '\\' in original:
+        suggestions.append("Use forward slashes instead of backslashes: 'path/to/file' instead of 'path\\to\\file'")
+    
+    if "quotes" in error.lower() or any(q in original for q in ['"', "'"]):
+        suggestions.append("Remove quotes around the path: use path/to/file instead of \"path/to/file\"")
+    
+    if "empty" in error.lower() or not original.strip():
+        suggestions.append("Provide a valid file path - empty paths are not allowed")
+    
+    if "traversal" in error.lower() or ".." in original:
+        suggestions.append("Check that '..' patterns don't escape the working directory")
+    
+    if "dangerous pattern" in error.lower():
+        suggestions.append("Avoid system directories like /etc, .ssh, or .git in your path")
+    
+    if "exist" in error.lower():
+        suggestions.append("Make sure the file exists or use create_file_tool to create it first")
+    
+    # Default suggestion if no specific patterns match
+    if not suggestions:
+        suggestions.append(f"Check that the path is correct and within the working directory")
+        suggestions.append(f"Use forward slashes and avoid special characters")
+    
+    return "Suggestions: " + "; ".join(suggestions)
+
+
+def should_retry_validation(error: str) -> bool:
+    """
+    Determine if validation failure is retryable.
+    
+    Some validation failures are due to temporary conditions or
+    can be resolved with path normalization.
+    
+    Args:
+        error: The error message from validation
+        
+    Returns:
+        True if validation should be retried with normalized path
+    """
+    retryable_patterns = [
+        "leading slash",
+        "quotes",
+        "backslash",
+        "normalization",
+        "format"
+    ]
+    
+    non_retryable_patterns = [
+        "traversal",
+        "dangerous pattern",
+        "security",
+        "empty path",
+        "outside working directory"
+    ]
+    
+    error_lower = error.lower()
+    
+    # Check for non-retryable patterns first (security issues)
+    for pattern in non_retryable_patterns:
+        if pattern in error_lower:
+            return False
+    
+    # Check for retryable patterns (formatting issues)
+    for pattern in retryable_patterns:
+        if pattern in error_lower:
+            return True
+    
+    # Default to not retrying if uncertain
+    return False
+
+
+def extract_path_from_error(error_msg: str) -> str:
+    """
+    Attempt to extract the original path from an error message.
+    
+    Useful for logging and debugging validation failures.
+    
+    Args:
+        error_msg: The error message that might contain a path
+        
+    Returns:
+        Extracted path or empty string if not found
+    """
+    import re
+    
+    # Common patterns for path extraction
+    patterns = [
+        r"path ['\"](.*?)['\"]",
+        r"file ['\"](.*?)['\"]",
+        r"['\"](.*?)['\"] blocked",
+        r"['\"](.*?)['\"] failed",
+        r"Path (.*?) ->",
+        r"path (.*?)(?:\s|$)"
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, error_msg, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+    
+    return ""
+
+
+def validate_path_format(path: str) -> tuple[bool, str]:
+    """
+    Quick format validation for paths before full validation.
+    
+    Performs lightweight checks that don't require file system access.
+    
+    Args:
+        path: Path to validate
+        
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not path or not isinstance(path, str):
+        return False, "Empty or invalid path"
+    
+    if not path.strip():
+        return False, "Path cannot be empty or whitespace only"
+    
+    # Check for obvious dangerous patterns (quick reject)
+    dangerous_patterns = ["/etc/", ".ssh/", ".git/", "../"]
+    for pattern in dangerous_patterns:
+        if pattern in path:
+            return False, f"Dangerous pattern '{pattern}' detected"
+    
+    # Check for invalid characters
+    invalid_chars = ['<', '>', '|', '*', '?']
+    for char in invalid_chars:
+        if char in path:
+            return False, f"Invalid character '{char}' in path"
+    
+    return True, ""

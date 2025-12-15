@@ -65,6 +65,12 @@ class ContextManager:
         else:
             self.neural_sym = None
 
+        # Add validation optimization to break circular dependency
+        self._recent_validation_attempts: set[str] = set()
+        self._successful_file_paths: set[str] = set()
+        self._validation_cache_ttl = 60  # Cache TTL in seconds
+        self._last_validation_cleanup = 0
+
     async def async_initialize(self):
         """Initialize async components and load the system prompt from disk.
 
@@ -130,11 +136,14 @@ class ContextManager:
         Check if content is a file path and update tracker if valid.
         Uses atomic operations to eliminate TOCTOU race conditions.
 
+        OPTIMIZED: Now with deduplication and success-only context updates
+        to break circular dependency with PathValidator.
+
         Args:
             content: Content string to check for file path
 
         Returns:
-            None: Updates file tracker if valid file path found
+            None: Updates file tracker only if valid file path found and operation succeeds
 
         Raises:
             Exception: Various exceptions from file operations (caught internally)
@@ -143,19 +152,38 @@ class ContextManager:
         if not self._is_likely_file_path(content):
             return
 
+        # Deduplication: Skip if we recently processed this path
+        if self._should_skip_validation_attempt(content):
+            self.logger.debug("Skipping duplicate validation attempt for: %s", content)
+            return
+
+        # Track this validation attempt
+        self._track_validation_attempt(content)
+
+        # Clean up old validation attempts periodically
+        self._cleanup_validation_cache()
+
         try:
             possible_file = self.tracker.working_dir / content
 
             # ATOMIC VALIDATION: Try to open the file instead of checking existence
             # This eliminates the TOCTOU race condition between exists() and is_file()
             with possible_file.open("r") as f:
-                # If we can open it, it exists and is a file - safe to process
+                # SUCCESS: Only update context for successful operations
                 await self.tracker.replace_old_file_content(
                     str(possible_file), self.conversation
                 )
+                # Track successful file path for optimization
+                self._track_successful_file_path(content)
+                self.logger.debug("Successfully updated context for file: %s", content)
+
         except (FileNotFoundError, IsADirectoryError, PermissionError):
             # File doesn't exist, is a directory, or we can't access it
             # These are expected exceptions for invalid paths - silently ignore
+            # IMPORTANT: Do NOT update context for failed validations
+            self.logger.debug(
+                "File validation failed for: %s (no context update)", content
+            )
             pass
 
         except Exception as e:
@@ -610,3 +638,63 @@ class ContextManager:
             return False
 
         return True
+
+    def _should_skip_validation_attempt(self, content: str) -> bool:
+        """
+        Check if we should skip this validation attempt due to recent processing.
+
+        Args:
+            content: File path content to check
+
+        Returns:
+            bool: True if we should skip this validation attempt
+        """
+        import time
+
+        # Clean up old attempts if TTL has expired
+        current_time = time.time()
+        if current_time - self._last_validation_cleanup > self._validation_cache_ttl:
+            self._cleanup_validation_cache()
+
+        # Skip if this path was recently processed
+        return content in self._recent_validation_attempts
+
+    def _track_validation_attempt(self, content: str) -> None:
+        """
+        Track a validation attempt to prevent duplicate processing.
+
+        Args:
+            content: File path content that was attempted
+        """
+        import time
+
+        self._recent_validation_attempts.add(content)
+        self._last_validation_cleanup = time.time()
+
+    def _track_successful_file_path(self, content: str) -> None:
+        """
+        Track a successfully validated file path for optimization.
+
+        Args:
+            content: File path content that was successfully processed
+        """
+        self._successful_file_paths.add(content)
+
+    def _cleanup_validation_cache(self) -> None:
+        """
+        Clean up old validation attempts from the cache.
+        Keeps the cache size manageable and prevents memory growth.
+        """
+        import time
+
+        # Simple cleanup - clear all recent attempts
+        # In a production system, you might want more sophisticated TTL logic
+        self._recent_validation_attempts.clear()
+        self._last_validation_cleanup = time.time()
+
+        # Also limit successful paths cache size
+        if len(self._successful_file_paths) > 1000:
+            # Keep only the most recent 500 successful paths
+            # Convert to list, take last 500, convert back to set
+            recent_successes = list(self._successful_file_paths)[-500:]
+            self._successful_file_paths = set(recent_successes)
