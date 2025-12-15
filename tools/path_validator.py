@@ -1,7 +1,8 @@
+import hashlib
 import os
 import re
 from pathlib import Path
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Dict
 
 
 class PathValidator:
@@ -9,41 +10,73 @@ class PathValidator:
     Centralized path validation and cleaning for secure file operations.
 
     Handles all path-related security checks, normalization, and working directory resolution
-    in a single, consistent manner.
+    in a single, consistent manner. Now with smart blessing - accepts valid paths while
+    maintaining security against actual traversal attempts.
     """
 
     def __init__(self, working_dir: Path):
         """Initialize with the current working directory."""
         self.working_dir = working_dir.resolve()
-
-    def validate_and_clean_path(self, filepath: str) -> Tuple[str, Optional[str]]:
+        self.validation_cache: Dict[str, Tuple[str, Optional[str]]] = {}
+        self.working_dir_hash = hashlib.md5(str(self.working_dir).encode()).hexdigest()
+    def validate_and_clean_path(self, filepath: str, must_exist: bool = False) -> Tuple[str, Optional[str]]:
         """
         Validate and clean a file path in one centralized operation.
+        
+        Smart blessing approach - accepts valid paths while maintaining security.
+        Now with caching to break circular dependencies and existence checking
+        for operations that require real files.
 
         Args:
             filepath: The raw file path to validate and clean
+            must_exist: If True, path must point to an existing file/directory
 
         Returns:
             Tuple of (cleaned_path, error_message) where error_message is None if valid
         """
+        # Check cache first to break circular dependency
+        cache_key = self._get_validation_key(filepath)
+        if cache_key in self.validation_cache:
+            cached_path, cached_error = self.validation_cache[cache_key]
+            # For cached results, we don't need existence check again
+            if not must_exist or cached_error is not None:
+                return cached_path, cached_error
+            # If must_exist and cached as valid, check existence again (files may change)
+
+        # Pre-normalize common patterns before validation
+        normalized_path = self._normalize_leading_slash(filepath)
+        
         # First check security before any manipulation
-        is_safe, security_error = self._is_safe_path(filepath)
+        is_safe, security_error = self._is_safe_path(normalized_path)
         if not is_safe:
-            return filepath, security_error
+            self.validation_cache[cache_key] = (normalized_path, security_error)
+            return normalized_path, security_error
 
         # Clean the path string
-        cleaned_path = self._clean_path_string(filepath)
+        cleaned_path = self._clean_path_string(normalized_path)
 
         # Resolve to working directory and perform final validation
         try:
             abs_path = self._resolve_to_working_dir(cleaned_path)
         except ValueError as e:
-            return filepath, str(e)
+            error_msg = str(e)
+            self.validation_cache[cache_key] = (cleaned_path, error_msg)
+            return cleaned_path, error_msg
 
         # Final boundary check (should never fail if previous checks passed)
         if not self._is_within_working_dir(abs_path):
-            return filepath, "Path resolved outside working directory"
+            error_msg = "Path resolved outside working directory"
+            self.validation_cache[cache_key] = (cleaned_path, error_msg)
+            return cleaned_path, error_msg
+            
+        # Existence check if required
+        if must_exist and not abs_path.exists():
+            error_msg = f"Path does not exist: {cleaned_path}"
+            self.validation_cache[cache_key] = (cleaned_path, error_msg)
+            return cleaned_path, error_msg
 
+        # Success - cache the blessing
+        self.validation_cache[cache_key] = (cleaned_path, None)
         return cleaned_path, None
 
     def _is_safe_path(self, filepath: str) -> Tuple[bool, Optional[str]]:
@@ -53,15 +86,25 @@ class PathValidator:
         Returns:
             (is_safe, reason_if_unsafe)
         """
-        # Check for path traversal attempts
+        # Check for path traversal attempts - but allow harmless ones
         if "../" in filepath or "..\\" in filepath:
-            return False, "Path traversal detected (../)"
+            # Only reject if the path would actually escape working directory
+            # Test by resolving and checking boundaries
+            if not self._is_harmless_traversal(filepath):
+                return False, "Path traversal detected (../)"
 
-        # Check for absolute paths (which might escape working directory)
+        # Check for absolute paths - convert to relative if within working directory
         if os.path.isabs(filepath):
-            abs_path = Path(filepath).resolve()
-            if not self._is_within_working_dir(abs_path):
-                return False, f"Absolute path outside working directory: {filepath}"
+            try:
+                abs_path = Path(filepath).resolve()
+                # Check if this absolute path is actually within our working directory
+                if self._is_within_working_dir(abs_path):
+                    # This is actually a relative path expressed as absolute - allow it
+                    return True, None
+                else:
+                    return False, f"Absolute path outside working directory: {filepath}"
+            except (ValueError, RuntimeError):
+                return False, f"Invalid absolute path: {filepath}"
 
         # Check for dangerous patterns
         dangerous_patterns = [
@@ -113,9 +156,19 @@ class PathValidator:
         # Remove duplicate slashes
         cleaned = re.sub(r"/+", "/", cleaned)
 
-        # Remove working directory prefix if present
-        if cleaned.startswith(str(self.working_dir)):
-            cleaned = cleaned[len(str(self.working_dir)) :].lstrip("/")
+        # Remove working directory prefix if present - but only exact matches
+        # Convert both to absolute paths for safe comparison
+        try:
+            # Only strip if this is actually our working directory prefix
+            if cleaned.startswith(str(self.working_dir)):
+                # Make sure we're not accidentally stripping part of a filename
+                # by checking if what follows is a path separator
+                remaining = cleaned[len(str(self.working_dir)):]
+                if remaining.startswith('/') or remaining.startswith('\\') or not remaining:
+                    cleaned = remaining.lstrip("/\\")
+        except (ValueError, TypeError):
+            # If we can't safely process it, leave it as-is
+            pass
 
         # Remove leading slash that might make it absolute
         if cleaned.startswith("/"):
@@ -134,9 +187,9 @@ class PathValidator:
         Raises:
             ValueError: If the resolved path is outside the working directory
         """
-        # Handle empty path as current directory
-        if not filepath:
-            return self.working_dir
+        # Reject empty path explicitly - never default to working directory
+        if not filepath or filepath.isspace():
+            raise ValueError("Empty path is not allowed. Please specify a file or directory path.")
 
         # Create absolute path by joining with working directory
         abs_path = (self.working_dir / filepath).resolve()
@@ -153,4 +206,34 @@ class PathValidator:
             path.resolve().relative_to(self.working_dir)
             return True
         except ValueError:
+            return False
+
+    def _get_validation_key(self, filepath: str) -> str:
+        """Generate cache key for validation results."""
+        return f"{self.working_dir_hash}:{filepath}"
+    
+    def _normalize_leading_slash(self, filepath: str) -> str:
+        """
+        Convert leading slash to relative path.
+        
+        /agent/file.py becomes agent/file.py (relative to working directory)
+        """
+        if filepath.startswith('/') and not os.path.isabs(filepath):
+            # This is a relative path with leading slash, not absolute
+            return filepath.lstrip('/')
+        return filepath
+    
+    def _is_harmless_traversal(self, filepath: str) -> bool:
+        """
+        Check if .. pattern actually escapes working directory.
+        
+        Returns True if the pattern is harmless (doesn't escape),
+        False if it could be dangerous.
+        """
+        try:
+            # Resolve the path to see where it actually goes
+            test_path = (self.working_dir / filepath).resolve()
+            return self._is_within_working_dir(test_path)
+        except (ValueError, RuntimeError):
+            # If we can't resolve it safely, assume it's dangerous
             return False
