@@ -59,21 +59,7 @@ class ToolExecutor:
         self.execution_lock = Lock()
         # Initialize enhanced tool buffer
         self.tool_buffer = EnhancedToolCallBuffer()
-        """
-        Initialize the tool executor with registry and configuration.
-
-        Args:
-            tool_registry: Registry of available tools
-            working_dir: Working directory for file operations
-            auto_confirm: Whether to auto-confirm tool executions (default: False)
-            ui_callback: Optional UI callback function for user interaction
-        """
-        self.tool_registry = tool_registry
-        self.working_dir = working_dir
-        self.auto_confirm = auto_confirm
-        self.ui_callback = ui_callback or self._default_ui_callback
-        self.logger = logging.getLogger(__name__)
-        self._config_lock = Lock()
+        
 
     async def _default_ui_callback(self, event: str, _data: Dict[str, Any]) -> Any:
         """

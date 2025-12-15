@@ -252,7 +252,7 @@ class NeuralSymContextManager:
             return new_context
 
         return base_context
-        return base_context
+        
 
     def close(self):
         """

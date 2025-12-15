@@ -91,7 +91,7 @@ class FileTracker:
         except Exception as e:
             self.logger.warning(f"Error validating file path {filepath}: {e}")
             return False
-            return False
+            
 
     async def replace_old_file_content(
         self, filepath: str, conversation: List[Message]
