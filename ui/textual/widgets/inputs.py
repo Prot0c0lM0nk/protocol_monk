@@ -10,64 +10,6 @@ from textual.validation import Validator, Length
 class InputPanel(Widget):
     """Handle user input with proper event handling and validation."""
 
-    DEFAULT_CSS = """
-    InputPanel {
-        dock: bottom;
-        height: auto;
-        border-top: solid $secondary;
-        background: $surface;
-        padding: 1;
-    }
-
-    #input-container {
-        layout: horizontal;
-        height: auto;
-        width: 100%;
-    }
-
-    #text-area-container {
-        width: 1fr;
-        height: auto;
-        margin-right: 1;
-    }
-
-    InputPanel > TextArea {
-        width: 100%;
-        height: 4;
-    }
-
-    #button-container {
-        width: auto;
-        height: auto;
-        layout: vertical;
-    }
-
-    #send {
-        width: 100%;
-        margin-bottom: 1;
-    }
-
-    #clear {
-        width: 100%;
-        variant: secondary;
-    }
-
-    #character-count {
-        width: 100%;
-        height: 1;
-        text-align: right;
-        color: $text-muted;
-        font-size: 90%;
-    }
-
-    .validation-error {
-        border: tall $error;
-    }
-
-    .validation-warning {
-        border: tall $warning;
-    }
-    """
 
     class Submit(Message):
         """Event sent when user submits input."""

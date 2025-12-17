@@ -25,7 +25,7 @@ Type /quit to return to the desert of the real.
 class MonkCodeTUI(App):
     """Main application for Textual TUI."""
 
-    CSS_PATH = "styles.tcss"
+    # CSS_PATH = "styles.tcss"  # Disabled - using programmatic styling instead
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit"),
         Binding("ctrl+c", "quit", "Quit"),
@@ -50,6 +50,9 @@ class MonkCodeTUI(App):
     async def on_mount(self):
         """Initialize the UI and push the main screen."""
         try:
+            # Apply programmatic styling first
+            await self._apply_programmatic_styles()
+            
             # Create the Textual UI bridge
             self.ui = TextualUI(self)
 
@@ -70,6 +73,34 @@ class MonkCodeTUI(App):
             # Handle initialization errors gracefully
             error_container = self.query_one("#main-container")
             await error_container.mount(
+                Label(f"Failed to initialize: {str(e)}", id="error-label")
+            )
+            self.log(f"Initialization error: {e}")
+    
+    def _apply_programmatic_styles(self):
+        """Apply Orthodox Matrix theme styling programmatically to avoid CSS parsing issues."""
+        try:
+            # Color definitions based on Rich theme
+            primary = "#00ff00"        # Matrix Green
+            secondary = "#9370db"      # Medium Purple  
+            accent = "#ffaa44"         # Orthodox Gold
+            tech = "#00d7ff"           # Machine Blue
+            success = "#44ff44"        # Bright Green
+            error_color = "#dc143c"    # Crimson
+            surface = "#1a1a1a"        # Dark background
+            panel = "#2d2d2d"          # Panel background
+            text = "#e8e8e8"           # Light text
+            text_muted = "#a0a0a0"     # Dimmed text
+            
+            # Apply styles to the app screen
+            self.screen.styles.background = surface
+            self.screen.styles.color = text
+            
+        except Exception as e:
+            self.log(f"Error applying programmatic styles: {e}")
+            # Continue anyway - styling is nice but not critical
+            error_container = self.query_one("#main-container")
+            error_container.mount(
                 Label(f"Failed to initialize: {str(e)}", id="error-label")
             )
             self.log(f"Initialization error: {e}")

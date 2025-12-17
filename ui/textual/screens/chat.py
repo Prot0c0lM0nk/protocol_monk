@@ -21,47 +21,6 @@ Type /quit to return to the desert of the real.
 class ChatScreen(Screen):
     """Main chat interface with proper widget composition."""
 
-    DEFAULT_CSS = """
-    ChatScreen {
-        layout: vertical;
-    }
-
-    #main-container {
-        layout: vertical;
-        height: 100%;
-    }
-
-    #status-bar {
-        dock: top;
-        height: auto;
-        padding: 0 1;
-        background: $surface;
-        border-bottom: solid $secondary;
-        layout: horizontal;
-    }
-
-    #status {
-        width: 1fr;
-    }
-
-    #model-info {
-        width: 1fr;
-        text-align: right;
-    }
-
-    #messages-container {
-        height: 1fr;
-        overflow-y: auto;
-        padding: 1;
-    }
-
-    #thinking-indicator {
-        height: auto;
-        background: $secondary;
-        padding: 0 1;
-        display: none;
-    }
-    """
 
     # Reactive properties
     pending_actions = var(list)

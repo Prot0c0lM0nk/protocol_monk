@@ -64,24 +64,33 @@ class RichUI(UI):
         if not self._streaming_active:
             self._start_streaming()
 
-        self.processor.feed(text)
-        self.processor.tick()
+        try:
+            self.processor.feed(text)
+            self.processor.tick()
 
-        visible_text, is_tool, tool_len = self.processor.get_view_data()
+            visible_text, is_tool, tool_len = self.processor.get_view_data()
+            buffer_limit_exceeded = getattr(self.processor, '_buffer_limit_exceeded', False)
 
-        if self._live_display:
-            self._live_display.update(
-                generate_stream_panel(visible_text, is_tool, tool_len)
-            )
+            if self._live_display:
+                self._live_display.update(
+                    generate_stream_panel(visible_text, is_tool, tool_len, buffer_limit_exceeded)
+                )
+        except Exception as e:
+            # Handle buffer overflow or other processing errors gracefully
+            if "buffer" in str(e).lower() or "memory" in str(e).lower():
+                await self.print_warning("Stream processing limited due to buffer constraints")
+            else:
+                await self.print_error(f"Stream processing error: {e}")
 
     def _end_streaming(self):
         if self._streaming_active and self._live_display:
             if self.processor:
                 self.processor.flush()
                 visible_text, is_tool, tool_len = self.processor.get_view_data()
+                buffer_limit_exceeded = getattr(self.processor, '_buffer_limit_exceeded', False)
                 # Final update to ensure text completes
                 self._live_display.update(
-                    generate_stream_panel(visible_text, is_tool, tool_len)
+                    generate_stream_panel(visible_text, is_tool, tool_len, buffer_limit_exceeded)
                 )
 
             self._streaming_active = False

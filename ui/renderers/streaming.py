@@ -14,8 +14,8 @@ from rich.progress_bar import ProgressBar  # Used for visual effect
 from ..styles import create_monk_panel
 
 
-def generate_stream_panel(content_str: str, is_tool: bool, tool_len: int):
-    """Generates the panel frame. Hides raw JSON tool calls."""
+def generate_stream_panel(content_str: str, is_tool: bool, tool_len: int, buffer_limit_exceeded: bool = False):
+    """Generates the panel frame. Hides raw JSON tool calls. Shows buffer limit warnings."""
 
     # 1. Generate Content
     # If we are in tool mode, we might want to hide the partial JSON from the main text area
@@ -32,6 +32,14 @@ def generate_stream_panel(content_str: str, is_tool: bool, tool_len: int):
 
     # 2. Use the Shared Factory
     main_panel = create_monk_panel(content)
+    
+    # 2.5. Add Buffer Limit Warning if exceeded
+    if buffer_limit_exceeded:
+        warning_text = Text(
+            "  ⚠️  Content truncated due to buffer limits",
+            style="bold #ff6b6b"  # Red warning color
+        )
+        main_panel = Group(main_panel, warning_text)
 
     # 3. If Tool Detected, Add the Neural Construction Bar
     if is_tool:

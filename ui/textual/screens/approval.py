@@ -8,67 +8,6 @@ from typing import Any, Dict
 class ApprovalScreen(ModalScreen[Dict]):
     """Modal screen for tool call approvals with proper data flow."""
 
-    DEFAULT_CSS = """
-    ApprovalScreen {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.7);
-    }
-    
-    #approval-dialog {
-        width: 80%;
-        height: auto;
-        max-height: 70%;
-        background: $surface;
-        border: round $primary;
-        padding: 1;
-    }
-    
-    #tool-header {
-        text-align: center;
-        background: $primary;
-        color: $text;
-        padding: 1;
-        width: 100%;
-    }
-    
-    #tool-info {
-        height: 1fr;
-        padding: 1;
-        border: solid $secondary;
-        margin: 1 0;
-    }
-    
-    #argument-list {
-        margin: 1 0;
-    }
-    
-    .argument-item {
-        margin: 0.5 0;
-        padding: 0.5;
-        background: $panel;
-    }
-    
-    #button-container {
-        layout: horizontal;
-        height: auto;
-        width: 100%;
-        margin-top: 1;
-    }
-    
-    #approve {
-        width: 1fr;
-        margin-right: 1;
-    }
-    
-    #deny {
-        width: 1fr;
-        margin-right: 1;
-    }
-    
-    #modify {
-        width: 1fr;
-    }
-    """
 
     def __init__(self, tool_call: Dict):
         super().__init__()
