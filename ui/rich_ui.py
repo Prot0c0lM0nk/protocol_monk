@@ -27,12 +27,13 @@ class RichUI(UI):
     """Rich-enhanced UI with proper display sequencing."""
 
     def __init__(self):
+        super().__init__()  # Initialize base UI with thread safety
         self._auto_confirm = False
         self._live_display = None
         self._streaming_active = False
         self._thinking_status = None
         self.processor = None
-        # Unified Input Session with Unicode support
+        self._state_lock: asyncio.Lock = asyncio.Lock()  # Additional state lock for RichUI-specific operations
         from prompt_toolkit.output import create_output
         from prompt_toolkit.input import create_input
         
@@ -59,14 +60,13 @@ class RichUI(UI):
             vertical_overflow="visible",
         )
         self._live_display.start()
-
     async def print_stream(self, text: str):
         if not self._streaming_active:
             self._start_streaming()
 
         try:
-            self.processor.feed(text)
-            self.processor.tick()
+            await self.processor.feed(text)
+            await self.processor.tick()
 
             visible_text, is_tool, tool_len = self.processor.get_view_data()
             buffer_limit_exceeded = getattr(self.processor, '_buffer_limit_exceeded', False)
@@ -81,11 +81,16 @@ class RichUI(UI):
                 await self.print_warning("Stream processing limited due to buffer constraints")
             else:
                 await self.print_error(f"Stream processing error: {e}")
+            # Handle buffer overflow or other processing errors gracefully
+            if "buffer" in str(e).lower() or "memory" in str(e).lower():
+                await self.print_warning("Stream processing limited due to buffer constraints")
+            else:
+                await self.print_error(f"Stream processing error: {e}")
 
-    def _end_streaming(self):
+    async def _end_streaming(self):
         if self._streaming_active and self._live_display:
             if self.processor:
-                self.processor.flush()
+                await self.processor.flush()
                 visible_text, is_tool, tool_len = self.processor.get_view_data()
                 buffer_limit_exceeded = getattr(self.processor, '_buffer_limit_exceeded', False)
                 # Final update to ensure text completes
@@ -103,7 +108,7 @@ class RichUI(UI):
 
     async def start_thinking(self):
         """Display the thinking spinner."""
-        self._end_streaming()
+        await self._end_streaming()       
         if not self._thinking_status:
             self._thinking_status = console.status(
                 "[success]Contemplating the Logos...[/]",
@@ -121,8 +126,9 @@ class RichUI(UI):
 
     async def prompt_user(self, prompt: str) -> str:
         """Prompt user for input using prompt_toolkit inside Rich."""
-        self._end_streaming()
+        await self._end_streaming()
         self._stop_thinking()
+        
 
         # Display the prompt question nicely
         console.print()
@@ -158,7 +164,7 @@ class RichUI(UI):
     async def confirm_tool_call(
         self, tool_call: Dict, auto_confirm: bool = False
     ) -> Union[bool, Dict]:
-        self._end_streaming()
+        await self._end_streaming()
         self._stop_thinking()
 
         if auto_confirm or self._auto_confirm:
@@ -198,35 +204,37 @@ class RichUI(UI):
             return False
 
     async def display_tool_result(self, result: ToolResult, tool_name: str):
-        self._end_streaming()
+        await self._end_streaming()
         render_tool_result(tool_name, result.success, result.output)
 
     # --- 5. MODEL MANAGER RENDERERS ---
 
     async def display_model_list(self, models: List[Any], current_model: str):
-        self._end_streaming()
+        await self._end_streaming()
         self._stop_thinking()
         render_model_table(models, current_model)
+
+
 
     async def display_switch_report(
         self, report: Any, current_model: str, target_model: str
     ):
-        self._end_streaming()
+        await self._end_streaming()
         self._stop_thinking()
         render_switch_report(report, current_model, target_model)
 
     # --- 6. STANDARD OUTPUT ---
 
     async def print_error(self, message: str):
-        self._end_streaming()
+        await self._end_streaming()
         console.print(f"[error]Error: {message}[/]")
 
     async def print_warning(self, message: str):
-        self._end_streaming()
+        await self._end_streaming()
         console.print(f"[warning]Warning: {message}[/]")
 
     async def print_info(self, message: str):
-        self._end_streaming()
+        await self._end_streaming()
         console.print(f"[monk.text]{message}[/]")
 
     async def display_tool_call(self, tool_call: Dict, auto_confirm: bool = False):
@@ -239,7 +247,7 @@ class RichUI(UI):
         pass
 
     async def display_task_complete(self, summary: str = ""):
-        self._end_streaming()
+        await self._end_streaming()
         self._stop_thinking()
         from rich.text import Text
         from ui.styles import create_task_completion_panel

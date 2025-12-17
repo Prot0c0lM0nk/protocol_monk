@@ -19,44 +19,47 @@ class PlainUI(UI):
     """Async plain text UI implementation with developer-focused formatting"""
 
     def __init__(self):
+        super().__init__()  # Initialize base UI with thread safety
         self.auto_confirm = False
         self._thinking = False
         # Use PromptSession for history (up-arrow) and better input handling
         self.session = PromptSession()
+        self._lock: asyncio.Lock = asyncio.Lock()  # Additional lock for PlainUI-specific operations
 
     async def start_thinking(self, message: str = "Thinking..."):
-        """Indicate that the agent is processing."""
-        self._thinking = True
-        # Print thinking on the current line (which is implicitly the one after input)
-        print(f"[SYS] {message}", end="\r", flush=True)
-
+        """Indicate that the agent is processing. Thread-safe."""
+        async with self._lock:
+            self._thinking = True
+            print(f"[SYS] {message}", end="\r", flush=True)
     async def stop_thinking(self):
-        """Stop the thinking indicator."""
-        if self._thinking:
-            # Clear the line completely and reset cursor to start
-            print("\r" + " " * 50 + "\r", end="", flush=True)
-            self._thinking = False
+        """Stop the thinking indicator. Thread-safe."""
+        async with self._lock:
+            if self._thinking:
+                # Clear the line completely and reset cursor to start
+                print("\r" + " " * 50 + "\r", end="", flush=True)
+                self._thinking = False
 
     async def print_stream(self, text: str):
-        """Stream text output. Handles the transition from thinking to speaking."""
-        if self._thinking:
-            # === TRANSITION: FROM THINKING TO SPEAKING ===
-            # 1. Clear the "Thinking..." line
-            print("\r" + " " * 50 + "\r", end="")
-            self._thinking = False
+        """Stream text output. Handles the transition from thinking to speaking. Thread-safe."""
+        async with self._lock:
+            if self._thinking:
+                # === TRANSITION: FROM THINKING TO SPEAKING ===
+                # 1. Clear the "Thinking..." line
+                print("\r" + " " * 50 + "\r", end="")
+                self._thinking = False
 
-            # 2. Print the requested spacing layout:
-            #    (User Input was on previous line)
-            #    (We are currently on the line that had 'Thinking...')
-            #    We want:
-            #    User: Input
-            #    [Blank Line]
-            #    [MONK] Response
+                # 2. Print the requested spacing layout:
+                #    (User Input was on previous line)
+                #    (We are currently on the line that had 'Thinking...')
+                #    We want:
+                #    User: Input
+                #    [Blank Line]
+                #    [MONK] Response
 
-            print()  # This creates the [new line space] (The blank line)
-            print("[MONK] ", end="", flush=True)  # The Agent Prefix
+                print()  # This creates the [new line space] (The blank line)
+                print("[MONK] ", end="", flush=True)  # The Agent Prefix
 
-        print(text, end="", flush=True)
+            print(text, end="", flush=True)
 
     async def confirm_tool_call(
         self, tool_call: Dict, auto_confirm: bool = False
