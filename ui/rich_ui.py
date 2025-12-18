@@ -4,6 +4,7 @@ Rich UI Implementation - Orthodox Matrix Theme
 """
 
 import asyncio
+import logging
 from rich.console import Group
 from rich.live import Live
 from typing import Any, Dict, List, Union
@@ -75,12 +76,32 @@ class RichUI(UI):
                 self._live_display.update(
                     generate_stream_panel(visible_text, is_tool, tool_len, buffer_limit_exceeded)
                 )
+        except asyncio.CancelledError:
+            # Handle cancellation gracefully - perform cleanup but don't propagate error
+            logger = logging.getLogger(__name__)
+            logger.debug("Stream processing cancelled, performing graceful cleanup")
+            # Suppress any panel updates during cancellation to prevent visual artifacts
+            self._streaming_active = False
+            # Try to clean up what we can without blocking
+            try:
+                if self.processor:
+                    self.processor.close()  # Use non-async close
+                    self.processor = None
+            except Exception:
+                pass  # Best effort only
+            # End streaming if active - but don't update display to prevent artifacts
+            if self._streaming_active:
+                try:
+                    self._streaming_active = False
+                    if self._live_display:
+                        # Stop display without final update to prevent partial content artifacts
+                        self._live_display.stop()
+                        self._live_display = None
+                except Exception:
+                    pass
+            # Don't re-raise - let the cancellation propagate naturally
+            return
         except Exception as e:
-            # Handle buffer overflow or other processing errors gracefully
-            if "buffer" in str(e).lower() or "memory" in str(e).lower():
-                await self.print_warning("Stream processing limited due to buffer constraints")
-            else:
-                await self.print_error(f"Stream processing error: {e}")
             # Handle buffer overflow or other processing errors gracefully
             if "buffer" in str(e).lower() or "memory" in str(e).lower():
                 await self.print_warning("Stream processing limited due to buffer constraints")
@@ -88,21 +109,34 @@ class RichUI(UI):
                 await self.print_error(f"Stream processing error: {e}")
 
     async def _end_streaming(self):
-        if self._streaming_active and self._live_display:
+        """End streaming safely - idempotent and null-safe."""
+        if not self._streaming_active:
+            return
+            
+        if self._live_display:
             if self.processor:
-                await self.processor.flush()
-                visible_text, is_tool, tool_len = self.processor.get_view_data()
-                buffer_limit_exceeded = getattr(self.processor, '_buffer_limit_exceeded', False)
-                # Final update to ensure text completes
-                self._live_display.update(
-                    generate_stream_panel(visible_text, is_tool, tool_len, buffer_limit_exceeded)
-                )
+                try:
+                    await self.processor.flush()
+                    visible_text, is_tool, tool_len = self.processor.get_view_data()
+                    buffer_limit_exceeded = getattr(self.processor, '_buffer_limit_exceeded', False)
+                    # Final update to ensure text completes
+                    self._live_display.update(
+                        generate_stream_panel(visible_text, is_tool, tool_len, buffer_limit_exceeded)
+                    )
+                except Exception as e:
+                    logging.getLogger(__name__).warning(f"Error flushing processor during streaming end: {e}")
 
-            self._streaming_active = False
-            self._live_display.stop()
+            try:
+                self._live_display.stop()
+            except Exception as e:
+                logging.getLogger(__name__).warning(f"Error stopping live display: {e}")
+            
             self._live_display = None
-            self.processor = None
-            console.print()
+            
+        self._streaming_active = False
+        self.processor = None
+        print()  # Ensure newline after streaming ends
+        
 
     # --- 2. THINKING & STATUS ---
 
@@ -269,3 +303,36 @@ class RichUI(UI):
 
     async def print_error_stderr(self, message: str):
         pass
+
+    async def close(self):
+        """Clean up all UI resources including live displays and thinking status."""
+        logger = logging.getLogger(__name__)
+        try:
+            # Stop any active streaming first (with timeout protection)
+            await self._end_streaming()
+            # Stop thinking status if active
+            self._stop_thinking()
+            # Clean up stream processor if it exists
+            if self.processor:
+                try:
+                    self.processor.close()
+                except Exception as e:
+                    logger.warning(f"Error closing stream processor: {e}")
+                self.processor = None
+            logger.debug("RichUI resources cleaned up successfully")
+        except asyncio.CancelledError:
+            # Handle cancellation gracefully - still try to clean up what we can
+            logger.warning("RichUI cleanup cancelled, performing best-effort cleanup")
+            self._stop_thinking()
+            if self.processor:
+                try:
+                    self.processor.close()
+                except Exception:
+                    pass
+                self.processor = None
+            raise  # Re-raise the cancellation
+        except Exception as e:
+            logger.error(f"Error during RichUI cleanup: {e}", exc_info=True)
+            raise
+            raise
+

@@ -231,3 +231,12 @@ class PlainUI(UI):
 
         if not safe:
             print(f"\n[WARN] Context Overflow ({curr:,} > {limit:,})")
+
+    async def close(self):
+        """Clean up PlainUI resources."""
+        # PlainUI has minimal resources to clean up
+        # The prompt_toolkit session will be garbage collected
+        # Just ensure thinking state is cleared
+        if self._thinking:
+            await self.stop_thinking()
+

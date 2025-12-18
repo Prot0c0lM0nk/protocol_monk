@@ -69,10 +69,6 @@ class OllamaModelClient(BaseModelClient):
 
         self._session: Optional[aiohttp.ClientSession] = None
 
-        # State variables for debug logging
-        self._chunk_count = 0
-        self._response_chunks: List[str] = []
-
     def _setup_model(self, model_name: str) -> None:
         """
         Set up model-specific configuration.
@@ -131,12 +127,33 @@ class OllamaModelClient(BaseModelClient):
                 await self._check_error_status(response)
 
                 if stream:
-                    # Use buffered response to handle split tool calls
-                    # IMPORTANT: Keep original model configuration untouched
-                    raw_generator = self._process_stream_response(response)
-                    buffered_generator = create_buffered_response(raw_generator)
-                    async for chunk in buffered_generator:
-                        yield chunk
+                    # Direct streaming - Ollama provides complete JSON per line
+                    # No buffering needed - each line is a complete response object
+                    async for line in response.content:
+                        if not line.strip():
+                            continue
+                            
+                        try:
+                            line_str = line.decode("utf-8").strip()
+                            if not line_str:
+                                continue
+                                
+                            chunk_data = json.loads(line_str)
+                            chunk_content = self._extract_chunk_content(chunk_data)
+                            
+                            
+                            if chunk_content:
+                                yield chunk_content
+                                
+                            # Log debug info if enabled
+                            if self.logger.isEnabledFor(logging.DEBUG) and chunk_content:
+                                self.logger.debug("Ollama chunk: %s", chunk_content)
+                        except json.JSONDecodeError as e:
+                            self.logger.warning("Invalid JSON chunk from Ollama: %s - %s", line_str, e)
+                            continue
+                        except Exception as e:
+                            self.logger.error("Error processing Ollama stream chunk: %s", e)
+                            continue
                 else:
                     data = await response.json()
                     content = self._extract_full_content(data)
@@ -186,134 +203,6 @@ class OllamaModelClient(BaseModelClient):
                     "model": self.model_name,
                     "status_code": response.status,
                 },
-            )
-
-    async def _process_stream_response(
-        self, response: aiohttp.ClientResponse
-    ) -> AsyncGenerator[str, None]:
-        """
-        Process streaming response from Ollama.
-
-        Args:
-            response: aiohttp.ClientResponse from the API call
-
-        Yields:
-            str: Content chunks from the response
-        """
-        self._initialize_stream_state()
-
-        buffer = ""
-        async for line in response.content:
-            if not line:
-                continue
-
-            line_str = line.decode("utf-8")
-            buffer += line_str
-
-            async for chunk_content in self._process_buffer(buffer):
-                if chunk_content:
-                    yield chunk_content
-                buffer = self._update_buffer(buffer)
-
-        # Flush remaining buffer
-        # If the server closed the connection but left data in the buffer
-        # (because it didn't end with a newline), force process it now.
-        if buffer.strip():
-            self.logger.debug("Flushing remaining buffer: %s", buffer)
-            # Append a newline to force the splitter to recognize this line
-            async for chunk_content in self._process_buffer(buffer + "\n"):
-                if chunk_content:
-                    yield chunk_content
-
-        self._log_complete_response()
-
-    def _initialize_stream_state(self) -> None:
-        """
-        Initialize debug logging state for stream processing.
-        """
-        if self.logger.isEnabledFor(logging.DEBUG):
-            self._chunk_count = 0
-            self._response_chunks = []
-
-    async def _process_buffer(self, buffer: str) -> AsyncGenerator[str, None]:
-        """
-        Process buffer content and yield valid chunks.
-
-        Args:
-            buffer: Current buffer content
-
-        Yields:
-            str: Valid content chunks
-        """
-        while "\n" in buffer:
-            line_json, remaining_buffer = buffer.split("\n", 1)
-            line_json = line_json.strip()
-            buffer = remaining_buffer
-
-            if not line_json:
-                continue
-
-            chunk_content = await self._process_json_line(line_json)
-            if chunk_content:
-                yield chunk_content
-
-    async def _process_json_line(self, line_json: str) -> str | None:
-        """
-        Process a single JSON line and extract content.
-
-        Args:
-            line_json: JSON string to process
-
-        Returns:
-            str | None: Extracted content or None if invalid
-        """
-        try:
-            chunk_data = json.loads(line_json)
-            chunk_content = self._extract_chunk_content(chunk_data)
-
-            self._log_debug_info(chunk_content)
-            return chunk_content
-
-        except json.JSONDecodeError as e:
-            self.logger.warning("Invalid JSON chunk: %s - %s", line_json, e)
-            return None
-
-    def _update_buffer(self, buffer: str) -> str:
-        """
-        Update buffer after processing lines.
-
-        Args:
-            buffer: Current buffer state
-
-        Returns:
-            str: Updated buffer content
-        """
-        if "\n" in buffer:
-            _, remaining = buffer.split("\n", 1)
-            return remaining
-        return buffer
-
-    def _log_debug_info(self, chunk_content: str | None) -> None:
-        """
-        Log debug information for processed chunks.
-
-        Args:
-            chunk_content: Content chunk to log debug info for
-        """
-        if self.logger.isEnabledFor(logging.DEBUG) and chunk_content:
-            self._chunk_count += 1
-            self._response_chunks.append(chunk_content)
-
-    def _log_complete_response(self) -> None:
-        """
-        Log the complete accumulated response.
-        """
-        if self.logger.isEnabledFor(logging.DEBUG) and self._response_chunks:
-            full_response = "".join(self._response_chunks)
-            self.logger.debug(
-                "Received complete response (%d chunks): %s",
-                self._chunk_count,
-                full_response,
             )
 
     def _prepare_payload(

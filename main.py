@@ -429,7 +429,7 @@ async def _plain_input_loop(agent: ProtocolAgent, dispatcher: CommandDispatcher)
 async def _cleanup(
     agent: Optional[ProtocolAgent], enhanced_logger: Optional[EnhancedLogger]
 ):
-    """Ensure resources are closed properly."""
+    """Ensure resources are closed properly with enhanced exception handling."""
     logger = logging.getLogger(__name__)
 
     # Close enhanced logger
@@ -462,6 +462,35 @@ async def _cleanup(
                 f"Unexpected error closing agent model client: {e}", exc_info=True
             )
 
+    # Close UI (with cancellation protection)
+    if agent and agent.ui:
+        try:
+            await agent.ui.close()
+        except asyncio.CancelledError:
+            logger.warning("UI cleanup cancelled due to interrupt")
+            # Still try to do basic cleanup even if cancelled
+            try:
+                # For RichUI, try to stop thinking and streaming at minimum
+                if hasattr(agent.ui, '_stop_thinking'):
+                    agent.ui._stop_thinking()
+                if hasattr(agent.ui, '_streaming_active') and hasattr(agent.ui, '_end_streaming'):
+                    if agent.ui._streaming_active:
+                        await agent.ui._end_streaming()
+            except Exception:
+                pass  # Best effort only
+            raise  # Re-raise the cancellation
+        except Exception as e:
+            logger.error(f"Error closing UI: {e}", exc_info=True)
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # Handle KeyboardInterrupt gracefully with proper cleanup
+        print("\n\n[Protocol Monk] Received interrupt signal. Performing graceful shutdown...")
+        sys.exit(0)
+    except Exception as e:
+        # Handle any other unexpected exceptions
+        print(f"\n[Protocol Monk] Unexpected error: {e}", file=sys.stderr)
+        sys.exit(1)

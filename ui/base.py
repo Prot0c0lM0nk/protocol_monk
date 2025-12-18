@@ -31,6 +31,10 @@ class UI(ABC):
             return await coro
 
     @abstractmethod
+    async def close(self):
+        """Clean up all UI resources. Must be implemented by all subclasses."""
+        pass
+
     async def confirm_tool_call(
         self, tool_call: Dict, auto_confirm: bool = False
     ) -> Union[bool, Dict]:
