@@ -34,17 +34,23 @@ class RichUI(UI):
         self._streaming_active = False
         self._thinking_status = None
         self.processor = None
-        self._state_lock: asyncio.Lock = asyncio.Lock()  # Additional state lock for RichUI-specific operations
+        self._accumulated_text = (
+            ""  # Store accumulated streaming content like StreamProcessor
+        )
+        self._state_lock: asyncio.Lock = (
+            asyncio.Lock()
+        )  # Additional state lock for RichUI-specific operations
         from prompt_toolkit.output import create_output
         from prompt_toolkit.input import create_input
-        
+
         # Ensure proper Unicode handling
         self.session = PromptSession(
             input=create_input(),
             output=create_output(),
             mouse_support=False,
-            complete_while_typing=False
+            complete_while_typing=False,
         )
+
     # --- 1. STREAMING ---
 
     def _start_streaming(self):
@@ -61,28 +67,52 @@ class RichUI(UI):
             vertical_overflow="visible",
         )
         self._live_display.start()
+
     async def print_stream(self, text: str):
         if not self._streaming_active:
             self._start_streaming()
 
         try:
-            await self.processor.feed(text)
-            await self.processor.tick()
+            # DIRECT STREAMING: Bypass StreamProcessor for SDK-aligned complete chunks
+            # Since Ollama/OpenRouter provide complete data, we can stream directly
+            # Only use StreamProcessor for legacy scenarios or partial data detection
+            # For now: Direct display with minimal processing but ACCUMULATION
+            if self.processor and len(text) > 0:
+                # ACCUMULATE the text like StreamProcessor does
+                self._accumulated_text += text
 
-            visible_text, is_tool, tool_len = self.processor.get_view_data()
-            buffer_limit_exceeded = getattr(self.processor, '_buffer_limit_exceeded', False)
-
-            if self._live_display:
-                self._live_display.update(
-                    generate_stream_panel(visible_text, is_tool, tool_len, buffer_limit_exceeded)
+                # Quick tool detection for the accumulated content
+                is_tool = (
+                    "```json" in self._accumulated_text
+                    or '"action"' in self._accumulated_text
                 )
+                tool_len = len(self._accumulated_text) if is_tool else 0
+
+                if self._live_display:
+                    self._live_display.update(
+                        generate_stream_panel(
+                            self._accumulated_text, is_tool, tool_len, False
+                        )
+                    )
+
+            else:
+                # Fallback to processor for edge cases
+                await self.processor.feed(text)
+                await self.processor.tick()
+
+                visible_text, is_tool, tool_len = self.processor.get_view_data()
+                buffer_limit_exceeded = getattr(
+                    self.processor, "_buffer_limit_exceeded", False
+                )
+
+                if self._live_display:
+                    self._live_display.update(
+                        generate_stream_panel(
+                            visible_text, is_tool, tool_len, buffer_limit_exceeded
+                        )
+                    )
         except asyncio.CancelledError:
-            # Handle cancellation gracefully - perform cleanup but don't propagate error
-            logger = logging.getLogger(__name__)
-            logger.debug("Stream processing cancelled, performing graceful cleanup")
-            # Suppress any panel updates during cancellation to prevent visual artifacts
-            self._streaming_active = False
-            # Try to clean up what we can without blocking
+
             try:
                 if self.processor:
                     self.processor.close()  # Use non-async close
@@ -104,7 +134,9 @@ class RichUI(UI):
         except Exception as e:
             # Handle buffer overflow or other processing errors gracefully
             if "buffer" in str(e).lower() or "memory" in str(e).lower():
-                await self.print_warning("Stream processing limited due to buffer constraints")
+                await self.print_warning(
+                    "Stream processing limited due to buffer constraints"
+                )
             else:
                 await self.print_error(f"Stream processing error: {e}")
 
@@ -112,37 +144,62 @@ class RichUI(UI):
         """End streaming safely - idempotent and null-safe."""
         if not self._streaming_active:
             return
-            
+
         if self._live_display:
-            if self.processor:
-                try:
-                    await self.processor.flush()
-                    visible_text, is_tool, tool_len = self.processor.get_view_data()
-                    buffer_limit_exceeded = getattr(self.processor, '_buffer_limit_exceeded', False)
-                    # Final update to ensure text completes
-                    self._live_display.update(
-                        generate_stream_panel(visible_text, is_tool, tool_len, buffer_limit_exceeded)
+            # FINAL STATE LOGIC: Use accumulated content from direct streaming
+            # instead of processor's visible_text (which is empty for direct mode)
+            if self._accumulated_text:
+                # Use our accumulated content for final display
+                is_tool = '```json' in self._accumulated_text or '"action"' in self._accumulated_text
+                tool_len = len(self._accumulated_text) if is_tool else 0
+        
+                # Final update with our accumulated content
+                self._live_display.update(
+                    generate_stream_panel(
+                        self._accumulated_text, is_tool, tool_len, False
                     )
-                except Exception as e:
-                    logging.getLogger(__name__).warning(f"Error flushing processor during streaming end: {e}")
+                )
+            else:
+                # Fallback to processor for legacy mode
+                if self.processor:
+                    try:
+                        await self.processor.flush()
+                        visible_text, is_tool, tool_len = self.processor.get_view_data()
+                        buffer_limit_exceeded = getattr(
+                            self.processor, "_buffer_limit_exceeded", False
+                        )
+                        # Final update to ensure text completes
+                        self._live_display.update(
+                            generate_stream_panel(
+                                visible_text, is_tool, tool_len, buffer_limit_exceeded
+                            )
+                        )
+                    except Exception as e:
+                        logging.getLogger(__name__).warning(
+                            f"Error flushing processor during streaming end: {e}"
+                        )
+
 
             try:
                 self._live_display.stop()
             except Exception as e:
                 logging.getLogger(__name__).warning(f"Error stopping live display: {e}")
-            
+
             self._live_display = None
-            
+        self._live_display = None
+
+        # Clear accumulated text when streaming ends (for direct streaming mode)
+        self._accumulated_text = ""
+
         self._streaming_active = False
         self.processor = None
-        print()  # Ensure newline after streaming ends
-        
+        console.print()  # Ensure newline after streaming ends
 
     # --- 2. THINKING & STATUS ---
 
     async def start_thinking(self):
         """Display the thinking spinner."""
-        await self._end_streaming()       
+        await self._end_streaming()
         if not self._thinking_status:
             self._thinking_status = console.status(
                 "[success]Contemplating the Logos...[/]",
@@ -162,7 +219,6 @@ class RichUI(UI):
         """Prompt user for input using prompt_toolkit inside Rich."""
         await self._end_streaming()
         self._stop_thinking()
-        
 
         # Display the prompt question nicely
         console.print()
@@ -170,24 +226,27 @@ class RichUI(UI):
 
         # Use prompt_toolkit with patch_stdout to play nice with async printing
         # Format: "  You › " (with Unicode fallback)
-        
+
         # Check if terminal supports Unicode
         import sys
+
         try:
             # Test if we can encode the Orthodox cross
-            '☦'.encode(sys.stdout.encoding or 'utf-8')
-            prompt_symbol = '☦'
+            "☦".encode(sys.stdout.encoding or "utf-8")
+            prompt_symbol = "☦"
         except (UnicodeEncodeError, AttributeError):
             # Fallback to ASCII
-            prompt_symbol = '>'
-        
+            prompt_symbol = ">"
+
         pt_prompt = f"  {prompt_symbol}> "
         try:
             with patch_stdout():
                 return await self.session.prompt_async(pt_prompt)
         except UnicodeEncodeError as e:
             # Fallback to simple ASCII prompt if Unicode fails
-            console.print(f"[warning]Unicode prompt failed, falling back to ASCII: {e}[/]")
+            console.print(
+                f"[warning]Unicode prompt failed, falling back to ASCII: {e}[/]"
+            )
             fallback_prompt = "  > "
             return await self.session.prompt_async(fallback_prompt)
         except (KeyboardInterrupt, EOFError):
@@ -247,8 +306,6 @@ class RichUI(UI):
         await self._end_streaming()
         self._stop_thinking()
         render_model_table(models, current_model)
-
-
 
     async def display_switch_report(
         self, report: Any, current_model: str, target_model: str
@@ -335,4 +392,3 @@ class RichUI(UI):
             logger.error(f"Error during RichUI cleanup: {e}", exc_info=True)
             raise
             raise
-
