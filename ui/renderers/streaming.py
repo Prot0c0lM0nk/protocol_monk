@@ -41,27 +41,16 @@ def generate_stream_panel(content_str: str, is_tool: bool, tool_len: int, buffer
         )
         main_panel = Group(main_panel, warning_text)
 
-    # 3. If Tool Detected, Add the Neural Construction Bar
+    # If Tool Detected, Add simple status indicator
     if is_tool:
-        # Create a visual indicator that the agent is "coding" or "constructing"
-        # We simulate a progress bar based on length to give it life
-
-        # Calculate a fake "percent" based on bytes to make the bar move
-        # Modulo 100 ensures it loops if it gets huge
-        percent = min((tool_len % 1000) / 10.0, 100.0)
-
+        # Simple status text with spinner (no complex Group)
         status_text = Text.assemble(
             ("  Constructing Neural Action... ", "bold #ffaa44"),
             (f"({tool_len} bytes)", "dim cyan"),
         )
+        
+        # Use simple text instead of complex Group with spinner
+        return Group(main_panel, status_text)
 
-        # We construct a Group containing the text + a spinner
-        status_group = Group(
-            Align.center(status_text),
-            Align.center(Spinner("dots12", style="bold #ffaa44")),
-        )
-
-        # We append this status group to the main panel output
-        return Group(main_panel, status_group)
-
+    return main_panel
     return main_panel

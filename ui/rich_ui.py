@@ -54,17 +54,24 @@ class RichUI(UI):
     # --- 1. STREAMING ---
 
     def _start_streaming(self):
-        """Start the live display for streaming responses."""
+        """Start the live display for streaming responses with scrollback protection."""
         self._stop_thinking()
         self._streaming_active = True
 
         self.processor = StreamProcessor()
 
+        # CRITICAL FIX: Use transient=True and reduce refresh rate to prevent scrollback artifacts
+        # transient=True: Live display disappears on exit instead of leaving residue
+        # refresh_per_second=4: Default rate reduces update frequency 
+        # vertical_overflow="ellipsis": Safer than "visible" for scrollback
         self._live_display = Live(
             generate_stream_panel("", False, 0),
             console=console,
-            refresh_per_second=12,
-            vertical_overflow="visible",
+            refresh_per_second=4,  # Reduced from 12 to minimize artifacts
+            vertical_overflow="ellipsis",  # Changed from "visible" to prevent scrollback corruption
+            transient=True,  # Display disappears on exit to avoid residue
+            redirect_stdout=False,  # Prevent stdout interference
+            redirect_stderr=False,  # Prevent stderr interference
         )
         self._live_display.start()
 
@@ -141,61 +148,51 @@ class RichUI(UI):
                 await self.print_error(f"Stream processing error: {e}")
 
     async def _end_streaming(self):
-        """End streaming safely - idempotent and null-safe."""
+        """End streaming safely - idempotent and null-safe with transient display support."""
         if not self._streaming_active:
             return
 
         if self._live_display:
-            # FINAL STATE LOGIC: Use accumulated content from direct streaming
-            # instead of processor's visible_text (which is empty for direct mode)
+            # In transient mode, we don't need a final update - the display will disappear
+            # Just ensure we have the final content ready for static display
+            final_content = ""
+            is_tool = False
+            tool_len = 0
+
             if self._accumulated_text:
-                # Use our accumulated content for final display
-                is_tool = '```json' in self._accumulated_text or '"action"' in self._accumulated_text
-                tool_len = len(self._accumulated_text) if is_tool else 0
-        
-                # Final update with our accumulated content
-                self._live_display.update(
-                    generate_stream_panel(
-                        self._accumulated_text, is_tool, tool_len, False
-                    )
-                )
-            else:
+                # Use accumulated content for final static display
+                final_content = self._accumulated_text
+                is_tool = '```json' in final_content or '"action"' in final_content
+                tool_len = len(final_content) if is_tool else 0
+            elif self.processor:
                 # Fallback to processor for legacy mode
-                if self.processor:
-                    try:
-                        await self.processor.flush()
-                        visible_text, is_tool, tool_len = self.processor.get_view_data()
-                        buffer_limit_exceeded = getattr(
-                            self.processor, "_buffer_limit_exceeded", False
-                        )
-                        # Final update to ensure text completes
-                        self._live_display.update(
-                            generate_stream_panel(
-                                visible_text, is_tool, tool_len, buffer_limit_exceeded
-                            )
-                        )
-                    except Exception as e:
-                        logging.getLogger(__name__).warning(
-                            f"Error flushing processor during streaming end: {e}"
-                        )
+                try:
+                    await self.processor.flush()
+                    visible_text, is_tool, tool_len = self.processor.get_view_data()
+                    final_content = visible_text
+                except Exception as e:
+                    logging.getLogger(__name__).warning(
+                        f"Error flushing processor during streaming end: {e}"
+                    )
 
-
+            # Stop the live display (with transient=True, it will disappear)
             try:
                 self._live_display.stop()
             except Exception as e:
                 logging.getLogger(__name__).warning(f"Error stopping live display: {e}")
 
             self._live_display = None
+
+            # Print the final content as a static panel (since transient display disappeared)
+            if final_content:
+                from ui.renderers.message import render_agent_message
+                render_agent_message(final_content)
+
         self._live_display = None
-
-        # Clear accumulated text when streaming ends (for direct streaming mode)
         self._accumulated_text = ""
-
         self._streaming_active = False
         self.processor = None
-        console.print()  # Ensure newline after streaming ends
 
-    # --- 2. THINKING & STATUS ---
 
     async def start_thinking(self):
         """Display the thinking spinner."""
