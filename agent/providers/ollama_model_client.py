@@ -132,27 +132,33 @@ class OllamaModelClient(BaseModelClient):
                     async for line in response.content:
                         if not line.strip():
                             continue
-                            
+
                         try:
                             line_str = line.decode("utf-8").strip()
                             if not line_str:
                                 continue
-                                
+
                             chunk_data = json.loads(line_str)
                             chunk_content = self._extract_chunk_content(chunk_data)
-                            
-                            
+
                             if chunk_content:
                                 yield chunk_content
-                                
+
                             # Log debug info if enabled
-                            if self.logger.isEnabledFor(logging.DEBUG) and chunk_content:
+                            if (
+                                self.logger.isEnabledFor(logging.DEBUG)
+                                and chunk_content
+                            ):
                                 self.logger.debug("Ollama chunk: %s", chunk_content)
                         except json.JSONDecodeError as e:
-                            self.logger.warning("Invalid JSON chunk from Ollama: %s - %s", line_str, e)
+                            self.logger.warning(
+                                "Invalid JSON chunk from Ollama: %s - %s", line_str, e
+                            )
                             continue
                         except Exception as e:
-                            self.logger.error("Error processing Ollama stream chunk: %s", e)
+                            self.logger.error(
+                                "Error processing Ollama stream chunk: %s", e
+                            )
                             continue
                 else:
                     data = await response.json()

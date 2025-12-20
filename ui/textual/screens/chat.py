@@ -18,9 +18,9 @@ Type /help for guidance.
 Type /quit to return to the desert of the real.
 """
 
+
 class ChatScreen(Screen):
     """Main chat interface with proper widget composition."""
-
 
     # Reactive properties
     pending_actions = var(list)
@@ -35,14 +35,14 @@ class ChatScreen(Screen):
             with Container(id="status-bar"):
                 yield Label("Status: Ready", id="status")
                 yield Static("Model: default", id="model-info")
-            
+
             # Messages area with vertical scroll
             with VerticalScroll(id="messages-container"):
                 yield Static(id="messages")
-            
+
             # Thinking indicator
             yield Label("Thinking...", id="thinking-indicator")
-            
+
             # Input panel at bottom
             yield InputPanel(id="input-panel")
 
@@ -52,21 +52,29 @@ class ChatScreen(Screen):
         self.status_widget = self.query_one("#status")
         self.model_widget = self.query_one("#model-info")
         self.thinking_indicator = self.query_one("#thinking-indicator")
-        
+
         # Add greeting message
         self.add_message("assistant", TEXTUAL_GREETING, is_greeting=True)
 
-    def add_message(self, role: str, content: str, is_greeting: bool = False, is_tool_result: bool = False):
+    def add_message(
+        self,
+        role: str,
+        content: str,
+        is_greeting: bool = False,
+        is_tool_result: bool = False,
+    ):
         """Add message to message list with proper styling."""
-        message = ChatMessage(role, content, is_greeting=is_greeting, is_tool_result=is_tool_result)
-        
+        message = ChatMessage(
+            role, content, is_greeting=is_greeting, is_tool_result=is_tool_result
+        )
+
         # Mount the message
         self.messages_area.mount(message)
-        
+
         # Auto-scroll to bottom
         messages_container = self.query_one("#messages-container")
         messages_container.scroll_end(animate=False)
-        
+
         # Add appropriate CSS classes
         if is_greeting:
             message.add_class("greeting")
@@ -78,12 +86,12 @@ class ChatScreen(Screen):
         # Find the last assistant message that's not a greeting
         messages = self.query("ChatMessage")
         last_assistant_msg = None
-        
+
         for message in reversed(messages):
             if message.role == "assistant" and not message.is_greeting:
                 last_assistant_msg = message
                 break
-        
+
         if last_assistant_msg:
             last_assistant_msg.append_text(text)
             # Auto-scroll to show new content
@@ -103,15 +111,15 @@ class ChatScreen(Screen):
         text = event.text
         self.add_message("user", text)
         self.current_status = "Processing request..."
-        
+
         try:
             # Process the request through the agent
             response = await self.app.agent.process_request(text)
             self.current_status = "Ready"
-            
+
             # Handle the response (this might contain tool calls)
             await self._handle_agent_response(response)
-            
+
         except Exception as e:
             self.current_status = "Error occurred"
             self.add_message("error", f"Error processing request: {str(e)}")
@@ -119,20 +127,20 @@ class ChatScreen(Screen):
 
     async def _handle_agent_response(self, response):
         """Handle the agent's response, including tool calls."""
-        if hasattr(response, 'tool_calls') and response.tool_calls:
+        if hasattr(response, "tool_calls") and response.tool_calls:
             # Add tool calls to pending actions
             self.pending_actions.extend(response.tool_calls)
             self.current_status = f"Pending tool approvals: {len(self.pending_actions)}"
-            
+
             # Display the tool calls
             for tool_call in response.tool_calls:
                 await self.app.ui.display_tool_call(tool_call)
-            
+
             # Start processing the actions
             self._process_next_action()
         else:
             # Direct response without tool calls
-            if hasattr(response, 'content'):
+            if hasattr(response, "content"):
                 self.add_message("assistant", response.content)
 
     def _process_next_action(self):
@@ -140,15 +148,12 @@ class ChatScreen(Screen):
         if not self.pending_actions:
             self.current_status = "Ready"
             return
-        
+
         # Get the next action
         tool_call = self.pending_actions[0]
-        
+
         # Use the UI bridge to handle approval
-        self.run_worker(
-            self._handle_tool_approval(tool_call),
-            thread=True
-        )
+        self.run_worker(self._handle_tool_approval(tool_call), thread=True)
 
     @work(thread=True)
     async def _handle_tool_approval(self, tool_call):
@@ -160,27 +165,30 @@ class ChatScreen(Screen):
         try:
             # Get approval from user
             approval_result = await self.app.ui.confirm_tool_call(
-                tool_call, 
-                auto_confirm=self.app.ui.auto_confirm
+                tool_call, auto_confirm=self.app.ui.auto_confirm
             )
-            
+
             if approval_result:
                 # Execute the tool
                 self.current_status = "Executing tool..."
                 tool_result = await self.app.agent.execute_tool(tool_call)
-                
+
                 # Display the result
-                await self.app.ui.display_tool_result(tool_result, tool_call.get('name'))
-                
+                await self.app.ui.display_tool_result(
+                    tool_result, tool_call.get("name")
+                )
+
                 # Remove from pending actions and continue
                 self.pending_actions.pop(0)
                 self._process_next_action()
             else:
                 # Tool was denied
-                self.add_message("system", f"Tool {tool_call.get('name')} was denied by user.")
+                self.add_message(
+                    "system", f"Tool {tool_call.get('name')} was denied by user."
+                )
                 self.pending_actions.pop(0)
                 self._process_next_action()
-                
+
         except Exception as e:
             self.current_status = "Tool execution error"
             self.add_message("error", f"Tool execution failed: {str(e)}")
@@ -214,6 +222,7 @@ class ChatScreen(Screen):
         """Handle tool execution results (message handler)."""
         # This can be used if we implement a message system for tool results
         pass
+
 
 """--- End of chat.py ---
 

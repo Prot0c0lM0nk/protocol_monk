@@ -14,7 +14,9 @@ from rich.progress_bar import ProgressBar  # Used for visual effect
 from ..styles import create_monk_panel
 
 
-def generate_stream_panel(content_str: str, is_tool: bool, tool_len: int, buffer_limit_exceeded: bool = False):
+def generate_stream_panel(
+    content_str: str, is_tool: bool, tool_len: int, buffer_limit_exceeded: bool = False
+):
     """Generates the panel frame. Hides raw JSON tool calls. Shows buffer limit warnings."""
 
     # 1. Generate Content
@@ -32,12 +34,12 @@ def generate_stream_panel(content_str: str, is_tool: bool, tool_len: int, buffer
 
     # 2. Use the Shared Factory
     main_panel = create_monk_panel(content)
-    
+
     # 2.5. Add Buffer Limit Warning if exceeded
     if buffer_limit_exceeded:
         warning_text = Text(
             "  ⚠️  Content truncated due to buffer limits",
-            style="bold #ff6b6b"  # Red warning color
+            style="bold #ff6b6b",  # Red warning color
         )
         main_panel = Group(main_panel, warning_text)
 
@@ -48,7 +50,7 @@ def generate_stream_panel(content_str: str, is_tool: bool, tool_len: int, buffer
             ("  Constructing Neural Action... ", "bold #ffaa44"),
             (f"({tool_len} bytes)", "dim cyan"),
         )
-        
+
         # Use simple text instead of complex Group with spinner
         return Group(main_panel, status_text)
 

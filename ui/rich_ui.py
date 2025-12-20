@@ -62,7 +62,7 @@ class RichUI(UI):
 
         # CRITICAL FIX: Use transient=True and reduce refresh rate to prevent scrollback artifacts
         # transient=True: Live display disappears on exit instead of leaving residue
-        # refresh_per_second=4: Default rate reduces update frequency 
+        # refresh_per_second=4: Default rate reduces update frequency
         # vertical_overflow="ellipsis": Safer than "visible" for scrollback
         self._live_display = Live(
             generate_stream_panel("", False, 0),
@@ -162,7 +162,7 @@ class RichUI(UI):
             if self._accumulated_text:
                 # Use accumulated content for final static display
                 final_content = self._accumulated_text
-                is_tool = '```json' in final_content or '"action"' in final_content
+                is_tool = "```json" in final_content or '"action"' in final_content
                 tool_len = len(final_content) if is_tool else 0
             elif self.processor:
                 # Fallback to processor for legacy mode
@@ -186,13 +186,13 @@ class RichUI(UI):
             # Print the final content as a static panel (since transient display disappeared)
             if final_content:
                 from ui.renderers.message import render_agent_message
+
                 render_agent_message(final_content)
 
         self._live_display = None
         self._accumulated_text = ""
         self._streaming_active = False
         self.processor = None
-
 
     async def start_thinking(self):
         """Display the thinking spinner."""

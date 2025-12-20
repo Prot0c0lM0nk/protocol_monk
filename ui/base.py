@@ -25,6 +25,7 @@ class UI(ABC):
 
     def __init__(self):
         self._lock: asyncio.Lock = asyncio.Lock()
+
     async def _safe_update(self, coro):
         """Execute coroutine safely within lock to prevent race conditions."""
         async with self._lock:

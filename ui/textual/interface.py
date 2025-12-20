@@ -21,12 +21,12 @@ class TextualUI(UI):
         worker = get_current_worker()
         if worker.is_cancelled:
             return
-            
+
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'stream_to_ui'):
+            if hasattr(screen, "stream_to_ui"):
                 screen.stream_to_ui(text)
-                
+
         await self.app.call_from_thread(update_ui)
 
     @work(thread=True)
@@ -59,7 +59,7 @@ class TextualUI(UI):
         # Format the tool call for display
         tool_name = tool_call.get("name", "Unknown Tool")
         tool_args = tool_call.get("arguments", {})
-        
+
         formatted_content = f"**Tool Call: {tool_name}**\n\n"
         formatted_content += "**Arguments:**\n"
         for key, value in tool_args.items():
@@ -67,9 +67,9 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'add_message'):
+            if hasattr(screen, "add_message"):
                 screen.add_message("tool_call", formatted_content)
-                
+
         await self.app.call_from_thread(update_ui)
 
     @work(thread=True)
@@ -80,9 +80,9 @@ class TextualUI(UI):
             return
 
         # Determine if it's a success or failure
-        success = hasattr(result, 'success') and result.success
-        output = getattr(result, 'output', str(result)) if result else "No result"
-        
+        success = hasattr(result, "success") and result.success
+        output = getattr(result, "output", str(result)) if result else "No result"
+
         if success:
             formatted_content = f"**✓ Tool Result: {tool_name or 'Unknown'}**\n\n"
             formatted_content += f"```\n{output}\n```"
@@ -92,9 +92,11 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'add_message'):
-                screen.add_message("tool_result", formatted_content, is_tool_result=True)
-                
+            if hasattr(screen, "add_message"):
+                screen.add_message(
+                    "tool_result", formatted_content, is_tool_result=True
+                )
+
         await self.app.call_from_thread(update_ui)
 
     @work(thread=True)
@@ -106,9 +108,9 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'update_status'):
+            if hasattr(screen, "update_status"):
                 screen.update_status(f"Starting execution of {count} operations...")
-                
+
         await self.app.call_from_thread(update_ui)
 
     @work(thread=True)
@@ -120,9 +122,9 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'update_status'):
+            if hasattr(screen, "update_status"):
                 screen.update_status(f"Progress: {current}/{total} completed")
-                
+
         await self.app.call_from_thread(update_ui)
 
     @work(thread=True)
@@ -134,10 +136,10 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'update_status'):
+            if hasattr(screen, "update_status"):
                 status = "Task completed" + (f": {summary}" if summary else "")
                 screen.update_status(status)
-                
+
         await self.app.call_from_thread(update_ui)
 
     @work(thread=True)
@@ -149,9 +151,9 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'add_message'):
+            if hasattr(screen, "add_message"):
                 screen.add_message("error", f"**Error:** {message}")
-                
+
         await self.app.call_from_thread(update_ui)
 
     @work(thread=True)
@@ -163,9 +165,9 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'add_message'):
+            if hasattr(screen, "add_message"):
                 screen.add_message("warning", f"**Warning:** {message}")
-                
+
         await self.app.call_from_thread(update_ui)
 
     @work(thread=True)
@@ -177,9 +179,9 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'add_message'):
+            if hasattr(screen, "add_message"):
                 screen.add_message("info", f"**Info:** {message}")
-                
+
         await self.app.call_from_thread(update_ui)
 
     async def set_auto_confirm(self, value: bool):
@@ -195,9 +197,9 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'add_message'):
+            if hasattr(screen, "add_message"):
                 screen.add_message("system", greeting, is_greeting=True)
-                
+
         await self.app.call_from_thread(update_ui)
 
     @work(thread=True)
@@ -209,9 +211,9 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'add_message'):
+            if hasattr(screen, "add_message"):
                 screen.add_message("system", frame)
-                
+
         await self.app.call_from_thread(update_ui)
 
     async def prompt_user(self, prompt: str) -> str:
@@ -233,9 +235,9 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'start_thinking'):
+            if hasattr(screen, "start_thinking"):
                 screen.start_thinking()
-                
+
         await self.app.call_from_thread(update_ui)
 
     @work(thread=True)
@@ -247,9 +249,9 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'stop_thinking'):
+            if hasattr(screen, "stop_thinking"):
                 screen.stop_thinking()
-                
+
         await self.app.call_from_thread(update_ui)
 
     @work(thread=True)
@@ -265,9 +267,9 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'add_message'):
+            if hasattr(screen, "add_message"):
                 screen.add_message("system", formatted_content)
-                
+
         await self.app.call_from_thread(update_ui)
 
     @work(thread=True)
@@ -285,9 +287,9 @@ class TextualUI(UI):
 
         def update_ui():
             screen = self.app.screen
-            if hasattr(screen, 'add_message'):
+            if hasattr(screen, "add_message"):
                 screen.add_message("system", formatted_content)
-                
+
         await self.app.call_from_thread(update_ui)
 
     def on_worker_state_changed(self, event: Worker.StateChanged):
@@ -295,12 +297,18 @@ class TextualUI(UI):
         if event.worker.state == WorkerState.ERROR:
             self.app.log(f"Worker error: {event.worker.error}")
             # Optionally display error to user
-            if hasattr(self.app, 'call_from_thread'):
+            if hasattr(self.app, "call_from_thread"):
+
                 def show_error():
                     screen = self.app.screen
-                    if hasattr(screen, 'add_message'):
-                        screen.add_message("error", f"Background operation failed: {event.worker.error}")
+                    if hasattr(screen, "add_message"):
+                        screen.add_message(
+                            "error",
+                            f"Background operation failed: {event.worker.error}",
+                        )
+
                 self.app.call_from_thread(show_error)
+
 
 """--- End of interface.py ---
 

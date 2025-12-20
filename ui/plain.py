@@ -24,13 +24,16 @@ class PlainUI(UI):
         self._thinking = False
         # Use PromptSession for history (up-arrow) and better input handling
         self.session = PromptSession()
-        self._lock: asyncio.Lock = asyncio.Lock()  # Additional lock for PlainUI-specific operations
+        self._lock: asyncio.Lock = (
+            asyncio.Lock()
+        )  # Additional lock for PlainUI-specific operations
 
     async def start_thinking(self, message: str = "Thinking..."):
         """Indicate that the agent is processing. Thread-safe."""
         async with self._lock:
             self._thinking = True
             print(f"[SYS] {message}", end="\r", flush=True)
+
     async def stop_thinking(self):
         """Stop the thinking indicator. Thread-safe."""
         async with self._lock:
@@ -239,4 +242,3 @@ class PlainUI(UI):
         # Just ensure thinking state is cleared
         if self._thinking:
             await self.stop_thinking()
-

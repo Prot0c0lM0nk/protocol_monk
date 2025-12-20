@@ -131,17 +131,19 @@ async def process_user_input(
             await agent.ui.print_info("")
     return True
 
+
 def parse_arguments():
     """Parse command line arguments."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Protocol Monk - Terminal AI Coding Assistant")
+    parser = argparse.ArgumentParser(
+        description="Protocol Monk - Terminal AI Coding Assistant"
+    )
     parser.add_argument("--rich", action="store_true", help="Use Rich UI")
     parser.add_argument("--tui", action="store_true", help="Use Textual TUI")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
 
     return parser.parse_args()
-
 
 
 # =============================================================================
@@ -185,7 +187,9 @@ async def main():
 
         # 3. Model Selection (Interactive)
         try:
-            selected_model, selected_provider = await _configure_model(ui, use_tui, use_rich)
+            selected_model, selected_provider = await _configure_model(
+                ui, use_tui, use_rich
+            )
         except Exception as e:
             raise ModelClientError(f"Failed to configure model: {e}") from e
 
@@ -276,26 +280,31 @@ def _select_ui_mode(use_rich: bool, use_tui: bool) -> UI:
     return PlainUI()
 
 
-
 async def _configure_model(ui: UI, use_tui: bool, use_rich: bool) -> tuple[str, str]:
     """Handle the interactive model and provider selection at startup."""
-    
+
     # Provider selection step
     current_provider = "ollama"  # Default provider
     if not use_tui:
-        provider_choice = await ui.prompt_user(f"Select provider (current: {current_provider}, enter 'ollama' or 'openrouter'): ")
+        provider_choice = await ui.prompt_user(
+            f"Select provider (current: {current_provider}, enter 'ollama' or 'openrouter'): "
+        )
         if provider_choice.strip().lower() in ["ollama", "openrouter"]:
             current_provider = provider_choice.strip().lower()
             await ui.print_info(f"Provider set to: {current_provider}")
         elif provider_choice.strip():
-            await ui.print_warning(f"Unknown provider '{provider_choice}'. Using default: {current_provider}")
-    
+            await ui.print_warning(
+                f"Unknown provider '{provider_choice}'. Using default: {current_provider}"
+            )
+
     # Validate OpenRouter API key if selected
     if current_provider == "openrouter" and not settings.environment.openrouter_api_key:
-        await ui.print_warning("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
+        await ui.print_warning(
+            "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable."
+        )
         await ui.print_info("Falling back to ollama provider.")
         current_provider = "ollama"
-    
+
     current_model = settings.model.default_model
 
     if use_tui:
@@ -324,7 +333,9 @@ async def _configure_model(ui: UI, use_tui: bool, use_rich: bool) -> tuple[str, 
     return current_model, current_provider
 
 
-async def _select_new_model(ui: UI, current_model: str, current_provider: str) -> tuple[str, str]:
+async def _select_new_model(
+    ui: UI, current_model: str, current_provider: str
+) -> tuple[str, str]:
     """Prompt user to select a different model."""
     model_manager = RuntimeModelManager()
     available_models = model_manager.get_available_models()
@@ -372,7 +383,6 @@ async def _run_tui(agent: ProtocolAgent):
     except Exception as e:
         print(f"Error running TUI: {e}", file=sys.stderr)
         raise
-
 
 
 async def _run_cli(agent: ProtocolAgent, use_rich: bool):
@@ -471,9 +481,11 @@ async def _cleanup(
             # Still try to do basic cleanup even if cancelled
             try:
                 # For RichUI, try to stop thinking and streaming at minimum
-                if hasattr(agent.ui, '_stop_thinking'):
+                if hasattr(agent.ui, "_stop_thinking"):
                     agent.ui._stop_thinking()
-                if hasattr(agent.ui, '_streaming_active') and hasattr(agent.ui, '_end_streaming'):
+                if hasattr(agent.ui, "_streaming_active") and hasattr(
+                    agent.ui, "_end_streaming"
+                ):
                     if agent.ui._streaming_active:
                         await agent.ui._end_streaming()
             except Exception:
@@ -488,7 +500,9 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         # Handle KeyboardInterrupt gracefully with proper cleanup
-        print("\n\n[Protocol Monk] Received interrupt signal. Performing graceful shutdown...")
+        print(
+            "\n\n[Protocol Monk] Received interrupt signal. Performing graceful shutdown..."
+        )
         sys.exit(0)
     except Exception as e:
         # Handle any other unexpected exceptions

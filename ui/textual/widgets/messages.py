@@ -8,17 +8,25 @@ from typing import Literal
 class ChatMessage(Widget):
     """Display individual chat messages with proper reactive content."""
 
-
     # Reactive content that can update the display
     content = reactive("")
     role = reactive("")
 
     def __init__(
-        self, 
-        role: Literal["user", "assistant", "tool-call", "tool-result", "error", "warning", "info", "system"], 
-        content: str, 
+        self,
+        role: Literal[
+            "user",
+            "assistant",
+            "tool-call",
+            "tool-result",
+            "error",
+            "warning",
+            "info",
+            "system",
+        ],
+        content: str,
         is_greeting: bool = False,
-        is_tool_result: bool = False
+        is_tool_result: bool = False,
     ):
         super().__init__()
         self.role = role
@@ -30,10 +38,10 @@ class ChatMessage(Widget):
     def compose(self):
         """Create child widgets based on role and content type."""
         self.add_class(f"message {self.role}")
-        
+
         if self.is_greeting:
             self.add_class("greeting")
-        
+
         if self.is_tool_result:
             self.add_class("tool-result")
 
@@ -59,7 +67,7 @@ class ChatMessage(Widget):
             "error": "❌ Error",
             "warning": "⚠️ Warning",
             "info": "ℹ️ Info",
-            "system": "⚙️ System"
+            "system": "⚙️ System",
         }
         return headers.get(self.role, "")
 
@@ -68,8 +76,8 @@ class ChatMessage(Widget):
         # Use Markdown for assistant messages (except greetings) and tool results
         markdown_roles = {"assistant", "tool-call", "tool-result", "system"}
         return (
-            self.role in markdown_roles 
-            and not self.is_greeting 
+            self.role in markdown_roles
+            and not self.is_greeting
             and self.content.strip()
         )
 
@@ -80,7 +88,11 @@ class ChatMessage(Widget):
         else:
             # Find and update the content widget
             for child in self.children:
-                if hasattr(child, 'update') and not isinstance(child, Static) or "message-header" not in child.classes:
+                if (
+                    hasattr(child, "update")
+                    and not isinstance(child, Static)
+                    or "message-header" not in child.classes
+                ):
                     child.update(content)
                     break
 
@@ -93,7 +105,7 @@ class ChatMessage(Widget):
         """Calculate optimal content width."""
         # For messages, we want to use most of the available width but with some padding
         available_width = viewport - 4  # 2 characters padding on each side
-        
+
         # Limit maximum width for better readability
         max_width = min(available_width, 120)
         return max_width
@@ -105,6 +117,7 @@ class ChatMessage(Widget):
             self.add_class("greeting")
         if self.is_tool_result:
             self.add_class("tool-result")
+
 
 """--- End of messages.py ---
 

@@ -170,16 +170,18 @@ class CreateFileTool(BaseTool):
         try:
             # Create parent directories
             full_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Attempt atomic write with exclusive creation
             temp_path = full_path.with_suffix(f"{full_path.suffix}.tmp")
             try:
-                with temp_path.open("x", encoding="utf-8") as f:  # "x" mode ensures exclusive creation
+                with temp_path.open(
+                    "x", encoding="utf-8"
+                ) as f:  # "x" mode ensures exclusive creation
                     f.write(content)
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(temp_path, full_path)
-                
+
                 return ToolResult.success_result(f"✅ Created {filepath}")
             except FileExistsError:
                 # Clean up temp file if it exists
@@ -188,13 +190,14 @@ class CreateFileTool(BaseTool):
                 return ToolResult.command_failed(
                     f"❌ File already exists: {filepath}", exit_code=1
                 )
-                
+
         except PermissionError as e:
             self.logger.warning("Permission denied for %s: %s", filepath, e)
             return ToolResult.security_blocked(f"🔒 Permission denied: {filepath}")
         except OSError as e:
             self.logger.error("File system error creating %s: %s", filepath, e)
             return ToolResult.internal_error(f"❌ File system error: {e}")
+
     def _write_to_disk(self, full_path: Path, content: str):
         """
         Low-level atomic write operation.

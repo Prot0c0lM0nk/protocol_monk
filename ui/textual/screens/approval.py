@@ -8,35 +8,38 @@ from typing import Any, Dict
 class ApprovalScreen(ModalScreen[Dict]):
     """Modal screen for tool call approvals with proper data flow."""
 
-
     def __init__(self, tool_call: Dict):
         super().__init__()
         self.tool_call = tool_call
         self.approval_result = {
             "approved": False,
             "modified_args": None,
-            "tool_name": tool_call.get("name", "Unknown Tool")
+            "tool_name": tool_call.get("name", "Unknown Tool"),
         }
 
     def compose(self):
         """Create proper layout with tool info and buttons."""
         tool_name = self.tool_call.get("name", "Unknown Tool")
         tool_args = self.tool_call.get("arguments", {})
-        
+
         with Container(id="approval-dialog"):
             yield Label(f"Tool Execution Request", id="tool-header")
-            
+
             with Vertical(id="tool-info"):
                 yield Label(f"**Tool:** {tool_name}", classes="tool-name")
-                yield Label(f"**Description:** Execute this tool with the following parameters:")
-                
+                yield Label(
+                    f"**Description:** Execute this tool with the following parameters:"
+                )
+
                 with Container(id="argument-list"):
                     if tool_args:
                         for key, value in tool_args.items():
-                            yield Static(f"• **{key}:** `{value}`", classes="argument-item")
+                            yield Static(
+                                f"• **{key}:** `{value}`", classes="argument-item"
+                            )
                     else:
                         yield Label("No arguments required", classes="argument-item")
-            
+
             with Container(id="button-container"):
                 yield Button("✓ Approve", id="approve", variant="success")
                 yield Button("✗ Deny", id="deny", variant="error")
@@ -64,7 +67,7 @@ class ApprovalScreen(ModalScreen[Dict]):
         tool_name = self.tool_call.get("name", "Unknown Tool")
         self.app.notify(
             f"Parameter modification for {tool_name} not yet implemented. Please approve or deny.",
-            title="Modification Not Available"
+            title="Modification Not Available",
         )
         # Could implement a proper modification flow here:
         # self.push_screen(ParameterEditorScreen(self.tool_call))
@@ -80,6 +83,7 @@ class ApprovalScreen(ModalScreen[Dict]):
         """Focus the approve button by default for keyboard navigation."""
         approve_button = self.query_one("#approve")
         approve_button.focus()
+
 
 """--- End of approval.py ---
 

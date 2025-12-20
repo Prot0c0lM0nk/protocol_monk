@@ -10,7 +10,6 @@ from textual.validation import Validator, Length
 class InputPanel(Widget):
     """Handle user input with proper event handling and validation."""
 
-
     class Submit(Message):
         """Event sent when user submits input."""
 
@@ -40,14 +39,14 @@ class InputPanel(Widget):
         with Horizontal(id="input-container"):
             with Vertical(id="text-area-container"):
                 self.text_area = TextArea(
-                    id="input-text", 
+                    id="input-text",
                     placeholder="Type your message... (Shift+Enter for new line)",
                     show_line_numbers=False,
-                    language="markdown"
+                    language="markdown",
                 )
                 yield self.text_area
                 yield Static("", id="character-count")
-            
+
             with Vertical(id="button-container"):
                 self.send_button = Button("Send ✓", variant="primary", id="send")
                 self.clear_button = Button("Clear ✗", variant="secondary", id="clear")
@@ -60,7 +59,7 @@ class InputPanel(Widget):
         self.send_button = self.query_one("#send", Button)
         self.clear_button = self.query_one("#clear", Button)
         self.character_count_label = self.query_one("#character-count", Static)
-        
+
         # Focus the text area by default
         self.text_area.focus()
 
@@ -69,12 +68,12 @@ class InputPanel(Widget):
         text = event.text_area.text
         self.character_count = len(text)
         self.has_content = bool(text.strip())
-        
+
         # Update character count display
         if self.character_count_label:
             count_text = f"{self.character_count}/4000"
             self.character_count_label.update(count_text)
-            
+
             # Show warning/error based on length
             if self.character_count > 4000:
                 self.character_count_label.styles.color = "$error"
@@ -86,7 +85,7 @@ class InputPanel(Widget):
                 self.character_count_label.styles.color = "$text-muted"
                 self.text_area.remove_class("validation-error")
                 self.text_area.remove_class("validation-warning")
-        
+
         # Update button states
         self.send_button.disabled = not self.has_content or self.character_count > 4000
 
@@ -158,6 +157,7 @@ class InputPanel(Widget):
             self.text_area.remove_class("validation-warning")
             if self.character_count_label:
                 self.character_count_label.styles.color = "$text-muted"
+
 
 """--- End of inputs.py ---
 
