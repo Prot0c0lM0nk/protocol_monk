@@ -138,7 +138,44 @@ class OllamaModelClient(BaseModelClient):
                             if not line_str:
                                 continue
 
-                            chunk_data = json.loads(line_str)
+                            # Handle potential cloud server errors
+                            # Cloud models might return non-JSON content on errors
+                            try:
+                                chunk_data = json.loads(line_str)
+                            except json.JSONDecodeError as e:
+                                # Check if this is an HTML error page or non-JSON response
+                                if line_str.startswith('<') or 'html' in line_str.lower():
+                                    self.logger.error(
+                                        "Cloud server returned HTML error page: %s", line_str[:100]
+                                    )
+                                    raise ModelError(
+                                        message="Cloud model server returned HTML error page",
+                                        details={
+                                            "provider": "ollama", 
+                                            "model": self.model_name,
+                                            "response_snippet": line_str[:200]
+                                        }
+                                    )
+                                elif "error" in line_str.lower() or "status" in line_str.lower():
+                                    # Might be a plain text error message
+                                    self.logger.error(
+                                        "Cloud server returned error text: %s", line_str
+                                    )
+                                    raise ModelError(
+                                        message=f"Cloud model error: {line_str}",
+                                        details={
+                                            "provider": "ollama",
+                                            "model": self.model_name,
+                                            "raw_response": line_str
+                                        }
+                                    )
+                                else:
+                                    # Genuine JSON decoding issue
+                                    self.logger.warning(
+                                        "Invalid JSON chunk from Ollama: %s - %s", line_str, e
+                                    )
+                                    continue
+
                             chunk_content = self._extract_chunk_content(chunk_data)
 
                             if chunk_content:
@@ -150,11 +187,6 @@ class OllamaModelClient(BaseModelClient):
                                 and chunk_content
                             ):
                                 self.logger.debug("Ollama chunk: %s", chunk_content)
-                        except json.JSONDecodeError as e:
-                            self.logger.warning(
-                                "Invalid JSON chunk from Ollama: %s - %s", line_str, e
-                            )
-                            continue
                         except Exception as e:
                             self.logger.error(
                                 "Error processing Ollama stream chunk: %s", e
@@ -202,6 +234,49 @@ class OllamaModelClient(BaseModelClient):
         """
         if response.status >= 400:
             error_text = await response.text()
+            
+            # Enhanced error handling for cloud models
+            if response.status >= 500:
+                # Cloud server internal error - might be temporary
+                self.logger.warning(
+                    "Cloud model server returned %s error for %s: %s",
+                    response.status, self.model_name, error_text[:200]
+                )
+                
+                # Provide more specific error messages for cloud issues
+                if response.status == 500:
+                    raise ModelError(
+                        message=f"Cloud model server internal error (500). This may be temporary. Try again or switch models.",
+                        details={
+                            "provider": "ollama",
+                            "model": self.model_name,
+                            "status_code": response.status,
+                            "error_details": error_text[:300],
+                            "suggestion": "Try clearing context or switching to a different model"
+                        }
+                    )
+                elif response.status == 502:
+                    raise ModelError(
+                        message="Cloud model gateway error (502). The model server is unavailable.",
+                        details={
+                            "provider": "ollama",
+                            "model": self.model_name,
+                            "status_code": response.status,
+                            "suggestion": "Try again later or use a local model"
+                        }
+                    )
+                elif response.status == 503:
+                    raise ModelError(
+                        message="Cloud model service unavailable (503). The model is temporarily overloaded.",
+                        details={
+                            "provider": "ollama", 
+                            "model": self.model_name,
+                            "status_code": response.status,
+                            "suggestion": "Try clearing context or waiting a moment"
+                        }
+                    )
+            
+            # Standard error handling for 4xx errors
             raise ModelError(
                 message=f"Ollama client error: {response.status} - {error_text}",
                 details={
@@ -210,7 +285,6 @@ class OllamaModelClient(BaseModelClient):
                     "status_code": response.status,
                 },
             )
-
     def _prepare_payload(
         self, conversation_context: List[Dict[str, str]], stream: bool
     ) -> Dict[str, Any]:

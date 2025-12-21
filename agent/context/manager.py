@@ -330,6 +330,9 @@ class ContextManager:
     async def _get_base_context(self) -> List[Dict]:
         """
         Standard context construction without AI enhancement.
+        
+        Converts tool messages to user role format for compatibility with models
+        that don't support the 'tool' role (like many Ollama models).
 
         NOTE: This method should ONLY be called from within an existing lock context
         to avoid deadlocks.
@@ -340,7 +343,14 @@ class ContextManager:
         # DO NOT acquire lock here - caller must already hold the lock
         context = [{"role": "system", "content": self.system_message}]
         for msg in self.conversation:
-            context.append({"role": msg.role, "content": msg.content})
+            # Convert tool messages to user role for model compatibility
+            if msg.role == "tool":
+                context.append({
+                    "role": "user", 
+                    "content": f"[TOOL_RESPONSE] {msg.content}"
+                })
+            else:
+                context.append({"role": msg.role, "content": msg.content})
         return context
 
     async def clear(self):

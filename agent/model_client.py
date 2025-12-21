@@ -81,7 +81,7 @@ class ModelClient:
         ):
             return "openrouter"
 
-        # Default to Ollama for local models
+        # Default to Ollama for local models AND Ollama cloud models
         return "ollama"
 
     def _create_provider_client(
@@ -171,6 +171,7 @@ class ModelClient:
         Args:
             model_name: Name of the model to switch to
         """
+        self.logger.info(f"ModelClient: Switching model from {self.model_name} to {model_name}")
         self.model_name = model_name
 
         # Re-initialize client for new model with same provider
@@ -178,8 +179,12 @@ class ModelClient:
 
         # For backward compatibility, also set on the client if it supports it
         if hasattr(self._client, "set_model"):
+            self.logger.info(f"ModelClient: Calling set_model on provider client")
             self._client.set_model(model_name)
+        else:
+            self.logger.info(f"ModelClient: Provider client does not have set_model method, created new instance")
 
+        self.logger.info(f"ModelClient: Model switched to {self.model_name}")
     async def close(self) -> None:
         """
         Close the model client and clean up resources.

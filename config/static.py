@@ -199,11 +199,13 @@ class ApiConfig:
         self.provider_timeout = int(os.getenv("PROTOCOL_PROVIDER_TIMEOUT", "420"))
 
         # Provider-specific settings
+        # Provider-specific settings
         self.providers = {
             "ollama": {
                 "timeout": int(os.getenv("PROTOCOL_OLLAMA_TIMEOUT", "420")),
                 "max_retries": int(os.getenv("PROTOCOL_OLLAMA_RETRIES", "3")),
                 "retry_delay": float(os.getenv("PROTOCOL_OLLAMA_RETRY_DELAY", "1.0")),
+                "api_key": os.getenv("OLLAMA_API_KEY"),
             },
             "openrouter": {
                 "timeout": int(os.getenv("PROTOCOL_OPENROUTER_TIMEOUT", "420")),
