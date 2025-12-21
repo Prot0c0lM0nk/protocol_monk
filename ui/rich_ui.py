@@ -139,6 +139,8 @@ class RichUI(UI):
             # Don't re-raise - let the cancellation propagate naturally
             return
         except Exception as e:
+            # Stop thinking spinner before handling error
+            self._stop_thinking()
             # Handle buffer overflow or other processing errors gracefully
             if "buffer" in str(e).lower() or "memory" in str(e).lower():
                 await self.print_warning(
@@ -209,6 +211,10 @@ class RichUI(UI):
         if self._thinking_status:
             self._thinking_status.stop()
             self._thinking_status = None
+
+    async def stop_thinking(self):
+        """Public method to stop the thinking spinner."""
+        self._stop_thinking()
 
     # --- 3. INPUT HANDLING (New) ---
 

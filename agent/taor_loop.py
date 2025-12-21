@@ -202,14 +202,29 @@ class TAORLoop:
         return True  # Continue loop
 
     def _detect_ghost_tool(self, response: str) -> bool:
-        """
-        Enhanced detection of malformed tool calls using JSON validation.
-        """
         try:
-            # Heuristic: If it looks like JSON/Tool but failed parsing
-            if "{" in response and ("action:" in response or "name:" in response):
-                json.loads(response)  # If this passes, it wasn't a ghost, just text
+            # Look specifically for tool calls, not any JSON-like structure
+            if "```json" in response or response.strip().startswith("{"):
+                # Extract just the JSON part for validation
+                lines = response.split('\n')
+                json_lines = []
+                in_json = False
+            
+                for line in lines:
+                    if line.strip() == "```json":
+                        in_json = True
+                        continue
+                    elif line.strip() == "```" and in_json:
+                        break
+                    elif in_json:
+                        json_lines.append(line)
+                    elif line.strip().startswith("{") and not in_json:
+                        json_lines.append(line)
+            
+                if json_lines:
+                    json_str = '\n'.join(json_lines)
+                    json.loads(json_str)
                 return False
         except json.JSONDecodeError:
-            return True  # It Failed JSON parse, so it MIGHT be a ghost tool
+            return True
         return False

@@ -121,6 +121,12 @@ class UI(ABC):
     @abstractmethod
     async def start_thinking(self):
         """Start the thinking/loading animation"""
+        pass
+
+    @abstractmethod
+    async def stop_thinking(self):
+        """Stop the thinking/loading animation"""
+        pass
 
     # --- NEW: MODEL MANAGER METHODS ---
 

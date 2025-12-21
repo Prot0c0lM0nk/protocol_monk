@@ -231,6 +231,9 @@ class ProtocolAgent:
         except KeyboardInterrupt:
             await self.ui.print_warning("\n🛑 Interrupted.")
             return None
+        finally:
+            # Ensure thinking spinner is always stopped
+            await self.ui.stop_thinking()
 
     def _parse_response(self, text: str) -> Tuple[List[Dict], bool]:
         """

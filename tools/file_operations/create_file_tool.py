@@ -11,7 +11,6 @@ from tools.path_validator import PathValidator
 from tools.file_operations.auto_stage_large_content import auto_stage_large_content
 from tools.file_operations.scratch_coordination import try_scratch_manager_read
 from tools.base import BaseTool, ToolResult, ToolSchema
-from tools.file_operations.auto_stage_large_content import auto_stage_large_content
 
 
 class CreateFileTool(BaseTool):
