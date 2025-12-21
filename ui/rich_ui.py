@@ -315,6 +315,7 @@ class RichUI(UI):
 
     async def print_error(self, message: str):
         await self._end_streaming()
+        self._stop_thinking()
         console.print(f"[error]Error: {message}[/]")
 
     async def print_warning(self, message: str):
