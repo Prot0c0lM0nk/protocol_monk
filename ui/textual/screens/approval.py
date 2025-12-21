@@ -1,105 +1,84 @@
-from textual import on
-from textual.containers import Container, Vertical
-from textual.screen import ModalScreen
-from textual.widgets import Button, Label, Static
-from typing import Any, Dict
-
-
-class ApprovalScreen(ModalScreen[Dict]):
-    """Modal screen for tool call approvals with proper data flow."""
-
-    def __init__(self, tool_call: Dict):
-        super().__init__()
-        self.tool_call = tool_call
-        self.approval_result = {
-            "approved": False,
-            "modified_args": None,
-            "tool_name": tool_call.get("name", "Unknown Tool"),
-        }
-
-    def compose(self):
-        """Create proper layout with tool info and buttons."""
-        tool_name = self.tool_call.get("name", "Unknown Tool")
-        tool_args = self.tool_call.get("arguments", {})
-
-        with Container(id="approval-dialog"):
-            yield Label(f"Tool Execution Request", id="tool-header")
-
-            with Vertical(id="tool-info"):
-                yield Label(f"**Tool:** {tool_name}", classes="tool-name")
-                yield Label(
-                    f"**Description:** Execute this tool with the following parameters:"
-                )
-
-                with Container(id="argument-list"):
-                    if tool_args:
-                        for key, value in tool_args.items():
-                            yield Static(
-                                f"• **{key}:** `{value}`", classes="argument-item"
-                            )
-                    else:
-                        yield Label("No arguments required", classes="argument-item")
-
-            with Container(id="button-container"):
-                yield Button("✓ Approve", id="approve", variant="success")
-                yield Button("✗ Deny", id="deny", variant="error")
-                yield Button("✎ Modify", id="modify", variant="warning")
-
-    @on(Button.Pressed, "#approve")
-    def handle_approval(self):
-        """Handle approval with proper data return."""
-        self.approval_result["approved"] = True
-        self.approval_result["modified_args"] = self.tool_call.get("arguments", {})
-        self.dismiss(self.approval_result)
-
-    @on(Button.Pressed, "#deny")
-    def handle_denial(self):
-        """Handle denial with proper data return."""
-        self.approval_result["approved"] = False
-        self.approval_result["modified_args"] = None
-        self.dismiss(self.approval_result)
-
-    @on(Button.Pressed, "#modify")
-    def handle_modification(self):
-        """Handle parameter modification (stub for future implementation)."""
-        # For now, we'll just deny since modification isn't implemented
-        # In a future version, this could open a parameter editor
-        tool_name = self.tool_call.get("name", "Unknown Tool")
-        self.app.notify(
-            f"Parameter modification for {tool_name} not yet implemented. Please approve or deny.",
-            title="Modification Not Available",
-        )
-        # Could implement a proper modification flow here:
-        # self.push_screen(ParameterEditorScreen(self.tool_call))
-
-    def on_key(self, event):
-        """Handle keyboard shortcuts."""
-        if event.key == "escape":
-            self.handle_denial()
-        elif event.key == "enter":
-            self.handle_approval()
-
-    async def on_mount(self):
-        """Focus the approve button by default for keyboard navigation."""
-        approve_button = self.query_one("#approve")
-        approve_button.focus()
-
-
-"""--- End of approval.py ---
-
-**Key Changes Made:**
-
-1. **Proper ModalScreen typing**: Now uses `ModalScreen[Dict]` for type-safe return values
-2. **Enhanced CSS styling**: Added comprehensive styling for the modal dialog
-3. **Better layout structure**: Used proper containers and vertical/horizontal layouts
-4. **Improved tool information display**: Formatted arguments list with proper styling
-5. **Three-button layout**: Added Modify button for future functionality
-6. **Proper data return**: Returns structured approval result with tool name and modified args
-7. **Keyboard shortcuts**: Escape to deny, Enter to approve
-8. **Auto-focus**: Approve button gets focus for keyboard navigation
-9. **Modification stub**: Prepare for future parameter editing functionality
-
-The refactored approval screen now provides a much better user experience with proper styling, keyboard navigation, and structured data flow.
-
-Please upload the next file: `ui/textual/widgets/messages.py` so I can continue with the refactoring.
 """
+Tool approval modal for Protocol Monk's Textual UI.
+"""
+
+from textual.app import ComposeResult
+from textual.screen import ModalScreen
+from textual.widgets import Label, Button, Pretty, Static
+from textual.containers import Container, Horizontal
+from typing import Dict, Any
+
+
+class ApprovalScreen(ModalScreen[bool]):
+    """Modal screen for tool call approval.
+
+    Attributes:
+        DEFAULT_CSS (str): The default CSS styling for the approval screen.
+    """
+
+    DEFAULT_CSS = """
+    ApprovalScreen {
+        align: center middle;
+        background: $bg-black 80%;
+        border: double $holy-gold;
+        width: 80;
+        height: auto;
+    }
+    #approval_container {
+        width: 100%;
+        height: auto;
+        padding: 1;
+    }
+    #tool_name {
+        text-style: bold;
+        color: $holy-gold;
+        content-align: center top;
+    }
+    #params_display {
+        width: 100%;
+        height: auto;
+        border: solid $monk-text;
+        padding: 1;
+    }
+    #button_container {
+        width: 100%;
+        height: auto;
+        align: center middle;
+        padding: 1;
+    }
+    Button {
+        width: 12;
+        margin: 1;
+    }
+    Button.-success {
+        color: $monk-text;
+        background: $holy-gold;
+    }
+    Button.-error {
+        color: $monk-text;
+        background: #ff0000;
+    }
+    """
+
+    def __init__(self, tool_call: Dict[str, Any], *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.tool_call = tool_call
+
+    def compose(self) -> ComposeResult:
+        """Compose the approval screen layout."""
+        with Container(id="approval_container"):
+            yield Label(
+                f"Tool Request: {self.tool_call.get('tool_name', 'Unknown')}",
+                id="tool_name",
+            )
+            yield Pretty(self.tool_call.get("parameters", {}), id="params_display")
+            with Horizontal(id="button_container"):
+                yield Button("Authorize", variant="success", id="authorize")
+                yield Button("Deny", variant="error", id="deny")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses for authorization."""
+        if event.button.id == "authorize":
+            self.dismiss(True)
+        else:
+            self.dismiss(False)
