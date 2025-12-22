@@ -45,6 +45,7 @@ from tools.registry import ToolRegistry
 from ui.base import UI
 from ui.plain import PlainUI
 from ui.rich_ui import RichUI
+#from ui.textual.app import ProtocolMonkApp
 
 from utils.debug_logger import _logger, close_debug_log
 from utils.enhanced_logger import EnhancedLogger
@@ -370,10 +371,10 @@ async def _select_new_model(
 #async def _run_tui(agent: ProtocolAgent):
     """Launch the Textual User Interface."""
     # Import here to avoid circular imports
-    from ui.textual.app import MonkCodeTUI
+    from ui.textual.app import ProtocolMonkApp
 
     # Create and run the Textual app
-    app = MonkCodeTUI(agent)
+    app = ProtocolMonkApp(agent)
 
     # Run the app with asyncio.run() to properly handle the event loop
     # We need to use asyncio.run() because Textual's run() method
