@@ -25,7 +25,7 @@ from config.static import settings
 from ui.base import UI
 from ui.plain import PlainUI
 from utils.enhanced_logger import EnhancedLogger
-from utils.json_parser_v2 import extract_json_with_retry
+from utils.json_parser_factory import extract_json_with_retry
 
 
 class ProtocolAgent:

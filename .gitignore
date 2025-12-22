@@ -63,9 +63,7 @@ detailed_session_*.jsonl
 
 # Protocol Monk specific
 .protocol_history.txt
-neural_memory/
 .scratch/
-.neuralsym/
 context_snapshots/
 *.py.bak
 tests/
