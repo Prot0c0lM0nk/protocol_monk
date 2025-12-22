@@ -280,13 +280,6 @@ class ProtocolAgent:
         for result in summary.results:
             await self.context_manager.add_message("tool", result.output, importance=5)
 
-            tool_data = getattr(result, "data", {}) or {}
-            self.context_manager.record_tool_execution_outcome(
-                tool_name=result.tool_name,
-                arguments=tool_data,
-                success=result.success,
-                error_message=result.output if not result.success else None,
-            )
             if not result.success:
                 had_failure = True
         return had_failure
