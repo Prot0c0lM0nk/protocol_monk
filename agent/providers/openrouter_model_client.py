@@ -16,7 +16,6 @@ import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from agent.base_model_client import BaseModelClient
-from agent.buffered_model_client import create_buffered_response
 from config.static import settings
 from exceptions import (
     EmptyResponseError,
@@ -158,10 +157,8 @@ class OpenRouterModelClient(BaseModelClient):
                 await self._check_error_status(response)
 
                 if stream:
-                    # Use buffered response to handle split tool calls
-                    raw_generator = self._process_stream_response(response)
-                    buffered_generator = create_buffered_response(raw_generator)
-                    async for chunk in buffered_generator:
+                    # Direct streaming without buffering
+                    async for chunk in self._process_stream_response(response):
                         yield chunk
                 else:
                     data = await response.json()

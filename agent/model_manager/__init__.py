@@ -38,7 +38,7 @@ class RuntimeModelManager:
         provider_map_files = {
             "ollama": "ollama_map.json",
             "openrouter": "openrouter_map.json",
-            "default": "model_map.json",  # Fallback to original
+            "default": "ollama_map.json",  # Fallback to original
         }
 
         # Use provider-specific map if available, otherwise fall back to default

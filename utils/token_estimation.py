@@ -464,13 +464,13 @@ class BetterTokenizerManager:
 
             try:
                 script_dir = Path(__file__).parent.parent
-                model_map_path = script_dir / "model_map.json"
+                model_map_path = script_dir / "ollama_map.json"
                 json_content = await asyncio.to_thread(model_map_path.read_text)
                 self._model_map = json.loads(json_content)
             except FileNotFoundError:
                 # HEALTHCHECK FIX: Catches silent model map loading failures
                 self.logger.warning(
-                    "model_map.json not found. "
+                    "ollama_map.json not found. "
                     "Falling back to default tokenizer 'gpt2'."
                 )
                 self._model_map = {"DEFAULT": "gpt2"}

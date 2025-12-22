@@ -494,6 +494,29 @@ async def _cleanup(
         except Exception as e:
             logger.error(f"Error closing UI: {e}", exc_info=True)
 
+    # Clean up context snapshots
+    try:
+        import shutil
+
+        # Clean up main context snapshots directory
+        context_snapshots_dir = Path("context_snapshots")
+        if context_snapshots_dir.exists():
+            shutil.rmtree(context_snapshots_dir)
+            logger.info("Cleaned up context snapshots directory")
+
+        # Clean up workspace context snapshots directory
+        workspace_context_dir = Path("workspace/context_snapshots")
+        if workspace_context_dir.exists():
+            shutil.rmtree(workspace_context_dir)
+            logger.info("Cleaned up workspace context snapshots directory")
+
+    except (OSError, IOError) as e:
+        logger.warning(f"Failed to clean up context snapshots: {e}")
+    except Exception as e:
+        logger.error(
+            f"Unexpected error cleaning up context snapshots: {e}", exc_info=True
+        )
+
 
 if __name__ == "__main__":
     try:

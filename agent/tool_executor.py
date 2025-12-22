@@ -11,7 +11,6 @@ from asyncio import Lock
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
-from agent.enhanced_tool_buffer import EnhancedToolCallBuffer
 
 from exceptions import (
     ToolExecutionError,
@@ -57,8 +56,6 @@ class ToolExecutor:
         self.ui_callback = ui_callback
         self.logger = logging.getLogger(__name__)
         self.execution_lock = Lock()
-        # Initialize enhanced tool buffer
-        self.tool_buffer = EnhancedToolCallBuffer()
 
     async def _default_ui_callback(self, event: str, _data: Dict[str, Any]) -> Any:
         """

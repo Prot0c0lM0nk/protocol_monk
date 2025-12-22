@@ -64,7 +64,7 @@ class ModelManager:
         self.default_model = os.getenv("PROTOCOL_MODEL", "qwen3-vl:4b-instruct-q4_K_M")
 
         # Model map file
-        self.model_map_file = os.getenv("PROTOCOL_MODEL_MAP_FILE", "model_map.json")
+        self.model_map_file = os.getenv("PROTOCOL_MODEL_MAP_FILE", "ollama_map.json")
 
         # Load model information
         self.model_info = self._load_model_map()

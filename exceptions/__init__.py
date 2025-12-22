@@ -41,12 +41,12 @@ from .tools import (
 )
 
 # Context exceptions
+# Context exceptions
 from .context import (
     ContextCorruptionError,
     ContextError,
     ContextOverflowError,
     ContextValidationError,
-    NeuralSymIntegrationError,
     TokenEstimationError,
 )
 
@@ -118,7 +118,6 @@ __all__ = [
     "ContextCorruptionError",
     "ContextValidationError",
     "TokenEstimationError",
-    "NeuralSymIntegrationError",
     # Config
     "ConfigFileError",
     "DirectorySelectionError",

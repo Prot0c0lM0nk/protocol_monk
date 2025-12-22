@@ -66,17 +66,3 @@ class TokenEstimationError(ContextError):
         self.estimator_name = estimator_name
         self.failed_text = failed_text
         self.original_error = original_error
-
-
-class NeuralSymIntegrationError(ContextError):
-    """Raised when NeuralSym enhancement or recording fails."""
-
-    def __init__(
-        self,
-        message: str,
-        operation: str = None,
-        original_error: Exception = None,
-    ):
-        super().__init__(message)
-        self.operation = operation
-        self.original_error = original_error

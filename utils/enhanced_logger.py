@@ -109,6 +109,13 @@ class EnhancedLogger:
         CRITICAL: Dumps the exact context window to a readable file.
         Call this right before sending to the model.
         """
+        # Ensure directory exists before writing
+        try:
+            self.context_snapshot_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            print(f"!! Failed to create context_snapshot_dir: {e}", file=sys.stderr)
+            return
+
         snapshot_file = (
             self.context_snapshot_dir
             / f"ctx_{self.conversation_counter:03d}_{int(time.time())}.txt"

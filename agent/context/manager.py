@@ -12,8 +12,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional
 
-from exceptions import ContextValidationError, NeuralSymIntegrationError
-from exceptions import ConfigurationError
+from exceptions import ConfigurationError, ContextValidationError
 from config.static import settings
 
 from .file_tracker import FileTracker
@@ -21,8 +20,7 @@ from .file_tracker import FileTracker
 # Component imports
 from .message import Message
 
-# NeuralSym integration
-from .neural_sym_integration import NEURALSYM_AVAILABLE, NeuralSymContextManager
+
 from .pruner import ContextPruner
 from .token_accountant import TokenAccountant
 
@@ -56,14 +54,6 @@ class ContextManager:
         self.accountant = TokenAccountant(max_tokens=max_tokens, tokenizer=tokenizer)
         self.tracker = FileTracker(working_dir=working_dir or Path.cwd())
         self.pruner = ContextPruner(max_tokens=max_tokens)
-
-        # Initialize NeuralSym integration if available
-        if NEURALSYM_AVAILABLE:
-            self.neural_sym = NeuralSymContextManager(
-                working_dir=working_dir or Path.cwd()
-            )
-        else:
-            self.neural_sym = None
 
         # Add validation optimization to break circular dependency
         self._recent_validation_attempts: set[str] = set()
@@ -273,16 +263,12 @@ class ContextManager:
     async def get_context(self, model_name: str = None) -> List[Dict]:
         """
         Formats the conversation for the LLM API.
-        Automatically applies NeuralSym enhancement if the model is small/weak.
 
         Args:
             model_name: Name of the model to format context for (optional)
 
         Returns:
             List[Dict]: Formatted conversation context for API
-
-        Raises:
-            NeuralSymIntegrationError: If NeuralSym enhancement fails for the model
         """
         async with self._lock:
             # 1. Check context size within lock to prevent race conditions
@@ -292,45 +278,14 @@ class ContextManager:
             # 2. Get the base context (System + History)
             base_context = await self._get_base_context()
 
-            # 3. Check if we need to enhance it (Small Model Logic)
-            if model_name and self.neural_sym:
-                # Validate context suitability before enhancement
-                if not self._validate_context_for_enhancement(base_context):
-                    self.logger.debug("Context not suitable for NeuralSym enhancement")
-                    return base_context
-
-                # Check if model is small (contains size identifiers)
-                small_identifiers = [
-                    "8b",
-                    "4b",
-                    "2b",
-                    "1.7b",
-                    "0.6b",
-                    "small",
-                    "mini",
-                    "tiny",
-                ]
-                is_small_model = any(x in model_name.lower() for x in small_identifiers)
-
-                if is_small_model:
-                    try:
-                        return await self.neural_sym.get_enhanced_context(
-                            base_context, model_name
-                        )
-                    except Exception as e:
-                        raise NeuralSymIntegrationError(
-                            f"NeuralSym enhancement failed for model {model_name}",
-                            operation="get_enhanced_context",
-                            model_name=model_name,
-                            original_error=e,
-                        ) from e
+            # 3. Return the base context directly
             return base_context
         return base_context
 
     async def _get_base_context(self) -> List[Dict]:
         """
         Standard context construction without AI enhancement.
-        
+
         Converts tool messages to user role format for compatibility with models
         that don't support the 'tool' role (like many Ollama models).
 
@@ -345,10 +300,9 @@ class ContextManager:
         for msg in self.conversation:
             # Convert tool messages to user role for model compatibility
             if msg.role == "tool":
-                context.append({
-                    "role": "user", 
-                    "content": f"[TOOL_RESPONSE] {msg.content}"
-                })
+                context.append(
+                    {"role": "user", "content": f"[TOOL_RESPONSE] {msg.content}"}
+                )
             else:
                 context.append({"role": msg.role, "content": msg.content})
         return context
@@ -415,27 +369,6 @@ class ContextManager:
         self.accountant.recalculate(self.system_message, self.conversation)
 
     # --- Neural Sym Passthrough Methods ---
-
-    def record_tool_execution_outcome(self, *args, **kwargs):
-        """
-        Forward tool execution results to NeuralSym for learning.
-
-        Args:
-            *args: Variable arguments to pass to NeuralSym
-            **kwargs: Keyword arguments to pass to NeuralSym
-
-        Raises:
-            NeuralSymIntegrationError: If NeuralSym recording fails
-        """
-        if self.neural_sym:
-            try:
-                self.neural_sym.record_interaction_outcome(*args, **kwargs)
-            except Exception as e:
-                raise NeuralSymIntegrationError(
-                    "NeuralSym recording failed",
-                    operation="record_interaction_outcome",
-                    original_error=e,
-                ) from e
 
     def _check_context_size_for_model(self, model_name: str) -> dict:
         """
@@ -623,31 +556,6 @@ class ContextManager:
                 return True
 
         return False
-
-    def _validate_context_for_enhancement(self, context: List[Dict]) -> bool:
-        """
-        Validate if context is suitable for NeuralSym enhancement.
-
-        Args:
-            context: List of context messages to validate
-
-        Returns:
-            bool: True if context is suitable for enhancement, False otherwise
-        """
-        # Check if context is empty or too short
-        if not context or len(context) < 2:
-            return False
-
-        # Check for context poisoning
-        if self._detect_context_poisoning(context):
-            return False
-
-        # Check if system message is properly initialized
-        system_msg = next((msg for msg in context if msg.get("role") == "system"), None)
-        if not system_msg or "[ERROR]" in system_msg.get("content", ""):
-            return False
-
-        return True
 
     def _should_skip_validation_attempt(self, content: str) -> bool:
         """
