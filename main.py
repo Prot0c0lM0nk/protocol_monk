@@ -45,7 +45,7 @@ from tools.registry import ToolRegistry
 from ui.base import UI
 from ui.plain import PlainUI
 from ui.rich_ui import RichUI
-from ui.textual.app import MonkCodeTUI
+
 from utils.debug_logger import _logger, close_debug_log
 from utils.enhanced_logger import EnhancedLogger
 
@@ -212,7 +212,7 @@ async def main():
             raise ModelClientError(f"Failed to initialize agent components: {e}") from e
 
         # 5. Run Interface
-        if use_tui:
+        #if use_tui:
             await _run_tui(agent)
         else:
             await _run_cli(agent, use_rich)
@@ -367,7 +367,7 @@ async def _select_new_model(
     return current_model, current_provider
 
 
-async def _run_tui(agent: ProtocolAgent):
+#async def _run_tui(agent: ProtocolAgent):
     """Launch the Textual User Interface."""
     # Import here to avoid circular imports
     from ui.textual.app import MonkCodeTUI
