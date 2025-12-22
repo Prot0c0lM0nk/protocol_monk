@@ -21,20 +21,20 @@ class ChatBubble(Static):
         max-width: 80%;
         padding: 1;
         margin: 1 2;
-        border: solid $monk-text;
+        border: solid #00FF00;  /* Matrix Green - $monk-text */
         border-title-align: left;
     }
     ChatBubble.-user {
-        border-title-color: $holy-gold;
+        border-title-color: #ffaa44;  /* Orthodox Gold - $holy-gold */
         border-title-style: bold;
         text-style: italic;
     }
     ChatBubble.-monk {
-        border-title-color: $tech-cyan;
+        border-title-color: #00d7ff;  /* Machine Blue - $tech-cyan */
         border-title-style: bold;
     }
     ChatBubble.-system {
-        border-title-color: $tech-cyan;
+        border-title-color: #00d7ff;  /* Machine Blue - $tech-cyan */
         border-title-style: dim;
     }
     """
@@ -58,6 +58,3 @@ class ChatBubble(Static):
         """
         self.update(Markdown(content))
 
-    def compose(self) -> None:
-        """Compose the bubble's content."""
-        yield Horizontal(Markdown(self.text), classes=f"bubble-{self.sender}")

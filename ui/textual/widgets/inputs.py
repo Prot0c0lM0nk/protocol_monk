@@ -18,13 +18,13 @@ class MatrixInput(Input):
         dock: bottom;
         width: 100%;
         height: 3;
-        color: $monk-text;
-        border: solid $monk-text;
-        background: $bg-black 50%;
+        color: #00FF00;  /* Matrix Green - $monk-text */
+        border: solid #00FF00;  /* Matrix Green - $monk-text */
+        background: #050505 50%;  /* $bg-black */
     }
     MatrixInput > .input--cursor {
-        color: $holy-gold;
-        background: $monk-text;
+        color: #ffaa44;  /* Orthodox Gold - $holy-gold */
+        background: #00FF00;  /* Matrix Green - $monk-text */
     }
     """
 
