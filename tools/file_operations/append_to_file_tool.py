@@ -46,10 +46,6 @@ class AppendToFileTool(BaseTool):
                     "type": "string",
                     "description": "Content to add (for small content).",
                 },
-                "content_from_memory": {
-                    "type": "string",
-                    "description": "Memory key containing content.",
-                },
                 "content_from_scratch": {
                     "type": "string",
                     "description": "Scratch ID for staged code block.",
@@ -101,8 +97,8 @@ class AppendToFileTool(BaseTool):
             optional error result.
         """
         content = kwargs.get("content")
+        content = kwargs.get("content")
         scratch_id = kwargs.get("content_from_scratch")
-        memory_key = kwargs.get("content_from_memory")
 
         # Auto-stage inline content if it's too large
         if content:
@@ -114,14 +110,9 @@ class AppendToFileTool(BaseTool):
         if scratch_id:
             return self._read_scratch_file(scratch_id)
 
-        if memory_key:
-            return "", ToolResult.internal_error(
-                "❌ The 'content_from_memory' feature is not supported."
-            )
-
         if not content:
             return "", ToolResult.invalid_params(
-                "❌ Must provide content via 'content' or " "'content_from_scratch'.",
+                "❌ Must provide content via 'content' or 'content_from_scratch'.",
                 missing_params=["content"],
             )
 

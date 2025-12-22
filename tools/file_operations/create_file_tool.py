@@ -33,7 +33,7 @@ class CreateFileTool(BaseTool):
             name="create_file",
             description=(
                 "Create a new file with specified content. For large files, "
-                "use 'remember' tool first, then 'content_from_memory'."
+                "content will be automatically staged to scratch system."
             ),
             parameters={
                 "filepath": {
@@ -42,15 +42,11 @@ class CreateFileTool(BaseTool):
                 },
                 "content": {
                     "type": "string",
-                    "description": "Content to write (for small content).",
-                },
-                "content_from_memory": {
-                    "type": "string",
-                    "description": "Memory key containing content.",
+                    "description": "Content to write (for normal content).",
                 },
                 "content_from_scratch": {
                     "type": "string",
-                    "description": "Scratch ID for staged code block.",
+                    "description": "Scratch ID for staged code block (auto-generated for large content).",
                 },
             },
             required_params=["filepath"],
@@ -101,8 +97,8 @@ class CreateFileTool(BaseTool):
             optional error result.
         """
         content = kwargs.get("content")
+        content = kwargs.get("content")
         scratch_id = kwargs.get("content_from_scratch")
-        memory_key = kwargs.get("content_from_memory")
 
         # Auto-stage inline content if it's too large
         if content:
@@ -113,11 +109,6 @@ class CreateFileTool(BaseTool):
 
         if scratch_id:
             return self._read_scratch_file(scratch_id)
-
-        if memory_key:
-            return "", ToolResult.internal_error(
-                "❌ The 'content_from_memory' feature is not supported."
-            )
 
         return content if content is not None else "", None
 
