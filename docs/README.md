@@ -1,27 +1,48 @@
 # Protocol Monk ✠
 
-A terminal-based AI assistant with streaming mixed-mode responses (text + tool execution).
+**⚠️ DEMO VERSION - FOR EVALUATION ONLY**
+
+A terminal-based AI agent with reliable task execution and comprehensive error handling.
+
+---
 
 ## Overview
 
-Protocol Monk is an AI assistant that combines natural language interaction with precise editing capabilities. It solves a key limitation in current AI coding tools by supporting simultaneous chat and tool execution through a streaming mixed-mode response system.
+Protocol Monk is a sophisticated terminal-based AI agent designed for reliable task execution through natural language interaction. **This is a demonstration version** provided for evaluation purposes only. The system implements a TAOR (Think-Act-Observe-Reflect) cognitive loop with comprehensive error handling that prevents crashes and ensures graceful degradation.
 
+**⚠️ Important Demo Notice:**
+This version is provided as-is for evaluation. Features may be incomplete, context management may not work reliably in all scenarios, and this software should not be used for critical work.
 ## Key Features
 
-- **Streaming Mixed-Mode Responses**: Seamlessly blends conversational text with executable tool calls
-- **Line-Based File Editing**: Precise code modifications using line numbers (more reliable than string matching)
+- **Reliable Operation**: Comprehensive exception handling prevents crashes
+- **Multi-Provider Support**: Runtime switching between Ollama and OpenRouter
+- **Secure Tool Execution**: Path validation and dangerous pattern detection
+- **Flexible UI**: Multiple rendering backends (plain, rich)
+- **Context Management**: Token-aware conversation history with pruning
+- **TAOR Loop**: Think-Act-Observe-Reflect cognitive cycle
+- **Line-Based File Editing**: Precise code modifications using line numbers
 - **Robust JSON Parsing**: Multiple fallback strategies for handling model outputs
-- **Local-First Architecture**: Runs entirely locally using Ollama models
 - **Async Architecture**: Fully asynchronous design for optimal performance
-- **Orthodox-Themed UI**: 
 
 ## Installation
 
-### Prerequisites
-- Python 3.9+
-- [Ollama](https://ollama.ai/) installed and running
+**IMPORTANT: This is a DEMO version for evaluation only.**
 
-### Quick Start
+### From PyPI (Demo Version)
+
+```bash
+pip install protocol-monk
+monk
+```
+
+**Demo Limitations:**
+- Evaluation purposes only
+- No redistribution or modification allowed
+- Context management may not work reliably in all scenarios
+- Session history is not preserved
+- Features are incomplete and may contain bugs
+
+### From Source
 
 ```bash
 # Clone the repository
@@ -39,31 +60,34 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## Configuration
-
-Create a `.env` file in the project root (optional):
+### Development Installation
 
 ```bash
-# Set your preferred Ollama model (default: qwen3:4b)
-# Uncomment and modify the line below to set your preferred model
-# PROTOCOL_MODEL="your-preferred-model"
-
-# Optional: Custom Ollama URL (if not using default)
-# Uncomment and modify the line below if you need a custom Ollama URL
-# PROTOCOL_OLLAMA_URL="http://localhost:11434/api/chat"
-
-# Optional: Set default working directory
-# Uncomment and modify the line below to set a default working directory
-# PROTOCOL_WORKING_DIR="$HOME/your_project"
+pip install -e .[dev]
 ```
 
+## Prerequisites
+
+- Python 3.8+
+- Ollama (for local models) OR OpenRouter API key
+
+## Configuration
 ## Usage
 
+### First Run
+
+The agent will guide you through initial setup:
+1. Select working directory
+2. Choose AI provider and model
+3. Configure optional settings
+
 ### Basic Commands
+
 - Create files and directories
 - Edit specific lines of files
 - Execute shell commands
 - Run Python scripts
+- Perform git operations
 
 ### Examples
 ```
@@ -74,8 +98,69 @@ User: Show me the contents of main.py
 User: Replace lines 5-10 in app.py with a better implementation
 
 User: Run pytest on the test directory
+
+User: Commit the current changes with a descriptive message
 ```
 
+### Slash Commands
+
+- `/help` - Show available commands
+- `/models` - Switch AI model
+- `/clear` - Clear conversation context
+- `/status` - Show current status and token usage
+- `/quit` - Exit the agent
+
+## Architecture
+
+```
+agent/          # Core orchestration and TAOR loop
+tools/          # Secure tool execution system
+ui/             # User interface abstraction
+exceptions/     # Comprehensive error handling
+config/         # Configuration management
+utils/          # Shared utilities
+```
+
+## Security
+
+- Path validation prevents access to sensitive files
+- Dangerous pattern detection blocks harmful operations
+- Sandboxed tool execution with configurable policies
+- Input validation for all user inputs
+
+## AI Collaboration
+
+Protocol Monk is designed to work with AI models as collaborative partners. The system supports multiple AI backends and provides reliable tool execution for iterative development workflows.
+
+### AI Model Integration
+- Seamless integration with Ollama models
+- OpenRouter support for cloud-based models
+- Runtime model switching
+- Customizable prompting strategies
+
+## Development
+
+```bash
+# Format code
+black .
+
+# Lint code
+pylint .
+
+# Type check
+mypy .
+
+# Run tests
+pytest
+```
+
+## License
+
+MIT License - see LICENSE file for details.
+
+---
+
+Developed with ☦︎ by Nicholas Pitzarella
 ### Slash Commands
 - `/help` - Show available commands
 - `/model <name>` - Switch AI model
