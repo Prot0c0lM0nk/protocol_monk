@@ -32,6 +32,7 @@ def create_monk_panel(content, title="✠ Monk"):
     """
     Factory function to ensure all Agent panels look identical.
     Used by both the Streamer (rich_ui.py) and the History (message.py).
+    REMOVED: Fixed width to prevent Live display artifacts
     """
     return Panel(
         content,
@@ -40,13 +41,14 @@ def create_monk_panel(content, title="✠ Monk"):
         border_style="monk.border",
         box=box.ROUNDED,
         padding=(1, 2),
-        width=100,
+        # REMOVED: width=100 to prevent visual artifacts in Live display
     )
 
 
 def create_task_completion_panel(content, title="✓ Task Complete"):
     """
     Factory function for task completion panels with success styling.
+    REMOVED: Fixed width to prevent Live display artifacts
     """
     return Panel(
         content,
@@ -55,5 +57,5 @@ def create_task_completion_panel(content, title="✓ Task Complete"):
         border_style="success",
         box=box.ROUNDED,
         padding=(1, 2),
-        width=100,
+        # REMOVED: width=100 to prevent visual artifacts in Live display
     )

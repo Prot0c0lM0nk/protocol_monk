@@ -60,14 +60,15 @@ class RichUI(UI):
 
         self.processor = StreamProcessor()
 
-        # CRITICAL FIX: Use transient=True and reduce refresh rate to prevent scrollback artifacts
+        # CRITICAL FIX: Enhanced Live display configuration to prevent artifacts
         # transient=True: Live display disappears on exit instead of leaving residue
-        # refresh_per_second=4: Default rate reduces update frequency
+        # refresh_per_second=2: Further reduced rate to minimize artifacts
         # vertical_overflow="ellipsis": Safer than "visible" for scrollback
+        # NO fixed width constraints - panels now adapt to terminal width
         self._live_display = Live(
             generate_stream_panel("", False, 0),
             console=console,
-            refresh_per_second=4,  # Reduced from 12 to minimize artifacts
+            refresh_per_second=2,  # Further reduced from 4 to minimize artifacts
             vertical_overflow="ellipsis",  # Changed from "visible" to prevent scrollback corruption
             transient=True,  # Display disappears on exit to avoid residue
             redirect_stdout=False,  # Prevent stdout interference
@@ -148,7 +149,7 @@ class RichUI(UI):
                 )
             else:
                 await self.print_error(f"Stream processing error: {e}")
-
+                
     async def _end_streaming(self):
         """End streaming safely - idempotent and null-safe with transient display support."""
         if not self._streaming_active:
@@ -176,6 +177,13 @@ class RichUI(UI):
                     logging.getLogger(__name__).warning(
                         f"Error flushing processor during streaming end: {e}"
                     )
+            # CRITICAL FIX: Enhanced cleanup to prevent visual artifacts
+            # Use console.move_cursor instead of clear to preserve context
+            try:
+                # Move cursor to ensure clean transition from Live display
+                console.print("\n")  # Ensure we're on a new line
+            except Exception:
+                pass  # Best effort only
 
             # Stop the live display (with transient=True, it will disappear)
             try:
