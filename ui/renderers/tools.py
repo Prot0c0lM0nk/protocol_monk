@@ -73,7 +73,7 @@ def render_tool_call_pretty(action: str, params: dict):
         items.append(Text(""))  # Spacer
 
     # 3. Footer
-    items.append(Text("Authorize this action? [Y/n]", style="holy.gold"))
+    # 3. Footer - Removed (prompt handled by UI class)
 
     # 4. Final Panel
     panel = Panel(

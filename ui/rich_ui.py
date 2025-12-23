@@ -333,13 +333,33 @@ class RichUI(UI):
         console.print(f"[monk.text]{message}[/]")
 
     async def display_tool_call(self, tool_call: Dict, auto_confirm: bool = False):
-        pass
+        """Display tool call using Rich renderer"""
+        from .renderers.tools import render_tool_call_pretty
+        
+        action = tool_call.get("action", "unknown")
+        params = tool_call.get("parameters", {})
+        
+        # Use the Rich renderer to display the tool call
+        render_tool_call_pretty(action, params)
 
     async def display_execution_start(self, count: int):
-        pass
+        """Display execution start notification using Rich"""
+        from rich.panel import Panel
+        from rich.text import Text
+        
+        message = Text(f"Executing {count} tool(s)...", style="bold green")
+        panel = Panel(message, border_style="green")
+        console.print(panel)
 
     async def display_progress(self, current: int, total: int):
-        pass
+        """Display progress using Rich progress bar"""
+        from rich.progress import ProgressBar
+        
+        if not hasattr(self, "_progress_bar"):
+            self._progress_bar = ProgressBar(total=total, width=50)
+        
+        self._progress_bar.update(current)
+        console.print(self._progress_bar)
 
     async def display_task_complete(self, summary: str = ""):
         await self._end_streaming()
@@ -360,10 +380,22 @@ class RichUI(UI):
         console.print(create_monk_panel(greeting, title="✠ Protocol Monk Online"))
 
     async def display_startup_frame(self, frame: str):
-        pass
+        """Display startup frame using Rich"""
+        from rich.panel import Panel
+        
+        console.print(Panel(frame, border_style="dim"))
 
     async def print_error_stderr(self, message: str):
-        pass
+        """Print error to stderr using Rich"""
+        from rich.panel import Panel
+        from rich.text import Text
+        
+        error_panel = Panel(
+            Text(message, style="red"),
+            title="[bold red]Error[/]",
+            border_style="red"
+        )
+        console.print(error_panel, stderr=True)
 
     async def close(self):
         """Clean up all UI resources including live displays and thinking status."""
