@@ -118,7 +118,7 @@ class OllamaModelClient(BaseModelClient):
             ModelError: If connection or API error occurs
         """
         session = await self._get_session()
-        payload = self._prepare_payload(conversation_context, stream)
+        payload = self._prepare_payload(conversation_context, stream, tools)
         headers = {"Content-Type": "application/json"}
 
         try:
@@ -199,7 +199,6 @@ class OllamaModelClient(BaseModelClient):
                                 elif "tool_calls" in message and message["tool_calls"]:
                                     yield chunk_data  # Return complete response with tool calls
                             # Log debug info if enabled
-                            if self.logger.isEnabledFor(logging.DEBUG):
                                 if "content" in message and message["content"]:
                                     self.logger.debug(
                                         "Ollama chunk: %s", message["content"]

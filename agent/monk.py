@@ -268,11 +268,7 @@ class ProtocolAgent:
             Tuple[List[Dict], bool]: Actions list and JSON content flag
         """
         # Handle API tool calls (new path)
-        print(f"[DEBUG] _parse_response received: {type(response_data)}")
-        if isinstance(response_data, dict):
-            print(f"[DEBUG] Dict keys: {list(response_data.keys())}")
-            if "tool_calls" in response_data:
-                print(f"[DEBUG] Found tool_calls: {response_data['tool_calls']}")
+        
         if isinstance(response_data, dict):
             tool_calls = self.proper_tool_caller.extract_tool_calls(response_data)
             actions = []
@@ -286,6 +282,23 @@ class ProtocolAgent:
             return actions, len(actions) > 0
 
         # Handle text responses (existing path for compatibility)
+
+        # Bridge solution: Check if model put tool calls in text content
+        if isinstance(response_data, str) and '"action"' in response_data and '"parameters"' in response_data:
+            # Model put tool call in text - extract it
+            import json
+            try:
+                # Look for JSON object in text
+                start = response_data.find('{')
+                end = response_data.rfind('}') + 1
+                if start != -1 and end != 0:
+                    json_str = response_data[start:end]
+                    tool_data = json.loads(json_str)
+                    if "action" in tool_data and "parameters" in tool_data:
+                        # Convert to API format for processing
+                        return [tool_data], True
+            except (json.JSONDecodeError, ValueError):
+                pass
 
         # No text fallback - we only use API tool calling now
         return [], False
