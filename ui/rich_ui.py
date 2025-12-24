@@ -14,11 +14,12 @@ from prompt_toolkit.patch_stdout import patch_stdout
 
 # --- IMPORTS ---
 from .base import UI, ToolResult
-from .renderers.message import render_agent_message, render_user_message
+from .renderers.message import render_agent_message, render_user_message, clean_think_tags
 from .renderers.models import render_model_table, render_switch_report
 from .renderers.streaming import generate_stream_panel
 from .renderers.tools import render_tool_call_pretty, render_tool_result
 from .stream_processor import StreamProcessor
+# ADD: Import the think tag cleanser
 
 # ADD: Import the new factory function
 from .styles import console, create_monk_panel
@@ -96,10 +97,15 @@ class RichUI(UI):
                 )
                 tool_len = len(self._accumulated_text) if is_tool else 0
 
-                if self._live_display:
+                # CLEAN THINK TAGS for display to prevent visual artifacts
+                # This prevents empty panels when streaming think tag chunks
+                display_content = clean_think_tags(self._accumulated_text)
+                
+                # Only update display if there's actual content to show
+                if display_content.strip() and self._live_display:
                     self._live_display.update(
                         generate_stream_panel(
-                            self._accumulated_text, is_tool, tool_len, False
+                            display_content, is_tool, tool_len, False
                         )
                     )
 
@@ -107,6 +113,21 @@ class RichUI(UI):
                 # Fallback to processor for edge cases
                 await self.processor.feed(text)
                 await self.processor.tick()
+
+                visible_text, is_tool, tool_len = self.processor.get_view_data()
+                buffer_limit_exceeded = getattr(
+                    self.processor, "_buffer_limit_exceeded", False
+                )
+
+                # Clean think tags for processor output too
+                cleaned_visible_text = clean_think_tags(visible_text)
+                
+                if self._live_display and cleaned_visible_text.strip():
+                    self._live_display.update(
+                        generate_stream_panel(
+                            cleaned_visible_text, is_tool, tool_len, buffer_limit_exceeded
+                        )
+                    )
 
                 visible_text, is_tool, tool_len = self.processor.get_view_data()
                 buffer_limit_exceeded = getattr(
