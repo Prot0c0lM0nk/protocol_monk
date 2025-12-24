@@ -11,7 +11,7 @@ This ensures zero breaking changes for existing code.
 
 import warnings
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 from textual.containers import Container
 from textual.widgets import Static, Markdown
 
@@ -135,8 +135,8 @@ class ModelClient:
         }
 
     async def get_response_async(
-        self, conversation_context: List[Dict], stream: bool = True
-    ) -> AsyncGenerator[str, None]:
+        self, conversation_context: List[Dict], stream: bool = True, tools: Optional[List[Dict[str, Any]]] = None
+    ) -> AsyncGenerator[Union[str, Dict], None]:
         """
         Async generator that yields response chunks from the model.
 
@@ -160,7 +160,7 @@ class ModelClient:
 
         # Direct delegation to provider - no failover, user-controlled
         async for chunk in self._client.get_response_async(
-            conversation_context, stream
+            conversation_context, stream, tools
         ):
             yield chunk
 

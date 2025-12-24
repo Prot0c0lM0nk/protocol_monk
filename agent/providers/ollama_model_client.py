@@ -13,7 +13,7 @@ import aiohttp
 import asyncio
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
 from agent.base_model_client import BaseModelClient
 from agent.model_manager import RuntimeModelManager
@@ -97,8 +97,11 @@ class OllamaModelClient(BaseModelClient):
         return self._session
 
     async def get_response_async(
-        self, conversation_context: List[Dict[str, str]], stream: bool = True
-    ) -> AsyncGenerator[str, None]:
+        self,
+        conversation_context: List[Dict[str, str]],
+        stream: bool = True,
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> AsyncGenerator[Union[str, Dict], None]:
         """
         Async generator that yields response chunks from Ollama.
 
@@ -184,17 +187,27 @@ class OllamaModelClient(BaseModelClient):
                                     )
                                     continue
 
-                            chunk_content = self._extract_chunk_content(chunk_data)
+                            # Ollama sends complete JSON objects per line
+                            if "message" in chunk_data:
+                                message = chunk_data["message"]
 
-                            if chunk_content:
-                                yield chunk_content
+                                # Check for text content first
+                                if "content" in message and message["content"]:
+                                    yield message["content"]
 
+                                # Check for complete tool calls (Ollama format - direct JSON)
+                                elif "tool_calls" in message and message["tool_calls"]:
+                                    yield chunk_data  # Return complete response with tool calls
                             # Log debug info if enabled
-                            if (
-                                self.logger.isEnabledFor(logging.DEBUG)
-                                and chunk_content
-                            ):
-                                self.logger.debug("Ollama chunk: %s", chunk_content)
+                            if self.logger.isEnabledFor(logging.DEBUG):
+                                if "content" in message and message["content"]:
+                                    self.logger.debug(
+                                        "Ollama chunk: %s", message["content"]
+                                    )
+                                elif "tool_calls" in message and message["tool_calls"]:
+                                    self.logger.debug(
+                                        "Ollama tool calls: %s", message["tool_calls"]
+                                    )
                         except Exception as e:
                             self.logger.error(
                                 "Error processing Ollama stream chunk: %s", e
@@ -297,11 +310,12 @@ class OllamaModelClient(BaseModelClient):
             )
 
     def _prepare_payload(
-        self, conversation_context: List[Dict[str, str]], stream: bool
+        self,
+        conversation_context: List[Dict[str, str]],
+        stream: bool,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
-        Prepare request payload for Ollama.
-
         Args:
             conversation_context: List of conversation messages
             stream: Whether to enable streaming
@@ -310,12 +324,15 @@ class OllamaModelClient(BaseModelClient):
             Dict[str, Any]: Request payload for Ollama API
         """
         options = self.model_options.copy()
-        return {
+        payload = {
             "model": self.model_name,
             "messages": conversation_context,
             "stream": stream,
             "options": options,
         }
+        if tools:
+            payload["tools"] = tools  # Ollama accepts OpenAI format
+        return payload
 
     def _extract_content(self, response_data: Dict[str, Any]) -> Optional[str]:
         """

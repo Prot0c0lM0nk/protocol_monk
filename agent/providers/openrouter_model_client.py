@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Union
 
 from agent.base_model_client import BaseModelClient
 from config.static import settings
@@ -132,8 +133,11 @@ class OpenRouterModelClient(BaseModelClient):
         return self._session
 
     async def get_response_async(
-        self, conversation_context: List[Dict[str, str]], stream: bool = True
-    ) -> AsyncGenerator[str, None]:
+        self,
+        conversation_context: List[Dict[str, str]],
+        stream: bool = True,
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> AsyncGenerator[Union[str, Dict], None]:
         """
         Async generator that yields response chunks from OpenRouter.
 
@@ -264,12 +268,20 @@ class OpenRouterModelClient(BaseModelClient):
 
                 try:
                     chunk_data = json.loads(json_str)
-                    chunk_content = self._extract_chunk_content(chunk_data)
 
-                    if chunk_content:
-                        self._log_debug_info(chunk_content)
-                        yield chunk_content
+                    # Process SSE events - each is complete JSON
+                    if "choices" in chunk_data and chunk_data["choices"]:
+                        choice = chunk_data["choices"][0]
+                        message = choice.get("message", {})
 
+                        # Check for text content
+                        if "content" in message and message["content"]:
+                            yield message["content"]
+                            self._log_debug_info(message["content"])
+
+                        # Check for tool calls (OpenAI format)
+                        elif "tool_calls" in message and message["tool_calls"]:
+                            yield chunk_data  # Return complete response
                 except json.JSONDecodeError as e:
                     self.logger.warning("Invalid JSON chunk: %s - %s", json_str, e)
                     continue
@@ -308,7 +320,10 @@ class OpenRouterModelClient(BaseModelClient):
             )
 
     def _prepare_payload(
-        self, conversation_context: List[Dict[str, str]], stream: bool
+        self,
+        conversation_context: List[Dict[str, str]],
+        stream: bool,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Prepare request payload for OpenRouter (OpenAI-compatible format).
@@ -320,12 +335,15 @@ class OpenRouterModelClient(BaseModelClient):
         Returns:
             Dict[str, Any]: Request payload for OpenRouter API
         """
-        return {
+        payload = {
             "model": self.model_name,
             "messages": conversation_context,
             "stream": stream,
             **self.model_options,
         }
+        if tools:
+            payload["tools"] = tools  # OpenAI-compatible format
+        return payload
 
     def _extract_content(self, response_data: Dict[str, Any]) -> Optional[str]:
         """

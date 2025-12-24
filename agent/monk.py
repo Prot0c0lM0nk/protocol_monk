@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Agent Components
 from agent.context import ContextManager
@@ -25,7 +25,7 @@ from config.static import settings
 from ui.base import UI
 from ui.plain import PlainUI
 from utils.enhanced_logger import EnhancedLogger
-from utils.json_parser_factory import extract_json_with_retry
+from utils.proper_tool_calling import ProperToolCalling
 
 
 class ProtocolAgent:
@@ -63,6 +63,9 @@ class ProtocolAgent:
             max_tokens=settings.model.context_window,
             working_dir=self.working_dir,
             tool_registry=tool_registry,
+        )
+        self.proper_tool_caller = (
+            ProperToolCalling(tool_registry) if tool_registry else None
         )
 
         # Wiring
@@ -196,16 +199,32 @@ class ProtocolAgent:
         await self.ui.start_thinking()
         full_response = ""
         try:
+            # Get tool schemas if available
+            tools = None
+            if self.proper_tool_caller:
+                tools = self.proper_tool_caller.get_tools_schema()
+
             async for chunk in self.model_client.get_response_async(
-                context, stream=True
+                context, stream=True, tools=tools
             ):
-                full_response += chunk
-                await self.ui.print_stream(chunk)
+                # Handle both text and dict responses
+                if isinstance(chunk, str):
+                    full_response += chunk
+                    await self.ui.print_stream(chunk)
+                elif isinstance(chunk, dict):
+                    # Store tool call response for parsing
+                    full_response = chunk  # This will be processed by _parse_response
 
             # Save Assistant thought
             if full_response:
-                await self.context_manager.add_message("assistant", full_response)
-
+                await self.context_manager.add_message(
+                    "assistant",
+                    (
+                        full_response
+                        if isinstance(full_response, str)
+                        else "Tool calls requested"
+                    ),
+                )
             return full_response
         except ModelRateLimitError as e:
             e.log_error()
@@ -235,36 +254,41 @@ class ProtocolAgent:
             # Ensure thinking spinner is always stopped
             await self.ui.stop_thinking()
 
-    def _parse_response(self, text: str) -> Tuple[List[Dict], bool]:
+    def _parse_response(
+        self, response_data: Union[str, Dict]
+    ) -> Tuple[List[Dict], bool]:
         """
         Parse response and return (actions, has_json_content).
-        Validates parsed actions to prevent crashes.
+        Handles both text responses and API tool calls.
 
         Args:
-            text: Response text to parse
+            response_data: Response text or API response dict
 
         Returns:
             Tuple[List[Dict], bool]: Actions list and JSON content flag
         """
-        actions, errors = extract_json_with_retry(text)
-        has_json = len(actions) > 0
-        if not isinstance(actions, list):
-            raise ModelResponseParseError(
-                message="Invalid actions format",
-                raw_response=text,
-                details={"expected": "list", "got": type(actions).__name__},
-            )
-        for action in actions:
-            if not isinstance(action, dict) or "action" not in action:
-                raise ModelResponseParseError(
-                    message="Invalid action format",
-                    raw_response=str(action),
-                    details={
-                        "expected": "dict with 'action' key",
-                        "got": type(action).__name__,
-                    },
-                )
-        return actions, has_json
+        # Handle API tool calls (new path)
+        print(f"[DEBUG] _parse_response received: {type(response_data)}")
+        if isinstance(response_data, dict):
+            print(f"[DEBUG] Dict keys: {list(response_data.keys())}")
+            if "tool_calls" in response_data:
+                print(f"[DEBUG] Found tool_calls: {response_data['tool_calls']}")
+        if isinstance(response_data, dict):
+            tool_calls = self.proper_tool_caller.extract_tool_calls(response_data)
+            actions = []
+            for tool_call in tool_calls:
+                action = {
+                    "action": tool_call.action,
+                    "parameters": tool_call.parameters,
+                    "reasoning": tool_call.reasoning,
+                }
+                actions.append(action)
+            return actions, len(actions) > 0
+
+        # Handle text responses (existing path for compatibility)
+
+        # No text fallback - we only use API tool calling now
+        return [], False
 
     async def _record_results(self, summary: ExecutionSummary) -> bool:
         """

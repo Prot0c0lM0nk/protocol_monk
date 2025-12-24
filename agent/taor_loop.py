@@ -137,6 +137,11 @@ class TAORLoop:
 
         # 2. PARSE (Extract Intent)
         actions, _ = self.agent._parse_response(response)
+        
+        # Debug: Check what parsing returned
+        print(f"[DEBUG] _parse_response returned {len(actions)} actions")
+        if actions:
+            print(f"[DEBUG] First action: {actions[0]}")
 
         # If no actions, check for ghosts or finish
         if not actions:

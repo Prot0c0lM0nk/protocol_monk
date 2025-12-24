@@ -11,6 +11,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Union
 
 from exceptions import (
     EmptyResponseError,
@@ -49,8 +50,11 @@ class BaseModelClient(ABC):
 
     @abstractmethod
     async def get_response_async(
-        self, conversation_context: List[Dict[str, str]], stream: bool = True
-    ) -> AsyncGenerator[str, None]:
+        self,
+        conversation_context: List[Dict[str, str]],
+        stream: bool = True,
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> AsyncGenerator[Union[str, Dict], None]:
         """
         Core method that yields response chunks from the model.
 
@@ -70,7 +74,10 @@ class BaseModelClient(ABC):
 
     @abstractmethod
     def _prepare_payload(
-        self, conversation_context: List[Dict[str, str]], stream: bool
+        self,
+        conversation_context: List[Dict[str, str]],
+        stream: bool,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Convert generic conversation format to provider-specific request payload.
