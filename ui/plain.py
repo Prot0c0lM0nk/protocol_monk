@@ -7,6 +7,7 @@ while maintaining a "Plain" aesthetic for developer clarity.
 """
 import asyncio
 import sys
+import re
 from typing import Any, Dict, List, Union
 
 from prompt_toolkit import PromptSession
@@ -41,9 +42,26 @@ class PlainUI(UI):
                 # Clear the line completely and reset cursor to start
                 print("\r" + " " * 50 + "\r", end="", flush=True)
                 self._thinking = False
+    def _extract_think_tags(self, text: str) -> tuple[str, str]:
+        """
+        Extract think tag content from text.
+        
+        Returns:
+            tuple: (think_content, visible_content)
+        """
+        # Match think tags and their content
+        pattern = r'<think>(.*?)</think>'
+        match = re.search(pattern, text, flags=re.DOTALL)
+        
+        if match:
+            think_content = match.group(1).strip()
+            visible_content = re.sub(pattern, '', text, flags=re.DOTALL).strip()
+            return think_content, visible_content
+        else:
+            return "", text
 
     async def print_stream(self, text: str):
-        """Stream text output. Handles the transition from thinking to speaking. Thread-safe."""
+        """Stream text output with think tag formatting. Thread-safe."""
         async with self._lock:
             if self._thinking:
                 # === TRANSITION: FROM THINKING TO SPEAKING ===
@@ -62,7 +80,16 @@ class PlainUI(UI):
                 print()  # This creates the [new line space] (The blank line)
                 print("[MONK] ", end="", flush=True)  # The Agent Prefix
 
-            print(text, end="", flush=True)
+            # Extract think tags and visible content
+            think_content, visible_content = self._extract_think_tags(text)
+            
+            # Print think tags with [THINKING] prefix
+            if think_content:
+                print(f"[THINKING] {think_content} ", end="", flush=True)
+            
+            # Print visible content normally
+            if visible_content:
+                print(visible_content, end="", flush=True)
 
     async def confirm_tool_call(
         self, tool_call: Dict, auto_confirm: bool = False
