@@ -18,7 +18,6 @@ from .renderers.message import render_agent_message, render_user_message, clean_
 from .renderers.models import render_model_table, render_switch_report
 from .renderers.streaming import generate_stream_panel
 from .renderers.tools import render_tool_call_pretty, render_tool_result
-from .stream_processor import StreamProcessor
 # ADD: Import the think tag cleanser
 
 # ADD: Import the new factory function
@@ -34,7 +33,6 @@ class RichUI(UI):
         self._live_display = None
         self._streaming_active = False
         self._thinking_status = None
-        self.processor = None
         self._accumulated_text = (
             ""  # Store accumulated streaming content like StreamProcessor
         )
@@ -59,19 +57,18 @@ class RichUI(UI):
         self._stop_thinking()
         self._streaming_active = True
 
-        self.processor = StreamProcessor()
 
         # CRITICAL FIX: Enhanced Live display configuration to prevent artifacts
-        # transient=True: Live display disappears on exit instead of leaving residue
-        # refresh_per_second=2: Further reduced rate to minimize artifacts
-        # vertical_overflow="ellipsis": Safer than "visible" for scrollback
+        # transient=False: Live display stays visible on exit (no panel transition artifacts)
+        # refresh_per_second=6: Increased for smoother animation
+        # vertical_overflow="visible": Panel stays visible, so show full content
         # NO fixed width constraints - panels now adapt to terminal width
         self._live_display = Live(
-            generate_stream_panel("", False, 0),
+            generate_stream_panel(""),
             console=console,
-            refresh_per_second=2,  # Further reduced from 4 to minimize artifacts
-            vertical_overflow="ellipsis",  # Changed from "visible" to prevent scrollback corruption
-            transient=True,  # Display disappears on exit to avoid residue
+            refresh_per_second=6,  # Increased for smoother animation
+            vertical_overflow="visible",  # Show full content since panel stays visible
+            transient=False,  # Panel stays visible on exit (no transition artifacts)
             redirect_stdout=False,  # Prevent stdout interference
             redirect_stderr=False,  # Prevent stderr interference
         )
@@ -82,131 +79,45 @@ class RichUI(UI):
             self._start_streaming()
 
         try:
-            # DIRECT STREAMING: Bypass StreamProcessor for SDK-aligned complete chunks
-            # Since Ollama/OpenRouter provide complete data, we can stream directly
-            # Only use StreamProcessor for legacy scenarios or partial data detection
-            # For now: Direct display with minimal processing but ACCUMULATION
-            if self.processor and len(text) > 0:
-                # ACCUMULATE the text like StreamProcessor does
+            # Simply accumulate and display (no tool detection needed)
+            if len(text) > 0:
                 self._accumulated_text += text
-
-                # Quick tool detection for the accumulated content
-                is_tool = (
-                    "```json" in self._accumulated_text
-                    or '"action"' in self._accumulated_text
-                )
-                tool_len = len(self._accumulated_text) if is_tool else 0
-
-                # CLEAN THINK TAGS for display to prevent visual artifacts
-                # This prevents empty panels when streaming think tag chunks
+                
+                # Clean think tags for display
                 display_content = clean_think_tags(self._accumulated_text)
                 
-                # Only update display if there's actual content to show
+                # Update display if there's content
                 if display_content.strip() and self._live_display:
                     self._live_display.update(
-                        generate_stream_panel(
-                            display_content, is_tool, tool_len, False
-                        )
-                    )
-
-            else:
-                # Fallback to processor for edge cases
-                await self.processor.feed(text)
-                await self.processor.tick()
-
-                visible_text, is_tool, tool_len = self.processor.get_view_data()
-                buffer_limit_exceeded = getattr(
-                    self.processor, "_buffer_limit_exceeded", False
-                )
-
-                # Clean think tags for processor output too
-                cleaned_visible_text = clean_think_tags(visible_text)
-                
-                if self._live_display and cleaned_visible_text.strip():
-                    self._live_display.update(
-                        generate_stream_panel(
-                            cleaned_visible_text, is_tool, tool_len, buffer_limit_exceeded
-                        )
-                    )
-
-                visible_text, is_tool, tool_len = self.processor.get_view_data()
-                buffer_limit_exceeded = getattr(
-                    self.processor, "_buffer_limit_exceeded", False
-                )
-
-                if self._live_display:
-                    self._live_display.update(
-                        generate_stream_panel(
-                            visible_text, is_tool, tool_len, buffer_limit_exceeded
-                        )
+                        generate_stream_panel(display_content)
                     )
         except asyncio.CancelledError:
-
-            try:
-                if self.processor:
-                    self.processor.close()  # Use non-async close
-                    self.processor = None
-            except Exception:
-                pass  # Best effort only
-            # End streaming if active - but don't update display to prevent artifacts
-            if self._streaming_active:
+            # Handle cancellation gracefully
+            self._streaming_active = False
+            if self._live_display:
                 try:
-                    self._streaming_active = False
-                    if self._live_display:
-                        # Stop display without final update to prevent partial content artifacts
-                        self._live_display.stop()
-                        self._live_display = None
+                    self._live_display.stop()
                 except Exception:
                     pass
-            # Don't re-raise - let the cancellation propagate naturally
-            return
+                self._live_display = None
         except Exception as e:
-            # Stop thinking spinner before handling error
-            self._stop_thinking()
-            # Handle buffer overflow or other processing errors gracefully
-            if "buffer" in str(e).lower() or "memory" in str(e).lower():
-                await self.print_warning(
-                    "Stream processing limited due to buffer constraints"
-                )
-            else:
-                await self.print_error(f"Stream processing error: {e}")
+            await self.print_error(f"Stream processing error: {e}")
                 
     async def _end_streaming(self):
-        """End streaming safely - idempotent and null-safe with transient display support."""
+        """End streaming safely - panel stays visible with transient=False."""
         if not self._streaming_active:
             return
 
         if self._live_display:
-            # In transient mode, we don't need a final update - the display will disappear
-            # Just ensure we have the final content ready for static display
-            final_content = ""
-            is_tool = False
-            tool_len = 0
-
-            if self._accumulated_text:
-                # Use accumulated content for final static display
-                final_content = self._accumulated_text
-                is_tool = "```json" in final_content or '"action"' in final_content
-                tool_len = len(final_content) if is_tool else 0
-            elif self.processor:
-                # Fallback to processor for legacy mode
-                try:
-                    await self.processor.flush()
-                    visible_text, is_tool, tool_len = self.processor.get_view_data()
-                    final_content = visible_text
-                except Exception as e:
-                    logging.getLogger(__name__).warning(
-                        f"Error flushing processor during streaming end: {e}"
-                    )
-            # CRITICAL FIX: Enhanced cleanup to prevent visual artifacts
-            # Use console.move_cursor instead of clear to preserve context
+            # With transient=False, the panel stays visible
+            # Just need to ensure clean cursor positioning
             try:
-                # Move cursor to ensure clean transition from Live display
-                console.print("\n")  # Ensure we're on a new line
+                # Move cursor to a new blank line after the panel
+                console.print("\n")
             except Exception:
                 pass  # Best effort only
 
-            # Stop the live display (with transient=True, it will disappear)
+            # Stop the live display (panel remains visible)
             try:
                 self._live_display.stop()
             except Exception as e:
@@ -214,16 +125,8 @@ class RichUI(UI):
 
             self._live_display = None
 
-            # Print the final content as a static panel (since transient display disappeared)
-            if final_content:
-                from ui.renderers.message import render_agent_message
-
-                render_agent_message(final_content)
-
-        self._live_display = None
         self._accumulated_text = ""
         self._streaming_active = False
-        self.processor = None
 
     async def start_thinking(self):
         """Display the thinking spinner."""
@@ -434,26 +337,13 @@ class RichUI(UI):
             await self._end_streaming()
             # Stop thinking status if active
             self._stop_thinking()
-            # Clean up stream processor if it exists
-            if self.processor:
-                try:
-                    self.processor.close()
-                except Exception as e:
-                    logger.warning(f"Error closing stream processor: {e}")
-                self.processor = None
             logger.debug("RichUI resources cleaned up successfully")
         except asyncio.CancelledError:
             # Handle cancellation gracefully - still try to clean up what we can
             logger.warning("RichUI cleanup cancelled, performing best-effort cleanup")
             self._stop_thinking()
-            if self.processor:
-                try:
-                    self.processor.close()
-                except Exception:
-                    pass
-                self.processor = None
             raise  # Re-raise the cancellation
         except Exception as e:
             logger.error(f"Error during RichUI cleanup: {e}", exc_info=True)
             raise
-            raise
+            
