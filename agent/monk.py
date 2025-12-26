@@ -287,16 +287,16 @@ class ProtocolAgent:
     async def _record_results(self, summary: ExecutionSummary) -> bool:
         """
         Record results and return True if any failures occurred.
-
-        Args:
-            summary: Execution summary with tool results
-
-        Returns:
-            bool: True if any failures occurred, False otherwise
+        
+        Tool results are formatted with tool name information to enable
+        proper display in the context window.
         """
         had_failure = False
         for result in summary.results:
-            await self.context_manager.add_message("tool", result.output, importance=5)
+            # Format result with tool name for proper context display
+            # This allows the ContextManager to extract the name for the header
+            formatted_output = f"Tool: {result.tool_name}\nOutput: {result.output}"
+            await self.context_manager.add_message("tool", formatted_output, importance=5)
 
             if not result.success:
                 had_failure = True

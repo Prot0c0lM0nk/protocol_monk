@@ -56,6 +56,7 @@ class ToolExecutor:
         self.ui_callback = ui_callback
         self.logger = logging.getLogger(__name__)
         self.execution_lock = Lock()
+        self._config_lock = Lock()
 
     async def _default_ui_callback(self, event: str, _data: Dict[str, Any]) -> Any:
         """

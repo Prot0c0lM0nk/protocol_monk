@@ -285,24 +285,41 @@ class ContextManager:
     async def _get_base_context(self) -> List[Dict]:
         """
         Standard context construction without AI enhancement.
-
+        
         Converts tool messages to user role format for compatibility with models
         that don't support the 'tool' role (like many Ollama models).
-
+        
         NOTE: This method should ONLY be called from within an existing lock context
         to avoid deadlocks.
-
-        Returns:
-            List[Dict]: Basic conversation context without enhancements
+        
+        IMPORTANT: Tool results are formatted with explicit "RESULT - COMPLETED" markers
+        to prevent models from confusing tool results with new tool requests.
         """
         # DO NOT acquire lock here - caller must already hold the lock
         context = [{"role": "system", "content": self.system_message}]
         for msg in self.conversation:
             # Convert tool messages to user role for model compatibility
             if msg.role == "tool":
-                context.append(
-                    {"role": "user", "content": f"[TOOL_RESPONSE] {msg.content}"}
+                # Extract tool name from content if available (format: "Tool: name\nOutput: ...")
+                tool_name = "Unknown"
+                content_lines = msg.content.split('\n')
+                for line in content_lines:
+                    if line.startswith("Tool: "):
+                        tool_name = line.replace("Tool: ", "").strip()
+                        break
+                
+                # Format with explicit completion markers and visual boxing
+                formatted_result = (
+                    "╔══════════════════════════════════════════════════════════════╗\n"
+                    "║  TOOL EXECUTION RESULT - COMPLETED                              ║\n"
+                    "╚══════════════════════════════════════════════════════════════╝\n\n"
+                    f"Tool Name: {tool_name}\n"
+                    "Execution Status: COMPLETED\n\n"
+                    "Output:\n"
+                    f"{msg.content}\n\n"
+                    "╚══════════════════════════════════════════════════════════════╝"
                 )
+                context.append({"role": "user", "content": formatted_result})
             else:
                 context.append({"role": msg.role, "content": msg.content})
         return context

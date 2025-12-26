@@ -144,8 +144,15 @@ class TAORLoop:
         if not actions:
             return await self._handle_no_actions(response)
 
-        # 3. ACT (Strict Serial Execution - First action only)
-        return await self._process_action(actions[0])
+        # 3. ACT (Strict Serial Execution - All actions)
+        # We loop through all actions returned by the model
+        for action in actions:
+            should_continue = await self._process_action(action)
+            # If an action signals the loop should stop (like 'finish'), we exit early
+            if not should_continue:
+                return False
+            
+        return True
 
     async def _handle_no_actions(self, response: str) -> bool:
         """
