@@ -4,6 +4,7 @@
 .env
 .env.local
 *.local
+xml_tool_test/
 
 # Python
 __pycache__/

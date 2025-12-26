@@ -213,17 +213,14 @@ class ProtocolAgent:
                 elif isinstance(chunk, dict):
                     # Store tool call response for parsing
                     full_response = chunk  # This will be processed by _parse_response
-
             # Save Assistant thought
             if full_response:
-                await self.context_manager.add_message(
-                    "assistant",
-                    (
-                        full_response
-                        if isinstance(full_response, str)
-                        else "Tool calls requested"
-                    ),
-                )
+                if isinstance(full_response, str):
+                    await self.context_manager.add_message("assistant", full_response)
+                else:
+                    # For tool calls, don't add a text message - let the UI handle the visual indicator
+                    # The UI will show a loading state instead of adding this to conversation history
+                    pass  # Skip adding "Tool calls requested" message
             return full_response
         except ModelRateLimitError as e:
             e.log_error()

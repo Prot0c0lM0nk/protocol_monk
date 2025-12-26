@@ -135,53 +135,38 @@ class ProperToolCalling:
 
     def extract_tool_calls(self, api_response: Dict[str, Any]) -> List[ToolCall]:
         tool_calls = []
-
-        # 1. OpenRouter/OpenAI format
+    
+        # Extract the message object regardless of top-level key (choices or message)
+        message = {}
         if "choices" in api_response:
-            choice = api_response["choices"][0]
-            message = choice.get("message", {})
-            if "tool_calls" in message:
-                for tool_call in message["tool_calls"]:
-                    function = tool_call.get("function", {})
-                    args = function.get("arguments", "{}")
-                
-                    # If it's a string, parse it. If it's already a dict, use it.
-                    if isinstance(args, str):
-                        try:
-                            parameters = json.loads(args)
-                        except json.JSONDecodeError:
-                            parameters = {}
-                    else:
-                        parameters = args or {}
-
-                    tool_calls.append(ToolCall(
-                        id=tool_call.get("id", ""),
-                        action=function.get("name", ""),
-                        parameters=parameters
-                    ))
-
-        # 2. Ollama format (message-first)
+            message = api_response["choices"][0].get("message", {})
         elif "message" in api_response:
             message = api_response["message"]
-            if "tool_calls" in message:
-                for tool_call in message["tool_calls"]:
-                    function = tool_call.get("function", {})
-                    args = function.get("arguments", {})
-                
-                    # Ollama often returns already-parsed dicts
-                    if isinstance(args, str):
-                        try:
-                            parameters = json.loads(args)
-                        except json.JSONDecodeError:
-                            parameters = {}
-                    else:
-                        parameters = args or {}
-                
-                    tool_calls.append(ToolCall(
-                        id=str(tool_call.get("id", "")),
-                        action=function.get("name", ""),
-                        parameters=parameters
-                    ))
+
+        raw_calls = message.get("tool_calls", [])
+        if not raw_calls:
+            return []
+
+        for tc in raw_calls:
+            func = tc.get("function", {})
+            name = func.get("name", "")
+            raw_args = func.get("arguments", {})
+
+            # HANDLE STRING VS DICT ARGUMENTS
+            if isinstance(raw_args, str):
+                try:
+                    parameters = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    parameters = {} # Or handle partial JSON
+            else:
+                parameters = raw_args if isinstance(raw_args, dict) else {}
+
+            tool_calls.append(ToolCall(
+                id=tc.get("id", ""),
+                action=name,
+                parameters=parameters,
+                reasoning=message.get("content") # Use assistant text as reasoning
+            ))
 
         return tool_calls
 
