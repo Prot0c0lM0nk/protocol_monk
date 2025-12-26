@@ -11,6 +11,7 @@ This ensures zero breaking changes for existing code.
 
 import warnings
 import logging
+import asyncio
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 from textual.containers import Container
 from textual.widgets import Static, Markdown
@@ -51,6 +52,7 @@ class ModelClient:
         """
         self.model_name = model_name
         self.logger = logging.getLogger(__name__)
+        self._client_lock: asyncio.Lock = asyncio.Lock()
 
         # Determine provider
         if provider:
@@ -152,12 +154,10 @@ class ModelClient:
             ModelTimeoutError: If request times out
             ModelError: If connection or API error occurs
         """
-        if not self._client:
-            raise ModelError(
-                "Model client not initialized",
-                details={"model": self.model_name, "provider": self.current_provider},
-            )
-
+        async with self._client_lock:  # NEW: protect client access during stream
+            if not self._client:
+                raise ModelError("Model client not initialized")
+                
         # Direct delegation to provider - no failover, user-controlled
         async for chunk in self._client.get_response_async(
             conversation_context, stream, tools

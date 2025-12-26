@@ -39,15 +39,17 @@ class ToolRegistry:
         }
         self.logger = logging.getLogger(__name__)
         self._tools: Dict[str, BaseTool] = {}
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock = asyncio.Lock()
+        self._init_lock: asyncio.Lock = asyncio.Lock()  # NEW: protects initialization
         self._initialized = False
 
     async def async_initialize(self):
-        """Initialize async components."""
-        if self._initialized:
-            return
-        await asyncio.to_thread(self._discover_tools)
-        self._initialized = True
+        """Initialize async components with protection against concurrent calls."""
+        async with self._init_lock:  # NEW: prevent concurrent initialization
+            if self._initialized:
+                return
+            await asyncio.to_thread(self._discover_tools)
+            self._initialized = True
 
     def _discover_tools(self):
         """Auto-discover and register tools from the 'tools' directory."""

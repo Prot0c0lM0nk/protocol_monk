@@ -1,5 +1,6 @@
 import logging
 import re
+import asyncio  # Added import
 from pathlib import Path
 from typing import List, Set
 
@@ -14,36 +15,22 @@ class FileTracker:
 
     def __init__(self, working_dir: Path):
         self.working_dir = working_dir
-        # Changed type hint to Set for clarity
         self.files_shown: Set[str] = set()
+        self._lock: asyncio.Lock = asyncio.Lock()  # NEW: protects files_shown set
         self.logger = logging.getLogger(__name__)
 
     async def track_file_shown(self, filepath: str) -> int:
-        """
-        Mark a file as shown to the user.
-
-        Args:
-            filepath: Path to the file
-
-        Returns:
-            int: 1 if it's new, 0 if already shown
-        """
-        if filepath not in self.files_shown:
-            self.files_shown.add(filepath)
-            return 1
-        return 0
+        """Mark a file as shown to the user with thread-safe operations."""
+        async with self._lock:  # NEW: Acquire lock
+            if filepath not in self.files_shown:
+                self.files_shown.add(filepath)
+                return 1
+            return 0
 
     async def get_file_shown_count(self, filepath: str) -> int:
-        """
-        Check if a file is currently in the tracked set.
-
-        Args:
-            filepath: Path to the file to check
-
-        Returns:
-            int: 1 if file is in tracked set, 0 otherwise
-        """
-        return 1 if filepath in self.files_shown else 0
+        """Check if a file is in the tracked set safely."""
+        async with self._lock:  # NEW: Acquire lock
+            return 1 if filepath in self.files_shown else 0
 
     @staticmethod
     def _exact_path_match(filepath: str, text: str) -> bool:
@@ -143,5 +130,6 @@ class FileTracker:
             self.logger.debug(f"Replaced old instance of {filepath} at index {idx}")
 
     async def clear(self):
-        """Reset the tracker state."""
-        self.files_shown.clear()
+        """Reset the tracker state safely."""
+        async with self._lock:  # NEW: Acquire lock
+            self.files_shown.clear()
