@@ -9,14 +9,6 @@ from typing import Any
 
 from exceptions.base import MonkBaseError
 
-"""
-Context Exception Definitions for MonkCode
-
-All context-related exceptions inherit from MonkBaseError.
-"""
-
-from exceptions.base import MonkBaseError
-
 
 class ContextError(MonkBaseError):
     """Base exception for context management errors."""

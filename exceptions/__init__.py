@@ -41,7 +41,6 @@ from .tools import (
 )
 
 # Context exceptions
-# Context exceptions
 from .context import (
     ContextCorruptionError,
     ContextError,
@@ -64,32 +63,11 @@ from .agent import (
     ConfigurationError,
     OrchestrationError,
     ScratchManagerError,
+    SessionInitializationError,
+    UIInitializationError,
+    ToolRegistryError,
+    ModelClientError,
 )
-
-
-# Application/UI exceptions (new category for main.py)
-class SessionInitializationError(MonkBaseError):
-    """Raised when the application session fails to initialize."""
-
-    pass
-
-
-class UIInitializationError(MonkBaseError):
-    """Raised when the user interface fails to initialize."""
-
-    pass
-
-
-class ToolRegistryError(MonkBaseError):
-    """Raised for errors related to the tool registry."""
-
-    pass
-
-
-class ModelClientError(MonkBaseError):
-    """Raised for errors related to the model client."""
-
-    pass
 
 
 __all__ = [
@@ -109,8 +87,6 @@ __all__ = [
     "ToolInputValidationError",
     "ToolSecurityError",
     "ToolNotFoundError",
-    "UserCancellationError",
-    # Context
     "UserCancellationError",
     # Context
     "ContextError",
