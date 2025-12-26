@@ -237,10 +237,18 @@ class RichUI(UI):
 
     # --- 5. MODEL MANAGER RENDERERS ---
 
-    async def display_model_list(self, models: List[Any], current_model: str):
-        await self._end_streaming()
-        self._stop_thinking()
-        render_model_table(models, current_model)
+    async def display_model_list(self, models: List[Any], current_model: str, current_provider: str = None):
+        header = f"\n=== Available Models for {current_provider}" if current_provider else "\n=== Available Models"
+        print(f"{header} (Current: {current_model}) ===")
+        
+        for m in models:
+            name = getattr(m, "name", m.get("name") if isinstance(m, dict) else str(m))
+            prov = getattr(m, "provider", m.get("provider", "unknown") if isinstance(m, dict) else "unknown")
+            ctx = getattr(m, "context_window", m.get("context_window", 0) if isinstance(m, dict) else 0)
+            marker = "*" if name == current_model else " "
+            # Added Provider column for clarity
+            print(f" {marker} {name:<25} ({prov:<12}) [{ctx:,}] ")
+        print()
 
     async def display_switch_report(
         self, report: Any, current_model: str, target_model: str

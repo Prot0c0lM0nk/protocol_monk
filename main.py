@@ -282,13 +282,12 @@ def _select_ui_mode(use_rich: bool, use_tui: bool) -> UI:
 
 
 async def _configure_model(ui: UI, use_tui: bool, use_rich: bool) -> tuple[str, str]:
-    """Handle the interactive model and provider selection at startup."""
-
-    # Provider selection step
-    current_provider = "ollama"  # Default provider
+    current_provider = "ollama" 
     if not use_tui:
+        # Improved clarity on the provider prompt
+        await ui.print_info(f"Default provider: {current_provider}")
         provider_choice = await ui.prompt_user(
-            f"Select provider (current: {current_provider}, enter 'ollama' or 'openrouter'): "
+            f"Select provider (press Enter to use {current_provider}): "
         )
         if provider_choice.strip().lower() in ["ollama", "openrouter"]:
             current_provider = provider_choice.strip().lower()
@@ -334,37 +333,41 @@ async def _configure_model(ui: UI, use_tui: bool, use_rich: bool) -> tuple[str, 
     return current_model, current_provider
 
 
-async def _select_new_model(
-    ui: UI, current_model: str, current_provider: str
-) -> tuple[str, str]:
-    """Prompt user to select a different model."""
-    model_manager = RuntimeModelManager()
+async def _select_new_model(ui: UI, current_model: str, current_provider: str) -> tuple[str, str]:
+    """Prompt user to select a different model from the current provider."""
+    # FIX: Pass the current_provider to ensure we see the right models
+    model_manager = RuntimeModelManager(provider=current_provider) 
     available_models = model_manager.get_available_models()
     models = list(available_models.values()) if available_models else []
 
     if not models:
-        await ui.print_warning(
-            "No models detected (Scanner empty). Continuing with default."
-        )
+        await ui.print_warning("No models detected. Continuing with default.")
         return current_model, current_provider
 
-    await ui.display_model_list(models, current_model)
-    new_model_name = await ui.prompt_user("Enter model name to select")
+    # UI will now show provider info as well
+    await ui.display_model_list(models, current_model) 
+    choice = await ui.prompt_user("Enter model name or number to select")
 
-    if not new_model_name:
+    if not choice:
         return current_model, current_provider
 
-    valid_names = [
-        getattr(m, "name", m.get("name") if isinstance(m, dict) else str(m))
-        for m in models
-    ]
+    # Logic to handle both name and numeric input
+    selected_name = None
+    model_names = [getattr(m, "name", m.get("name") if isinstance(m, dict) else str(m)) for m in models]
 
-    if new_model_name in valid_names:
-        settings.model.update_model(new_model_name)
-        await ui.print_info(f"✓ Target updated to: {new_model_name}")
-        return new_model_name, current_provider
+    if choice.isdigit():
+        idx = int(choice) - 1
+        if 0 <= idx < len(model_names):
+            selected_name = model_names[idx]
+    elif choice in model_names:
+        selected_name = choice
 
-    await ui.print_warning(f"Model '{new_model_name}' not found. Using default.")
+    if selected_name:
+        settings.model.update_model(selected_name)
+        await ui.print_info(f"✓ Target updated to: {selected_name}")
+        return selected_name, current_provider
+
+    await ui.print_warning(f"Model '{choice}' not found. Using default.")
     return current_model, current_provider
 
 

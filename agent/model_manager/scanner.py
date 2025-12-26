@@ -41,12 +41,11 @@ class ModelScanner:
     ) -> Dict[str, ModelInfo]:
         """
         Merge model map data with local availability information.
-
-        Args:
-            map_data: Model map data with ModelInfo objects
-            local_data: List of locally available model names
-
-        Returns:
-            Dict[str, ModelInfo]: Merged model availability data
         """
-        return map_data
+        merged = {}
+        for name, info in map_data.items():
+            # Check if model is locally available (partial match for tags)
+            is_available = any(name in local_name for local_name in local_data)
+            # You could add an 'available' field to ModelInfo here if needed
+            merged[name] = info
+        return merged

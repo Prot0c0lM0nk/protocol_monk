@@ -235,17 +235,17 @@ class PlainUI(UI):
     async def print_error_stderr(self, message: str):
         print(f"[ERR] {message}", file=sys.stderr)
 
-    async def display_model_list(self, models: List[Any], current_model: str):
-        print(f"\n=== Available Models (Current: {current_model}) ===")
+    async def display_model_list(self, models: List[Any], current_model: str, current_provider: str = None):
+        header = f"\n=== Available Models for {current_provider}" if current_provider else "\n=== Available Models"
+        print(f"{header} (Current: {current_model}) ===")
+        
         for m in models:
             name = getattr(m, "name", m.get("name") if isinstance(m, dict) else str(m))
-            ctx = getattr(
-                m,
-                "context_window",
-                m.get("context_window", 0) if isinstance(m, dict) else 0,
-            )
+            prov = getattr(m, "provider", m.get("provider", "unknown") if isinstance(m, dict) else "unknown")
+            ctx = getattr(m, "context_window", m.get("context_window", 0) if isinstance(m, dict) else 0)
             marker = "*" if name == current_model else " "
-            print(f" {marker} {name:<25} [{ctx:,}] ")
+            # Added Provider column for clarity
+            print(f" {marker} {name:<25} ({prov:<12}) [{ctx:,}] ")
         print()
 
     async def display_switch_report(

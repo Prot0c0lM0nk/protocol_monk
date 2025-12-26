@@ -6,23 +6,11 @@ from agent.model_manager.structs import ModelInfo
 
 
 class ModelConfigLoader:
-    """Loads static model configuration from JSON files."""
-
     def __init__(
         self,
         model_map_file: str = "ollama_map.json",
         model_options_file: str = "model_options.json",
     ):
-        """
-        Initialize the model loader with file paths.
-
-        Args:
-            model_map_file: Path to model map JSON file (default: "ollama_map.json")
-            model_options_file: Path to model options JSON file
-                (default: "model_options.json")
-        """
-        self.model_map_file = Path(model_map_file)
-        self.model_options_file = Path(model_options_file)
         self.model_map_file = Path(model_map_file)
         self.model_options_file = Path(model_options_file)
 

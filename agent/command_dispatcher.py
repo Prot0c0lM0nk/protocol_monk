@@ -350,7 +350,7 @@ class CommandDispatcher:
     async def _handle_provider_switch(self):
         """Handle provider switching with user interaction and validation."""
         try:
-            # Get available providers
+            # 1. Display Available Providers
             available_providers = ["ollama", "openrouter"]
             current_provider = (
                 self.agent.model_client.current_provider
@@ -363,13 +363,12 @@ class CommandDispatcher:
                 current_marker = " (current)" if provider == current_provider else ""
                 await self.ui.print_info(f"  {i}. {provider}{current_marker}")
 
-            # Get user choice
+            # 2. Get User Provider Choice
             choice = await self.ui.prompt_user(
                 "\nSelect a provider (enter number or name): "
             )
             choice = choice.strip().lower()
 
-            # Parse choice
             selected_provider = None
             if choice.isdigit():
                 idx = int(choice) - 1
@@ -388,89 +387,72 @@ class CommandDispatcher:
                 await self.ui.print_info(f"Already using provider: {selected_provider}")
                 return
 
-            # Validate provider requirements
+            # 3. Validate Provider Requirements (e.g., API Keys)
             if selected_provider == "openrouter":
                 from config.static import settings
-
                 if not settings.environment.openrouter_api_key:
                     await self.ui.print_error(
                         "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable."
                     )
                     return
 
-            # Show models available for the target provider and prompt for model selection
+            # 4. Show Models for the New Provider
             target_model_manager = RuntimeModelManager(provider=selected_provider)
             target_models = target_model_manager.get_available_models()
 
-            if target_models:
-                await self.ui.print_info(f"\nAvailable models for {selected_provider}:")
-                await self._display_model_list(target_models)
-
-                # Ask user to select a model for the new provider
-                model_choice = await self.ui.prompt_user(
-                    f"\nSelect a model for {selected_provider} (enter number or name): "
-                )
-                model_choice = model_choice.strip()
-
-                if model_choice:
-                    # Try to parse model selection
-                    model_list = list(target_models.keys())
-                    selected_model = None
-
-                    if model_choice.isdigit():
-                        idx = int(model_choice) - 1
-                        if 0 <= idx < len(model_list):
-                            selected_model = model_list[idx]
-                    elif model_choice in target_models:
-                        selected_model = model_choice
-
-                    if selected_model:
-                        # Switch to the new provider with the selected model
-                        await self.ui.print_info(
-                            f"Switching to {selected_provider} with model {selected_model}..."
-                        )
-
-                        # Update agent's model to the selected one before switching provider
-                        self.agent.current_model = selected_model
-
-                        # Continue to provider switch below
-                    else:
-                        await self.ui.print_error(
-                            f"Invalid model selection. Staying with current provider."
-                        )
-                        return
-                else:
-                    await self.ui.print_error(
-                        f"No model selected. Staying with current provider."
-                    )
-                    return
-            else:
+            if not target_models:
                 await self.ui.print_warning(
                     f"No models available for {selected_provider}. Staying with current provider."
                 )
                 return
 
-            # Perform provider switch
-            await self.ui.print_info(
-                f"Switching provider from {current_provider} to {selected_provider}..."
-            )
+            await self.ui.print_info(f"\nAvailable models for {selected_provider}:")
+            await self._display_model_list(target_models, current_provider=selected_provider)
 
-            # Use ProtocolAgent's set_provider method for proper switching
+            # 5. Optional Model Selection Flow (Simplified)
+            select_model_prompt = await self.ui.prompt_user(
+                f"Select a specific model for {selected_provider} now? (Y/n): "
+            )
+            
+            selected_model = None
+            if select_model_prompt.strip().lower() not in ["n", "no"]:
+                # User wants to pick a specific model
+                model_choice = await self.ui.prompt_user(
+                    f"\nSelect a model (enter number or name): "
+                )
+                model_choice = model_choice.strip()
+
+                model_list = list(target_models.keys())
+                if model_choice.isdigit():
+                    idx = int(model_choice) - 1
+                    if 0 <= idx < len(model_list):
+                        selected_model = model_list[idx]
+                elif model_choice in target_models:
+                    selected_model = model_choice
+                
+                if not selected_model:
+                    await self.ui.print_error("Invalid model selection. Staying with current provider.")
+                    return
+            else:
+                # User skipped selection; use the first available model as a default
+                selected_model = list(target_models.keys())[0]
+                await self.ui.print_info(f"Using default model for {selected_provider}: {selected_model}")
+
+            # 6. Perform the Switch
+            await self.ui.print_info(f"Switching to {selected_provider} with model {selected_model}...")
+            
+            # Update agent's model attribute before calling set_provider
+            self.agent.current_model = selected_model
+
             try:
                 success = await self.agent.set_provider(selected_provider)
                 if success:
-                    await self.ui.print_info(
-                        f"✅ Provider switched to: {selected_provider}"
-                    )
+                    await self.ui.print_info(f"✅ Provider switched to: {selected_provider}")
                     await self.ui.print_info(f"   Model: {self.agent.current_model}")
             except Exception as e:
                 await self.ui.print_error(f"Provider switch failed: {str(e)}")
                 self.logger.error("Provider switch error: %s", str(e), exc_info=True)
 
         except Exception as e:
-            await self.ui.print_error(
-                f"Unexpected error during provider switch: {str(e)}"
-            )
-            self.logger.error(
-                "Provider switch unexpected error: %s", str(e), exc_info=True
-            )
+            await self.ui.print_error(f"Unexpected error during provider switch: {str(e)}")
+            self.logger.error("Provider switch unexpected error: %s", str(e), exc_info=True)
