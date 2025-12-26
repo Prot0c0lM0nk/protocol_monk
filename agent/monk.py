@@ -259,29 +259,39 @@ class ProtocolAgent:
         """
         Parse response and return (actions, has_json_content).
         Handles both text responses and API tool calls.
-
-        Args:
-            response_data: Response text or API response dict
-
-        Returns:
-            Tuple[List[Dict], bool]: Actions list and JSON content flag
         """
-        # Handle API tool calls (new path)
-        
+        actions = []
+    
+        # CASE 1: Response is already a Dictionary (Structured API Call)
         if isinstance(response_data, dict):
+            # 1. Try your primary utility
             tool_calls = self.proper_tool_caller.extract_tool_calls(response_data)
-            actions = []
             for tool_call in tool_calls:
-                action = {
+                actions.append({
                     "action": tool_call.action,
                     "parameters": tool_call.parameters,
-                    "reasoning": tool_call.reasoning,
-                }
-                actions.append(action)
+                    "reasoning": getattr(tool_call, 'reasoning', None),
+                })
+            
+            # 2. Backup: Manual extraction if utility returned nothing
+            if not actions:
+                # Check for standard 'tool_calls' array (OpenAI/OpenRouter style)
+                if "tool_calls" in response_data:
+                    for tc in response_data["tool_calls"]:
+                        func = tc.get("function", {})
+                        actions.append({
+                            "action": func.get("name"),
+                            "parameters": json.loads(func.get("arguments", "{}")) if isinstance(func.get("arguments"), str) else func.get("arguments")
+                        })
+                # Check for direct action/parameters (Custom/Ollama style)
+                elif "action" in response_data and "parameters" in response_data:
+                    actions.append(response_data)
+
             return actions, len(actions) > 0
 
-
-        # No text fallback - we only use API tool calling now
+        # CASE 2: Response is a String (Text-based or "Ghost" Tool)
+        # [Keep your existing regex/text parsing logic here if you still want a fallback]
+    
         return [], False
 
     async def _record_results(self, summary: ExecutionSummary) -> bool:

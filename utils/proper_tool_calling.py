@@ -136,39 +136,52 @@ class ProperToolCalling:
     def extract_tool_calls(self, api_response: Dict[str, Any]) -> List[ToolCall]:
         tool_calls = []
 
-        # OpenRouter/OpenAI format (choices array with stringified JSON)
+        # 1. OpenRouter/OpenAI format
         if "choices" in api_response:
             choice = api_response["choices"][0]
             message = choice.get("message", {})
             if "tool_calls" in message:
                 for tool_call in message["tool_calls"]:
                     function = tool_call.get("function", {})
-                    try:
-                        parameters = json.loads(function.get("arguments", "{}"))
-                    except json.JSONDecodeError:
-                        parameters = {}
+                    args = function.get("arguments", "{}")
+                
+                    # If it's a string, parse it. If it's already a dict, use it.
+                    if isinstance(args, str):
+                        try:
+                            parameters = json.loads(args)
+                        except json.JSONDecodeError:
+                            parameters = {}
+                    else:
+                        parameters = args or {}
 
-                    structured_call = ToolCall(
+                    tool_calls.append(ToolCall(
                         id=tool_call.get("id", ""),
                         action=function.get("name", ""),
-                        parameters=parameters,
-                        reasoning=None,
-                    )
-                    tool_calls.append(structured_call)
+                        parameters=parameters
+                    ))
 
-        # Ollama format (direct message with parsed JSON)
+        # 2. Ollama format (message-first)
         elif "message" in api_response:
             message = api_response["message"]
             if "tool_calls" in message:
                 for tool_call in message["tool_calls"]:
                     function = tool_call.get("function", {})
-                    structured_call = ToolCall(
-                        id="",  # Ollama doesn't provide ID
+                    args = function.get("arguments", {})
+                
+                    # Ollama often returns already-parsed dicts
+                    if isinstance(args, str):
+                        try:
+                            parameters = json.loads(args)
+                        except json.JSONDecodeError:
+                            parameters = {}
+                    else:
+                        parameters = args or {}
+                
+                    tool_calls.append(ToolCall(
+                        id=str(tool_call.get("id", "")),
                         action=function.get("name", ""),
-                        parameters=function.get("arguments", {}),
-                        reasoning=None,
-                    )
-                    tool_calls.append(structured_call)
+                        parameters=parameters
+                    ))
 
         return tool_calls
 

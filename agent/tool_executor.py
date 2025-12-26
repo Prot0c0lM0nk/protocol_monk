@@ -4,7 +4,7 @@ Tool Executor for Protocol Monk
 ===============================
 Handles execution of tool calls with user confirmation and result formatting.
 """
-
+import json
 import asyncio
 import logging
 from asyncio import Lock
@@ -156,52 +156,48 @@ class ToolExecutor:
         except Exception as e:  # pylint: disable=broad-exception-caught
             return self._handle_tool_exception(e, action)
 
+
     def _normalize_tool_call(self, tool_call: Dict) -> Dict:
         """
-        Normalize different tool call formats into standard structure.
-        Adds input validation for tool parameters.
-
-        Args:
-            tool_call: Raw tool call dictionary to normalize
-
-        Returns:
-            Dict: Normalized tool call with 'action' and 'parameters' keys
-
-        Raises:
-            ToolInputValidationError: If tool call format is invalid
-            ToolExecutionError: If tool call format is completely invalid
+        Normalize tool call formats and handle stringified arguments.
         """
-        # Validate required fields
-        if "action" not in tool_call or not tool_call["action"]:
-            raise ToolInputValidationError(
-                "Missing 'action' field", tool_name=tool_call.get("name", "unknown")
-            )
-        if "parameters" not in tool_call:
-            raise ToolInputValidationError(
-                "Missing 'parameters' field",
-                tool_name=tool_call.get("action", "unknown"),
-            )
+        # 1. Standardize the keys first
+        normalized = {}
+    
+        if "action" in tool_call and "parameters" in tool_call:
+            normalized = {
+                "action": tool_call["action"],
+                "parameters": tool_call["parameters"]
+            }
+        elif "name" in tool_call and "arguments" in tool_call:
+            normalized = {
+                "action": tool_call["name"],
+                "parameters": tool_call["arguments"]
+            }
+        else:
+            # If it doesn't match standard patterns, it's invalid
+            raise ToolInputValidationError(f"Invalid tool call format: {tool_call}")
 
-        # Tool-specific validation (e.g., line numbers must be positive)
-        if tool_call["action"] == "replace_lines":
-            params = tool_call["parameters"]
-            if "start_line" in params and params["start_line"] < 1:
+        # 2. Safety Check: If 'parameters' is a JSON string, parse it into a dict
+        if isinstance(normalized["parameters"], str):
+            try:
+                normalized["parameters"] = json.loads(normalized["parameters"])
+            except json.JSONDecodeError:
                 raise ToolInputValidationError(
-                    "Line numbers must be positive",
-                    tool_name="replace_lines",
-                    invalid_input=params,
+                    "Tool parameters were provided as an invalid JSON string",
+                    tool_name=normalized["action"]
                 )
 
-        if "action" in tool_call and "parameters" in tool_call:
-            return tool_call
-        if "name" in tool_call and "arguments" in tool_call:
-            return {
-                "action": tool_call["name"],
-                "parameters": tool_call["arguments"],
-                "reasoning": tool_call.get("reasoning", ""),
-            }
-        # Instead of returning None, raise an exception with details
-        raise ToolExecutionError(f"Invalid tool call format: {tool_call}")
+        # 3. Validation Logic (Keep your existing specific validations)
+        if not normalized["action"]:
+            raise ToolInputValidationError("Missing 'action' field")
+        
+        if normalized["action"] == "replace_lines":
+            params = normalized["parameters"]
+            if "start_line" in params and params["start_line"] < 1:
+                raise ToolInputValidationError("Line numbers must be positive", tool_name="replace_lines")
+
+        return normalized
 
     async def _confirm_and_handle_edits(
         self, normalized: Dict

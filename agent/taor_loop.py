@@ -154,26 +154,46 @@ class TAORLoop:
             
         return True
 
-    async def _handle_no_actions(self, response: str) -> bool:
+    async def _handle_no_actions(self, response) -> bool:
         """
-        Handle cases where no tools were called.
-        Improves ghost tool detection and user feedback.
+        Handle cases where the initial parse in _execute_cycle didn't find actions.
         """
-        if self._detect_ghost_tool(response):
-            await self.agent.ui.print_warning(
-                "⚠️ Invalid tool detected. "
-                "Please rephrase your request or check for typos."
-            )
-            await self.agent.context_manager.add_message(
-                "system", "System Alert: Invalid JSON format. Retry."
-            )
+        # 1. Handle Ghost Tools (Strings that look like JSON but aren't)
+        if isinstance(response, str) and self._detect_ghost_tool(response):
+            await self.agent.ui.print_warning("⚠️ Invalid tool format. Retrying...")
+            await self.agent.context_manager.add_message("system", "Error: Use API tool calling.")
             self._consecutive_failures += 1
-            if self._consecutive_failures >= self.max_consecutive_failures:
-                return False  # Stop loop
-            return True  # Continue loop
+            return self._consecutive_failures < self.max_consecutive_failures
 
-        # Normal finish (Agent just talked)
+        # 2. Handle Structured Responses (The 'dict' case)
+        if isinstance(response, dict):
+            # Route the dict through the execution bridge
+            # This will return True if it executes tools, or False if it's just talk
+            return await self._execute_structured_response(response)
+
+        # 3. Normal finish (Agent just talked)
         return False
+    
+    async def _execute_structured_response(self, response: dict) -> bool:
+        """
+        Bridge: Extracts tools from a dictionary and processes them.
+        Returns True if tools were found and processed, False otherwise.
+        """
+        # Use the parser to get actions from the dict
+        actions, _ = self.agent._parse_response(response)
+
+        if not actions:
+            # It's just a regular text response in a dict wrapper
+            return False
+
+        # Execute the tools found
+        for action in actions:
+            # _process_action returns True to continue the loop
+            should_continue = await self._process_action(action)
+            if not should_continue:
+                return False
+            
+        return True
 
     async def _process_action(self, action: Dict) -> bool:
         """
@@ -210,7 +230,15 @@ class TAORLoop:
 
         return True  # Continue loop
 
-    def _detect_ghost_tool(self, response: str) -> bool:
+    def _detect_ghost_tool(self, response) -> bool:
+        # If it's already a dict, it's not a 'ghost' string—it's parsed data.
+        if isinstance(response, dict):
+            return False
+        
+        # Ensure we are dealing with a string before processing
+        if not isinstance(response, str):
+            return False
+
         try:
             # Look specifically for tool calls, not any JSON-like structure
             if "```json" in response or response.strip().startswith("{"):
@@ -218,7 +246,7 @@ class TAORLoop:
                 lines = response.split('\n')
                 json_lines = []
                 in_json = False
-            
+        
                 for line in lines:
                     if line.strip() == "```json":
                         in_json = True
@@ -229,11 +257,13 @@ class TAORLoop:
                         json_lines.append(line)
                     elif line.strip().startswith("{") and not in_json:
                         json_lines.append(line)
-            
+        
                 if json_lines:
                     json_str = '\n'.join(json_lines)
                     json.loads(json_str)
                 return False
         except json.JSONDecodeError:
+            # If it looks like JSON but fails to parse, it's a ghost tool
             return True
+    
         return False
