@@ -260,12 +260,13 @@ class ContextManager:
         """
         await self.add_message("assistant", content, importance)
 
-    async def get_context(self, model_name: str = None) -> List[Dict]:
+    async def get_context(self, model_name: str = None, provider: str = "ollama") -> List[Dict]:
         """
         Formats the conversation for the LLM API.
 
         Args:
             model_name: Name of the model to format context for (optional)
+            provider: Provider name ('ollama' or 'openrouter')
 
         Returns:
             List[Dict]: Formatted conversation context for API
@@ -273,14 +274,13 @@ class ContextManager:
         async with self._lock:
             # 1. Check context size within lock to prevent race conditions
             if model_name:
-                await self.check_context_before_generation(model_name)
+                await self.check_context_before_generation(model_name, provider)
 
             # 2. Get the base context (System + History)
             base_context = await self._get_base_context()
 
             # 3. Return the base context directly
             return base_context
-        return base_context
 
     async def _get_base_context(self) -> List[Dict]:
         """
@@ -370,12 +370,13 @@ class ContextManager:
 
     # --- Neural Sym Passthrough Methods ---
 
-    def _check_context_size_for_model(self, model_name: str) -> dict:
+    def _check_context_size_for_model(self, model_name: str, provider: str = "ollama") -> dict:
         """
         Check if current context size is appropriate for the given model.
 
         Args:
             model_name: Name of the model to check against
+            provider: Provider name ('ollama' or 'openrouter')
 
         Returns:
             dict: Status and information about context size compatibility
@@ -386,19 +387,23 @@ class ContextManager:
         stats = self.accountant.get_stats()
         current_tokens = stats["total_tokens"]
 
-        # Get model's context window
-        model_manager = RuntimeModelManager()
+        # Get model's context window using CORRECT provider
+        model_manager = RuntimeModelManager(provider=provider)
         model_info = model_manager.get_available_models().get(model_name)
+        
         if not model_info:
             # If model not found, use a safe default
+            self.logger.warning(
+                f"Model '{model_name}' not found in {provider} model map. Using default context window."
+            )
             model_context_window = 32768  # Conservative default
         else:
             model_context_window = model_info.context_window
 
         # Define thresholds
-        warning_threshold = int(model_context_window * 0.8)  # 80%
-        critical_threshold = int(model_context_window * 0.95)  # 95%
-        hard_limit = model_context_window  # 100%
+        warning_threshold = int(model_context_window * 0.8)
+        critical_threshold = int(model_context_window * 0.95)
+        hard_limit = model_context_window
 
         result = {
             "current_tokens": current_tokens,
@@ -437,21 +442,19 @@ class ContextManager:
         else:
             return f"✅ Context ({check_result['current_tokens']:,} tokens) is within limits ({check_result['usage_percent']}% of {check_result['model_context_window']:,} token limit)."
 
-    async def check_context_before_generation(self, model_name: str) -> dict:
+    async def check_context_before_generation(self, model_name: str, provider: str = "ollama") -> dict:
         """
         Check context size before generation and return status.
         Raises an exception if context exceeds hard limits.
 
         Args:
-            model_name: Name of the model to check context against
+            model_name: Name of the model to check against
+            provider: Provider name ('ollama' or 'openrouter')
 
         Returns:
             dict: Context size analysis and status information
-
-        Raises:
-            ContextValidationError: If context exceeds hard limits
         """
-        check_result = self._check_context_size_for_model(model_name)
+        check_result = self._check_context_size_for_model(model_name, provider)
 
         # Log the status
         advice = self._get_context_size_advice(check_result)

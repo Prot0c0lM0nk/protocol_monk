@@ -39,31 +39,29 @@ class ProtocolAgent:
         tool_registry=None,
         ui: Optional[UI] = None,
     ):
-        """
-        Initialize the core agent with configuration options.
-
-        Args:
-            working_dir: Working directory for file operations (default: ".")
-            model_name: LLM model to use (default: from settings)
-            provider: LLM provider to use (default: "ollama")
-            tool_registry: Tool registry instance (optional)
-            ui: User interface instance (optional)
-            ModelConfigurationError: If model client initialization fails
-        """
+        # 1. IMMEDIATE ASSIGNMENTS (Fixed: Move these to the top)
         self.working_dir = Path(working_dir).resolve()
         self.current_model = model_name
         self.current_provider = provider
         self.ui = ui or PlainUI()
         self.logger = logging.getLogger(__name__)
-
         self.enhanced_logger = EnhancedLogger(self.working_dir)
 
-        # 1. Components
+        # 2. MODEL METADATA LOOKUP
+        # Use the fixed provider propagation logic from the plan
+        self.model_manager = RuntimeModelManager(provider=provider)
+        model_info = self.model_manager.get_available_models().get(model_name)
+        model_context_window = (
+            model_info.context_window if model_info else settings.model.context_window
+        )
+
+        # 3. COMPONENT INSTANTIATION (Now safe to use self.working_dir)
         self.context_manager = ContextManager(
-            max_tokens=settings.model.context_window,
+            max_tokens=model_context_window,
             working_dir=self.working_dir,
             tool_registry=tool_registry,
         )
+        
         self.proper_tool_caller = (
             ProperToolCalling(tool_registry) if tool_registry else None
         )
@@ -72,15 +70,13 @@ class ProtocolAgent:
         if tool_registry:
             tool_registry.context_manager = self.context_manager
 
-        self.model_manager = RuntimeModelManager()
-
-        # 2. Scratch Manager (Fixes Infinite Writes)
+        # 4. REMAINING INITIALIZATION
         self.scratch_manager = ScratchManager(self.working_dir)
 
         try:
             self.model_client = ModelClient(model_name=model_name, provider=provider)
         except ModelConfigurationError as e:
-            print(f"Error: Failed to initialize model client: {e.message}")
+            self.logger.error(f"Failed to initialize model client: {e.message}")
             raise
 
         self.tool_executor = ToolExecutor(
@@ -90,7 +86,6 @@ class ProtocolAgent:
             ui_callback=self._handle_ui_event,
         )
 
-        # 3. TAOR Loop (The Immutable Orchestrator)
         self.taor_loop = TAORLoop(self)
 
     async def async_initialize(self):
@@ -159,7 +154,11 @@ class ProtocolAgent:
             Optional[List[Dict]]: Context for model, None if error
         """
         try:
-            context = await self.context_manager.get_context(self.current_model)
+            # FIX: Pass provider to get_context
+            context = await self.context_manager.get_context(
+                self.current_model, 
+                self.current_provider
+            )
 
             # Remove duplicate system messages (keep only the first one)
             seen_system = False
@@ -172,10 +171,10 @@ class ProtocolAgent:
                 filtered.append(msg)
             context = filtered
 
-            self.logger.error("FILTERED MESSAGES: %s", json.dumps(filtered, indent=2))
+            self.logger.debug("FILTERED MESSAGES: %s", json.dumps(filtered, indent=2))
 
-            self.enhanced_logger.log_context_snapshot(context)
-            return context
+            self.enhanced_logger.log_context_snapshot(filtered)
+            return filtered
         except ContextValidationError as e:
             await self.ui.print_error(f"Context validation error: {e}")
             await self.ui.print_error(
@@ -329,19 +328,25 @@ class ProtocolAgent:
         }
 
     async def set_model(self, model_name: str):
-        """
-        Switch the current model and update context limits.
-
-        Args:
-            model_name: Name of the model to switch to
-        """
+        """Switch the current model and update context limits."""
         self.current_model = model_name
         self.model_client.set_model(model_name)
-        model_manager = RuntimeModelManager()
+        
+        # FIX: Pass current_provider to RuntimeModelManager
+        model_manager = RuntimeModelManager(provider=self.current_provider)
         model_info = model_manager.get_available_models().get(model_name)
+        
         if model_info:
             self.context_manager.accountant.max_tokens = model_info.context_window
             self.context_manager.pruner.max_tokens = model_info.context_window
+            self.logger.info(
+                f"Updated context window to {model_info.context_window:,} tokens for model {model_name}"
+            )
+        else:
+            self.logger.warning(
+                f"Model '{model_name}' not found in {self.current_provider} model map. "
+                "Context window limits not updated."
+            )
 
     async def set_provider(self, provider: str) -> bool:
         """
