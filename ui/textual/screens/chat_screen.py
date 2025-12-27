@@ -22,7 +22,8 @@ class ChatScreen(Container):
     # --- THIS WAS MISSING ---
     def focus_input(self):
         """Helper to ensure the input box is selected."""
-        self.query_one(ChatInput).focus()
+        # We now query the TextArea *inside* the ChatInput
+        self.query_one("ChatInput TextArea").focus()
     # ------------------------
 
     def write_to_log(self, text: str):

@@ -23,14 +23,39 @@ ChatDisplay {
 
 ChatInput {
     dock: bottom;
-    height: 3;
-    border: tall #00ff41;
+    height: auto;   /* Allow it to grow if needed, or set fixed height like 5 */
+    min_height: 5;
     background: #1a1a1a;
-    color: white;
+    border-top: solid #00ff41;
 }
 
-ChatInput:focus {
-    border: tall #00d7ff;
+#input_container {
+    height: 100%;
+    align: center middle;
+}
+
+/* The Editor Area */
+ChatInput TextArea {
+    width: 1fr;
+    height: 100%;
+    border: none;
+    background: #1a1a1a;
+    color: #00ff41; /* Monk Green Text */
+}
+
+/* The Send Button */
+ChatInput Button {
+    width: 10;
+    height: 100%;
+    background: #004411;
+    color: #00ff41;
+    border: none;
+    min-width: 8;
+}
+
+ChatInput Button:hover {
+    background: #00ff41;
+    color: #0f0f0f;
 }
 
 Header {
