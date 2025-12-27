@@ -96,7 +96,12 @@ class ProtocolMonkApp(App):
 
     def on_update_status(self, message: UpdateStatus):
         """Route status updates (thinking/loading)"""
-        # Simple indicator for now
+        screen = self.query_one(ChatScreen)
+        
         if message.key == "thinking":
             if message.value:
-                self.query_one(ChatScreen).write_to_log("[italic green]Thinking...[/]")
+                # Started thinking
+                screen.show_loading_indicator()
+            else:
+                # Stopped thinking -> Finish the stream
+                screen.finalize_response()

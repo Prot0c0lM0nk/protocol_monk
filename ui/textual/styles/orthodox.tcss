@@ -58,6 +58,36 @@ ChatInput Button:hover {
     color: #0f0f0f;
 }
 
+/* --- MESSAGE BUBBLES --- */
+
+/* Base class for all messages */
+ChatMessage {
+    padding: 1;
+    margin: 1 0;
+    background: #1a1a1a;
+    border: none;
+    height: auto;
+}
+
+/* Specific styling for User */
+.user-msg {
+    border-left: tall #ffaa44; /* Orthodox Gold */
+    color: #ffaa44;
+}
+
+/* Specific styling for Agent */
+.agent-msg {
+    border-left: tall #00ff41; /* Monk Green */
+    color: #eeeeee; /* White text for better readability */
+}
+
+/* Code blocks inside Markdown */
+ChatMessage > CodeBlock {
+    background: #0f0f0f;
+    border: solid #00d7ff;
+    padding: 1;
+}
+
 Header {
     dock: top;
     background: #00ff41;
