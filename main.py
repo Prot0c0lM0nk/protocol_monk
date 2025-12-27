@@ -45,7 +45,7 @@ from tools.registry import ToolRegistry
 from ui.base import UI
 from ui.plain import PlainUI
 from ui.rich_ui import RichUI
-#from ui.textual.app import ProtocolMonkApp
+from ui.textual.app import ProtocolMonkApp
 
 from utils.debug_logger import _logger, close_debug_log
 from utils.enhanced_logger import EnhancedLogger
@@ -213,7 +213,7 @@ async def main():
             raise ModelClientError(f"Failed to initialize agent components: {e}") from e
 
         # 5. Run Interface
-        #if use_tui:
+        if use_tui:
             await _run_tui(agent)
         else:
             await _run_cli(agent, use_rich)
@@ -371,22 +371,26 @@ async def _select_new_model(ui: UI, current_model: str, current_provider: str) -
     return current_model, current_provider
 
 
-#async def _run_tui(agent: ProtocolAgent):
-    """Launch the Textual User Interface."""
-    # Import here to avoid circular imports
-    from ui.textual.app import ProtocolMonkApp
+async def _run_tui(agent: ProtocolAgent):
+    """
+    Launch the Textual User Interface.
+    Swaps the agent's UI reference from PlainUI to TextualUI.
+    """
+    from ui.textual.client import TextualUI
 
-    # Create and run the Textual app
-    app = ProtocolMonkApp(agent)
+    # 1. Create the Matrix Bridge
+    tui = TextualUI()
 
-    # Run the app with asyncio.run() to properly handle the event loop
-    # We need to use asyncio.run() because Textual's run() method
-    # creates its own event loop
-    try:
-        await app.run_async()
-    except Exception as e:
-        print(f"Error running TUI: {e}", file=sys.stderr)
-        raise
+    # 2. Hot Swap: Replace PlainUI (used for config) with TextualUI
+    # The agent now talks to the TUI for all future output
+    agent.ui = tui
+
+    # 3. Connect: Give the TUI control over the Agent
+    tui.set_agent(agent)
+
+    # 4. Launch: Start the visual interface
+    # We use run_async because main() is already running an asyncio loop
+    await tui.run_async()
 
 
 async def _run_cli(agent: ProtocolAgent, use_rich: bool):

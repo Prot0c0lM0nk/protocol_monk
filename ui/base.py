@@ -1,154 +1,52 @@
-#!/usr/bin/env python3
-"""
-Abstract async UI interface for Protocol Monk
-
-Defines the contract for all UI implementations (Rich, Plain, Textual, etc.)
-"""
-
+# ui/base.py
 import asyncio
 from abc import ABC, abstractmethod
+from typing import Dict, Union, Any, Optional
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
-
 
 @dataclass
 class ToolResult:
-    """Result from executing a tool"""
-
     success: bool
     output: str
     tool_name: Optional[str] = None
 
-
 class UI(ABC):
-    """Abstract async UI interface for all user interactions"""
-
+    """The Contract: What the Agent expects the UI to do."""
+    
     def __init__(self):
-        self._lock: asyncio.Lock = asyncio.Lock()
+        self._lock = asyncio.Lock()
 
-    async def _safe_update(self, coro):
-        """Execute coroutine safely within lock to prevent race conditions."""
-        async with self._lock:
-            return await coro
+    # --- The Agent calls these ---
+    @abstractmethod
+    async def print_stream(self, text: str): pass
+    
+    @abstractmethod
+    async def print_error(self, message: str): pass
+    
+    @abstractmethod
+    async def print_info(self, message: str): pass
+    
+    @abstractmethod
+    async def start_thinking(self): pass
+    
+    @abstractmethod
+    async def stop_thinking(self): pass
 
     @abstractmethod
-    async def close(self):
-        """Clean up all UI resources. Must be implemented by all subclasses."""
-        pass
-
-    async def confirm_tool_call(
-        self, tool_call: Dict, auto_confirm: bool = False
-    ) -> Union[bool, Dict]:
-        """
-        Ask user to confirm a tool call.
-
-        Returns:
-            bool: True if approved, False if rejected
-            OR dict: {"modified": tool_call} if user modified parameters
-        """
-        pass
-
-    @abstractmethod
-    async def display_tool_call(self, tool_call: Dict, auto_confirm: bool = False):
-        """Display a tool call to the user"""
-        pass
-
-    @abstractmethod
-    async def display_tool_result(self, result: ToolResult, tool_name: str):
-        """Display tool execution result"""
-        pass
-
-    @abstractmethod
-    async def display_execution_start(self, count: int):
-        """Display execution start notification"""
-        pass
-
-    @abstractmethod
-    async def display_progress(self, current: int, total: int):
-        """Display execution progress"""
-        pass
-
-    @abstractmethod
-    async def display_task_complete(self, summary: str = ""):
-        """Display task completion notification"""
-        pass
-
-    @abstractmethod
-    async def print_error(self, message: str):
-        """Display error message"""
-        pass
-
-    @abstractmethod
-    async def print_warning(self, message: str):
-        """Display warning message"""
-        pass
-
-    @abstractmethod
-    async def print_info(self, message: str):
-        """Display info message"""
-        pass
-
-    @abstractmethod
-    async def set_auto_confirm(self, value: bool):
-        """Set auto-confirm mode"""
-        pass
-
-    @abstractmethod
-    async def print_stream(self, text: str):
-        """Stream text output without newline (for LLM responses)"""
-        pass
-
-    @abstractmethod
-    async def display_startup_banner(self, greeting: str):
-        """Display startup banner/greeting"""
-        pass
-
-    @abstractmethod
-    async def display_startup_frame(self, frame: str):
-        """Display startup animation frame"""
-        pass
-
-    @abstractmethod
-    async def prompt_user(self, prompt: str) -> str:
-        """Prompt user for input"""
-        pass
-
-    @abstractmethod
-    async def print_error_stderr(self, message: str):
-        """Print error to stderr"""
-        pass
-
-    @abstractmethod
-    async def start_thinking(self):
-        """Start the thinking/loading animation"""
-        pass
-
-    @abstractmethod
-    async def stop_thinking(self):
-        """Stop the thinking/loading animation"""
-        pass
-
-    # --- NEW: MODEL MANAGER METHODS ---
-
-    @abstractmethod
-    async def display_model_list(self, models: List[Any], current_model: str):
-        """
-        Display list of available models.
-        Args:
-            models: List of ModelInfo objects (or dicts)
-            current_model: The name of the currently active model
-        """
-        pass
-
-    @abstractmethod
-    async def display_switch_report(
-        self, report: Any, current_model: str, target_model: str
-    ):
-        """
-        Display the safety report for a proposed model switch.
-        Args:
-            report: SwitchReport object
-            current_model: Name of model switching FROM
-            target_model: Name of model switching TO
-        """
-        pass
+    async def prompt_user(self, prompt: str) -> str: pass
+    
+    # --- Stubs for compatibility (we will fill these later) ---
+    async def close(self): pass
+    async def display_startup_banner(self, greeting: str): pass
+    async def confirm_tool_call(self, tool_call: Dict, auto_confirm: bool = False): return True
+    async def display_tool_call(self, tool_call: Dict, auto_confirm: bool = False): pass
+    async def display_tool_result(self, result: ToolResult, tool_name: str): pass
+    async def display_execution_start(self, count: int): pass
+    async def display_progress(self, current: int, total: int): pass
+    async def display_task_complete(self, summary: str = ""): pass
+    async def print_warning(self, message: str): pass
+    async def print_error_stderr(self, message: str): pass
+    async def set_auto_confirm(self, value: bool): pass
+    async def display_startup_frame(self, frame: str): pass
+    async def display_model_list(self, models, current): pass
+    async def display_switch_report(self, report, current, target): pass

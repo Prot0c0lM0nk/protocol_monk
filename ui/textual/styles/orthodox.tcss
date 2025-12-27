@@ -1,0 +1,67 @@
+/* ui/textual/styles/orthodox.tcss */
+
+Screen {
+    layout: vertical;
+    background: #0f0f0f;
+    color: #00ff41;
+}
+
+ChatScreen {
+    layout: vertical;
+    height: 1fr;
+    background: #0f0f0f;
+}
+
+/* --- THE DISPLAY (Top, grows to fill space) --- */
+ChatDisplay {
+    height: 1fr;
+    border: solid #00ff41;
+    background: #0f0f0f;
+    padding: 1;
+    overflow-y: scroll;
+}
+
+/* --- THE INPUT (Bottom, fixed height) --- */
+ChatInput {
+    dock: bottom;
+    height: 3;
+    border: tall #00ff41;
+    background: #1a1a1a;
+    color: white;
+    margin-bottom: 1; 
+}
+
+ChatInput:focus {
+    border: tall #00d7ff;
+}
+
+Header {
+    dock: top;
+    background: #00ff41;
+    color: #0f0f0f;
+    text-style: bold;
+}
+
+Footer {
+    dock: bottom;
+    background: #1a1a1a;
+    color: #ffaa44;
+}
+
+/* --- TEXT STYLES --- */
+.user-msg {
+    color: #ffaa44;
+    text-style: bold;
+}
+
+.agent-msg {
+    color: #00ff41;
+}
+
+.tool-output {
+    color: #00d7ff;
+}
+
+.error-msg {
+    color: #ff4444;
+}
