@@ -179,6 +179,21 @@ class ModelClient:
         )
         self.model_name = model_name
 
+        # Close the old client's session before creating a new one
+        # This prevents "Unclosed client session" warnings
+        if self._client:
+            if hasattr(self._client, 'sync_close'):
+                self._client.sync_close()
+            elif hasattr(self._client, 'close'):
+                # Fallback: try to close if possible, but don't fail if we can't
+                try:
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(self._client.close())
+                except RuntimeError:
+                    pass
+
         # Re-initialize client for new model with same provider
         self._client = self._create_provider_client(self.selected_provider, model_name)
 

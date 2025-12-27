@@ -412,6 +412,28 @@ class OpenRouterModelClient(BaseModelClient):
         if self._session and not self._session.closed:
             await self._session.close()
 
+    def sync_close(self) -> None:
+        """
+        Synchronously close the HTTP session for use in synchronous contexts.
+        
+        This method is called from set_model() when switching models to prevent
+        "Unclosed client session" warnings.
+        """
+        if self._session and not self._session.closed:
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Schedule the close on the running loop
+                    asyncio.create_task(self.close())
+                else:
+                    # No loop running, create a temporary one to close
+                    asyncio.run(self.close())
+            except RuntimeError:
+                # No event loop exists, session will be cleaned up by GC
+                # This is acceptable in shutdown scenarios
+                pass
+
     def get_response(
         self, conversation_context: List[Dict[str, str]], stream: bool = True
     ):
