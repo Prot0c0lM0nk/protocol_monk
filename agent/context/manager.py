@@ -260,7 +260,9 @@ class ContextManager:
         """
         await self.add_message("assistant", content, importance)
 
-    async def get_context(self, model_name: str = None, provider: str = "ollama") -> List[Dict]:
+    async def get_context(
+        self, model_name: str = None, provider: str = "ollama"
+    ) -> List[Dict]:
         """
         Formats the conversation for the LLM API.
 
@@ -285,51 +287,57 @@ class ContextManager:
     async def _get_base_context(self) -> List[Dict]:
         """
         Standard context construction without AI enhancement.
-        
+
         Converts tool messages to user role format for compatibility with models
         that don't support the 'tool' role (like many Ollama models).
-        
+
         NEW: Detects when tool results appear without preceding assistant tool calls
         and adds implicit assistant intent to maintain conversation flow without
         contaminating training data with fake messages.
-        
+
         NOTE: This method should ONLY be called from within an existing lock context
         to avoid deadlocks.
-        
+
         IMPORTANT: Tool results are formatted with explicit "RESULT - COMPLETED" markers
         to prevent models from confusing tool results with new tool requests.
         """
         # DO NOT acquire lock here - caller must already hold the lock
         context = [{"role": "system", "content": self.system_message}]
-        
+
         # Track if we need to add implicit assistant intent before tool results
         last_role_was_tool = False
-        
+
         for i, msg in enumerate(self.conversation):
             # Convert tool messages to user role for model compatibility
             if msg.role == "tool":
                 # Check if this is the first tool message after a user message
                 # (indicating assistant made tool calls that weren't recorded)
-                if not last_role_was_tool and i > 0 and self.conversation[i-1].role == "user":
+                if (
+                    not last_role_was_tool
+                    and i > 0
+                    and self.conversation[i - 1].role == "user"
+                ):
                     # 1. Extract the tool name safely outside the f-string
-                    if 'Tool: ' in msg.content:
+                    if "Tool: " in msg.content:
                         # Split by newline first to avoid the backslash issue entirely
-                        tool_name = msg.content.split('Tool: ')[1].split('\n')[0]
+                        tool_name = msg.content.split("Tool: ")[1].split("\n")[0]
                     else:
-                        tool_name = 'available'
-    
+                        tool_name = "available"
+
                     # 2. Use the simple variable inside the f-string
-                    implicit_intent = f"I will use the {tool_name} tool to help with your request."
+                    implicit_intent = (
+                        f"I will use the {tool_name} tool to help with your request."
+                    )
                     context.append({"role": "assistant", "content": implicit_intent})
-                
+
                 # Extract tool name from content if available (format: "Tool: name\nOutput: ...")
                 tool_name = "Unknown"
-                content_lines = msg.content.split('\n')
+                content_lines = msg.content.split("\n")
                 for line in content_lines:
                     if line.startswith("Tool: "):
                         tool_name = line.replace("Tool: ", "").strip()
                         break
-                
+
                 # Format with explicit completion markers and visual boxing
                 formatted_result = (
                     "╔══════════════════════════════════════════════════════════════╗\n"
@@ -346,7 +354,7 @@ class ContextManager:
             else:
                 context.append({"role": msg.role, "content": msg.content})
                 last_role_was_tool = False
-                
+
         return context
 
     async def clear(self):
@@ -412,7 +420,9 @@ class ContextManager:
 
     # --- Neural Sym Passthrough Methods ---
 
-    def _check_context_size_for_model(self, model_name: str, provider: str = "ollama") -> dict:
+    def _check_context_size_for_model(
+        self, model_name: str, provider: str = "ollama"
+    ) -> dict:
         """
         Check if current context size is appropriate for the given model.
 
@@ -432,7 +442,7 @@ class ContextManager:
         # Get model's context window using CORRECT provider
         model_manager = RuntimeModelManager(provider=provider)
         model_info = model_manager.get_available_models().get(model_name)
-        
+
         if not model_info:
             # If model not found, use a safe default
             self.logger.warning(
@@ -484,7 +494,9 @@ class ContextManager:
         else:
             return f"✅ Context ({check_result['current_tokens']:,} tokens) is within limits ({check_result['usage_percent']}% of {check_result['model_context_window']:,} token limit)."
 
-    async def check_context_before_generation(self, model_name: str, provider: str = "ollama") -> dict:
+    async def check_context_before_generation(
+        self, model_name: str, provider: str = "ollama"
+    ) -> dict:
         """
         Check context size before generation and return status.
         Raises an exception if context exceeds hard limits.

@@ -42,20 +42,21 @@ class PlainUI(UI):
                 # Clear the line completely and reset cursor to start
                 print("\r" + " " * 50 + "\r", end="", flush=True)
                 self._thinking = False
+
     def _extract_think_tags(self, text: str) -> tuple[str, str]:
         """
         Extract think tag content from text.
-        
+
         Returns:
             tuple: (think_content, visible_content)
         """
         # Match think tags and their content
-        pattern = r'<think>(.*?)</think>'
+        pattern = r"<think>(.*?)</think>"
         match = re.search(pattern, text, flags=re.DOTALL)
-        
+
         if match:
             think_content = match.group(1).strip()
-            visible_content = re.sub(pattern, '', text, flags=re.DOTALL).strip()
+            visible_content = re.sub(pattern, "", text, flags=re.DOTALL).strip()
             return think_content, visible_content
         else:
             return "", text
@@ -82,11 +83,11 @@ class PlainUI(UI):
 
             # Extract think tags and visible content
             think_content, visible_content = self._extract_think_tags(text)
-            
+
             # Print think tags with [THINKING] prefix
             if think_content:
                 print(f"[THINKING] {think_content} ", end="", flush=True)
-            
+
             # Print visible content normally
             if visible_content:
                 print(visible_content, end="", flush=True)
@@ -235,14 +236,28 @@ class PlainUI(UI):
     async def print_error_stderr(self, message: str):
         print(f"[ERR] {message}", file=sys.stderr)
 
-    async def display_model_list(self, models: List[Any], current_model: str, current_provider: str = None):
-        header = f"\n=== Available Models for {current_provider}" if current_provider else "\n=== Available Models"
+    async def display_model_list(
+        self, models: List[Any], current_model: str, current_provider: str = None
+    ):
+        header = (
+            f"\n=== Available Models for {current_provider}"
+            if current_provider
+            else "\n=== Available Models"
+        )
         print(f"{header} (Current: {current_model}) ===")
-        
+
         for m in models:
             name = getattr(m, "name", m.get("name") if isinstance(m, dict) else str(m))
-            prov = getattr(m, "provider", m.get("provider", "unknown") if isinstance(m, dict) else "unknown")
-            ctx = getattr(m, "context_window", m.get("context_window", 0) if isinstance(m, dict) else 0)
+            prov = getattr(
+                m,
+                "provider",
+                m.get("provider", "unknown") if isinstance(m, dict) else "unknown",
+            )
+            ctx = getattr(
+                m,
+                "context_window",
+                m.get("context_window", 0) if isinstance(m, dict) else 0,
+            )
             marker = "*" if name == current_model else " "
             # Added Provider column for clarity
             print(f" {marker} {name:<25} ({prov:<12}) [{ctx:,}] ")
@@ -259,7 +274,7 @@ class PlainUI(UI):
                 text = f"{item.name} ({getattr(item, 'provider', '')})"
             else:
                 text = str(item)
-            
+
             print(f"  {i}. {text}")
         print()
 

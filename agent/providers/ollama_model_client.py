@@ -198,7 +198,7 @@ class OllamaModelClient(BaseModelClient):
                                 # Check for complete tool calls (Ollama format - direct JSON)
                                 elif "tool_calls" in message and message["tool_calls"]:
                                     yield chunk_data  # Return complete response with tool calls
-                            # Log debug info if enabled
+                                # Log debug info if enabled
                                 if "content" in message and message["content"]:
                                     self.logger.debug(
                                         "Ollama chunk: %s", message["content"]

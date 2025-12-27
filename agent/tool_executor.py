@@ -156,23 +156,22 @@ class ToolExecutor:
         except Exception as e:  # pylint: disable=broad-exception-caught
             return self._handle_tool_exception(e, action)
 
-
     def _normalize_tool_call(self, tool_call: Dict) -> Dict:
         """
         Normalize tool call formats and handle stringified arguments.
         """
         # 1. Standardize the keys first
         normalized = {}
-    
+
         if "action" in tool_call and "parameters" in tool_call:
             normalized = {
                 "action": tool_call["action"],
-                "parameters": tool_call["parameters"]
+                "parameters": tool_call["parameters"],
             }
         elif "name" in tool_call and "arguments" in tool_call:
             normalized = {
                 "action": tool_call["name"],
-                "parameters": tool_call["arguments"]
+                "parameters": tool_call["arguments"],
             }
         else:
             # If it doesn't match standard patterns, it's invalid
@@ -185,17 +184,19 @@ class ToolExecutor:
             except json.JSONDecodeError:
                 raise ToolInputValidationError(
                     "Tool parameters were provided as an invalid JSON string",
-                    tool_name=normalized["action"]
+                    tool_name=normalized["action"],
                 )
 
         # 3. Validation Logic (Keep your existing specific validations)
         if not normalized["action"]:
             raise ToolInputValidationError("Missing 'action' field")
-        
+
         if normalized["action"] == "replace_lines":
             params = normalized["parameters"]
             if "start_line" in params and params["start_line"] < 1:
-                raise ToolInputValidationError("Line numbers must be positive", tool_name="replace_lines")
+                raise ToolInputValidationError(
+                    "Line numbers must be positive", tool_name="replace_lines"
+                )
 
         return normalized
 

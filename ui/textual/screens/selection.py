@@ -2,10 +2,12 @@
 ui/textual/screens/selection.py
 Generic modal for selecting an item from a list.
 """
+
 from textual.screen import ModalScreen
 from textual.app import ComposeResult
 from textual.containers import Vertical, Grid
 from textual.widgets import Button, Label, OptionList
+
 
 class SelectionModal(ModalScreen[str]):
     """
@@ -20,10 +22,10 @@ class SelectionModal(ModalScreen[str]):
     def compose(self) -> ComposeResult:
         with Vertical(id="modal_dialog"):
             yield Label(self.selection_title, id="title")
-            
+
             # The list of choices
             yield OptionList(*self.options, id="selection_list")
-            
+
             # Buttons
             with Grid(id="button_grid", classes="selection_buttons"):
                 yield Button("Select", variant="success", id="btn_select")
@@ -47,6 +49,6 @@ class SelectionModal(ModalScreen[str]):
                 # Textual < 0.38 might differ, but generally:
                 label = str(opt_list.get_option_at_index(selected_idx).prompt)
                 self.dismiss(label)
-        
+
         elif event.button.id == "btn_cancel":
             self.dismiss(None)

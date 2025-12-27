@@ -11,7 +11,7 @@ from ..styles import create_monk_panel
 
 def generate_stream_panel(content_str: str):
     """Generates the panel frame for streaming content."""
-    
+
     # Generate Content
     if content_str.strip():
         if any(c in content_str for c in ["*", "_", "#", "`"]):
@@ -20,8 +20,8 @@ def generate_stream_panel(content_str: str):
             content = Text(content_str)
     else:
         content = Text("", style="dim")  # Empty text if just starting
-    
+
     # Use the Shared Factory
     main_panel = create_monk_panel(content)
-    
+
     return main_panel

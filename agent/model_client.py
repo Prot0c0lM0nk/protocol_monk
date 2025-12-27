@@ -137,7 +137,10 @@ class ModelClient:
         }
 
     async def get_response_async(
-        self, conversation_context: List[Dict], stream: bool = True, tools: Optional[List[Dict[str, Any]]] = None
+        self,
+        conversation_context: List[Dict],
+        stream: bool = True,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncGenerator[Union[str, Dict], None]:
         """
         Async generator that yields response chunks from the model.
@@ -157,7 +160,7 @@ class ModelClient:
         async with self._client_lock:  # NEW: protect client access during stream
             if not self._client:
                 raise ModelError("Model client not initialized")
-                
+
         # Direct delegation to provider - no failover, user-controlled
         async for chunk in self._client.get_response_async(
             conversation_context, stream, tools
@@ -171,7 +174,9 @@ class ModelClient:
         Args:
             model_name: Name of the model to switch to
         """
-        self.logger.info(f"ModelClient: Switching model from {self.model_name} to {model_name}")
+        self.logger.info(
+            f"ModelClient: Switching model from {self.model_name} to {model_name}"
+        )
         self.model_name = model_name
 
         # Re-initialize client for new model with same provider
@@ -182,9 +187,12 @@ class ModelClient:
             self.logger.info(f"ModelClient: Calling set_model on provider client")
             self._client.set_model(model_name)
         else:
-            self.logger.info(f"ModelClient: Provider client does not have set_model method, created new instance")
+            self.logger.info(
+                f"ModelClient: Provider client does not have set_model method, created new instance"
+            )
 
         self.logger.info(f"ModelClient: Model switched to {self.model_name}")
+
     async def close(self) -> None:
         """
         Close the model client and clean up resources.

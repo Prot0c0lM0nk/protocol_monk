@@ -341,10 +341,14 @@ class CommandDispatcher:
             )
 
             # Use the unified display method
-            await self.ui.display_selection_list("Available Providers", available_providers)
+            await self.ui.display_selection_list(
+                "Available Providers", available_providers
+            )
 
             # The prompt will auto-fill from the TUI modal selection
-            choice = await self.ui.prompt_user("Select a provider (enter number or name): ")
+            choice = await self.ui.prompt_user(
+                "Select a provider (enter number or name): "
+            )
 
             # 2. Get User Provider Choice
             choice = await self.ui.prompt_user(
@@ -373,6 +377,7 @@ class CommandDispatcher:
             # 3. Validate Provider Requirements (e.g., API Keys)
             if selected_provider == "openrouter":
                 from config.static import settings
+
                 if not settings.environment.openrouter_api_key:
                     await self.ui.print_error(
                         "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable."
@@ -390,13 +395,15 @@ class CommandDispatcher:
                 return
 
             await self.ui.print_info(f"\nAvailable models for {selected_provider}:")
-            await self._display_model_list(target_models, current_provider=selected_provider)
+            await self._display_model_list(
+                target_models, current_provider=selected_provider
+            )
 
             # 5. Optional Model Selection Flow (Simplified)
             select_model_prompt = await self.ui.prompt_user(
                 f"Select a specific model for {selected_provider} now? (Y/n): "
             )
-            
+
             selected_model = None
             if select_model_prompt.strip().lower() not in ["n", "no"]:
                 # User wants to pick a specific model
@@ -412,30 +419,42 @@ class CommandDispatcher:
                         selected_model = model_list[idx]
                 elif model_choice in target_models:
                     selected_model = model_choice
-                
+
                 if not selected_model:
-                    await self.ui.print_error("Invalid model selection. Staying with current provider.")
+                    await self.ui.print_error(
+                        "Invalid model selection. Staying with current provider."
+                    )
                     return
             else:
                 # User skipped selection; use the first available model as a default
                 selected_model = list(target_models.keys())[0]
-                await self.ui.print_info(f"Using default model for {selected_provider}: {selected_model}")
+                await self.ui.print_info(
+                    f"Using default model for {selected_provider}: {selected_model}"
+                )
 
             # 6. Perform the Switch
-            await self.ui.print_info(f"Switching to {selected_provider} with model {selected_model}...")
-            
+            await self.ui.print_info(
+                f"Switching to {selected_provider} with model {selected_model}..."
+            )
+
             # Update agent's model attribute before calling set_provider
             self.agent.current_model = selected_model
 
             try:
                 success = await self.agent.set_provider(selected_provider)
                 if success:
-                    await self.ui.print_info(f"✅ Provider switched to: {selected_provider}")
+                    await self.ui.print_info(
+                        f"✅ Provider switched to: {selected_provider}"
+                    )
                     await self.ui.print_info(f"   Model: {self.agent.current_model}")
             except Exception as e:
                 await self.ui.print_error(f"Provider switch failed: {str(e)}")
                 self.logger.error("Provider switch error: %s", str(e), exc_info=True)
 
         except Exception as e:
-            await self.ui.print_error(f"Unexpected error during provider switch: {str(e)}")
-            self.logger.error("Provider switch unexpected error: %s", str(e), exc_info=True)
+            await self.ui.print_error(
+                f"Unexpected error during provider switch: {str(e)}"
+            )
+            self.logger.error(
+                "Provider switch unexpected error: %s", str(e), exc_info=True
+            )

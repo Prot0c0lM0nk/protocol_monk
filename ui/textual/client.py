@@ -2,6 +2,7 @@
 ui/textual/client.py
 The Bridge: Connects the Agent (logic) to the Textual App (visuals).
 """
+
 import asyncio
 from typing import Dict, Union, Any, List
 from ui.base import UI, ToolResult
@@ -10,11 +11,12 @@ from .screens.tool_confirm import ToolConfirmModal
 from .messages import StreamText, AgentMessage, UpdateStatus
 from .screens.selection import SelectionModal
 
+
 class TextualUI(UI):
     """
     Implementation of the UI abstract class that drives a Textual App.
     """
-    
+
     def __init__(self):
         super().__init__()
         self.app = ProtocolMonkApp()
@@ -26,6 +28,7 @@ class TextualUI(UI):
         self.agent = agent
         # Lazy import to avoid circular dependency
         from agent.command_dispatcher import CommandDispatcher
+
         self.dispatcher = CommandDispatcher(agent)
 
     async def run_async(self):
@@ -39,10 +42,10 @@ class TextualUI(UI):
         # 1. Try Slash Commands
         if self.dispatcher:
             result = await self.dispatcher.dispatch(user_input)
-            if result is False: # /quit
+            if result is False:  # /quit
                 await self.app.action_quit()
                 return
-            if result is True: # Command handled
+            if result is True:  # Command handled
                 return
 
         # 2. Pass to Agent
@@ -70,7 +73,7 @@ class TextualUI(UI):
     async def print_info(self, message: str):
         if self.app.is_running:
             self.app.post_message(AgentMessage("info", message))
-            
+
     async def print_warning(self, message: str):
         if self.app.is_running:
             self.app.post_message(AgentMessage("warning", message))
@@ -81,13 +84,20 @@ class TextualUI(UI):
 
     async def display_tool_result(self, result: ToolResult, tool_name: str):
         if self.app.is_running:
-            self.app.post_message(AgentMessage("tool_result", {
-                "name": tool_name,
-                "output": result.output,
-                "success": result.success
-            }))
+            self.app.post_message(
+                AgentMessage(
+                    "tool_result",
+                    {
+                        "name": tool_name,
+                        "output": result.output,
+                        "success": result.success,
+                    },
+                )
+            )
 
-    async def confirm_tool_call(self, tool_call: Dict, auto_confirm: bool = False) -> Union[bool, Dict]:
+    async def confirm_tool_call(
+        self, tool_call: Dict, auto_confirm: bool = False
+    ) -> Union[bool, Dict]:
         """
         CRITICAL: Intercept confirmation and show the Modal.
         """
@@ -99,7 +109,7 @@ class TextualUI(UI):
             # This allows the Agent to "block" while the User decides.
             result = await self.app.push_screen_wait(ToolConfirmModal(tool_call))
             return result
-            
+
         return False
 
     async def display_selection_list(self, title: str, items: List[Any]):
@@ -121,7 +131,7 @@ class TextualUI(UI):
         if self.app.is_running:
             # 2. Show the modal
             selected = await self.app.push_screen_wait(SelectionModal(title, options))
-            
+
             # 3. Store result for the NEXT prompt_user call
             if selected:
                 self.app.pending_selection = selected
@@ -140,13 +150,32 @@ class TextualUI(UI):
         return ""
 
     # --- Stubs for required abstract methods ---
-    async def close(self): pass
-    async def display_startup_banner(self, greeting: str): pass
-    async def display_execution_start(self, count: int): pass
-    async def display_progress(self, current: int, total: int): pass
-    async def display_task_complete(self, summary: str = ""): pass
-    async def print_error_stderr(self, message: str): pass
-    async def set_auto_confirm(self, value: bool): pass
-    async def display_startup_frame(self, frame: str): pass
-    async def display_model_list(self, models, current): pass
-    async def display_switch_report(self, report, current, target): pass
+    async def close(self):
+        pass
+
+    async def display_startup_banner(self, greeting: str):
+        pass
+
+    async def display_execution_start(self, count: int):
+        pass
+
+    async def display_progress(self, current: int, total: int):
+        pass
+
+    async def display_task_complete(self, summary: str = ""):
+        pass
+
+    async def print_error_stderr(self, message: str):
+        pass
+
+    async def set_auto_confirm(self, value: bool):
+        pass
+
+    async def display_startup_frame(self, frame: str):
+        pass
+
+    async def display_model_list(self, models, current):
+        pass
+
+    async def display_switch_report(self, report, current, target):
+        pass

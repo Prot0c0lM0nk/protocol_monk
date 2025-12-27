@@ -282,7 +282,7 @@ def _select_ui_mode(use_rich: bool, use_tui: bool) -> UI:
 
 
 async def _configure_model(ui: UI, use_tui: bool, use_rich: bool) -> tuple[str, str]:
-    current_provider = "ollama" 
+    current_provider = "ollama"
     if not use_tui:
         # Improved clarity on the provider prompt
         await ui.print_info(f"Default provider: {current_provider}")
@@ -333,10 +333,12 @@ async def _configure_model(ui: UI, use_tui: bool, use_rich: bool) -> tuple[str, 
     return current_model, current_provider
 
 
-async def _select_new_model(ui: UI, current_model: str, current_provider: str) -> tuple[str, str]:
+async def _select_new_model(
+    ui: UI, current_model: str, current_provider: str
+) -> tuple[str, str]:
     """Prompt user to select a different model from the current provider."""
     # FIX: Pass the current_provider to ensure we see the right models
-    model_manager = RuntimeModelManager(provider=current_provider) 
+    model_manager = RuntimeModelManager(provider=current_provider)
     available_models = model_manager.get_available_models()
     models = list(available_models.values()) if available_models else []
 
@@ -345,7 +347,7 @@ async def _select_new_model(ui: UI, current_model: str, current_provider: str) -
         return current_model, current_provider
 
     # UI will now show provider info as well
-    await ui.display_model_list(models, current_model) 
+    await ui.display_model_list(models, current_model)
     choice = await ui.prompt_user("Enter model name or number to select")
 
     if not choice:
@@ -353,7 +355,10 @@ async def _select_new_model(ui: UI, current_model: str, current_provider: str) -
 
     # Logic to handle both name and numeric input
     selected_name = None
-    model_names = [getattr(m, "name", m.get("name") if isinstance(m, dict) else str(m)) for m in models]
+    model_names = [
+        getattr(m, "name", m.get("name") if isinstance(m, dict) else str(m))
+        for m in models
+    ]
 
     if choice.isdigit():
         idx = int(choice) - 1
@@ -381,7 +386,7 @@ async def _run_tui(agent: ProtocolAgent):
     # 2. HOT SWAP: Replace the CLI PlainUI with our Textual Bridge
     # This ensures calls like 'agent.ui.confirm_tool_call' go to the TUI
     agent.ui = tui
-    
+
     # 3. Connect the Bridge to the Agent (so it can send input back)
     tui.set_agent(agent)
 
@@ -392,6 +397,7 @@ async def _run_tui(agent: ProtocolAgent):
         print(f"Error running TUI: {e}", file=sys.stderr)
         # Try to restore UI just in case
         from ui.plain import PlainUI
+
         agent.ui = PlainUI()
         raise
 

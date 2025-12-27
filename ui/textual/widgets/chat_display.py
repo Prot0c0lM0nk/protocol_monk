@@ -2,23 +2,29 @@
 ui/textual/widgets/chat_display.py
 Handles mixed-mode display: Markdown for chat, Static/Markup for tools.
 """
+
 from textual.containers import VerticalScroll
 from textual.widgets import Markdown, Static
 from textual.message import Message
 
+
 class ChatMessage(Markdown):
     """A message bubble rendered as Markdown (for User/Agent text)."""
+
     pass
+
 
 class ToolResultWidget(Static):
     """A result block rendered with Rich Markup (for colors)."""
+
     pass
+
 
 class ChatDisplay(VerticalScroll):
     """
     A scrolling container that stacks Markdown messages and Tool Results.
     """
-    
+
     def __init__(self):
         super().__init__()
         self.current_stream_text = ""
@@ -43,7 +49,7 @@ class ChatDisplay(VerticalScroll):
             self.mount(self.active_agent_message)
 
         self.current_stream_text += text
-        
+
         # Render as Markdown
         display_text = f"**AGENT:**\n\n{self.current_stream_text}"
         self.active_agent_message.update(display_text)
@@ -60,8 +66,10 @@ class ChatDisplay(VerticalScroll):
         color = "green" if success else "red"
         # We use Rich markup here ([bold], [color])
         markup_text = f"[bold {color}]Tool: {tool_name}[/]\n{output}"
-        
-        result_widget = ToolResultWidget(markup_text, markup=True, classes="tool-output")
+
+        result_widget = ToolResultWidget(
+            markup_text, markup=True, classes="tool-output"
+        )
         self.mount(result_widget)
         self.scroll_end(animate=False)
 

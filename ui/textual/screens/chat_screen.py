@@ -1,16 +1,18 @@
 """
 ui/textual/screens/chat_screen.py
 """
+
 from textual.containers import Container
 from textual.app import ComposeResult
 from ui.textual.widgets.chat_input import ChatInput
 from ui.textual.widgets.chat_display import ChatDisplay
 
+
 class ChatScreen(Container):
     """
     The Main Interface Container.
     """
-    
+
     def compose(self) -> ComposeResult:
         yield ChatDisplay()
         yield ChatInput()
@@ -45,6 +47,6 @@ class ChatScreen(Container):
         """
         display = self.query_one(ChatDisplay)
         display.add_user_message(message.value)
-        
+
         # FIX: Remove 'await'. resolve_input is synchronous.
         self.app.resolve_input(message.value)

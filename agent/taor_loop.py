@@ -137,7 +137,7 @@ class TAORLoop:
 
         # 2. PARSE (Extract Intent)
         actions, _ = self.agent._parse_response(response)
-        
+
         # Debug: Check what parsing returned
 
         # If no actions, check for ghosts or finish
@@ -151,7 +151,7 @@ class TAORLoop:
             # If an action signals the loop should stop (like 'finish'), we exit early
             if not should_continue:
                 return False
-            
+
         return True
 
     async def _handle_no_actions(self, response) -> bool:
@@ -161,7 +161,9 @@ class TAORLoop:
         # 1. Handle Ghost Tools (Strings that look like JSON but aren't)
         if isinstance(response, str) and self._detect_ghost_tool(response):
             await self.agent.ui.print_warning("⚠️ Invalid tool format. Retrying...")
-            await self.agent.context_manager.add_message("system", "Error: Use API tool calling.")
+            await self.agent.context_manager.add_message(
+                "system", "Error: Use API tool calling."
+            )
             self._consecutive_failures += 1
             return self._consecutive_failures < self.max_consecutive_failures
 
@@ -173,7 +175,7 @@ class TAORLoop:
 
         # 3. Normal finish (Agent just talked)
         return False
-    
+
     async def _execute_structured_response(self, response: dict) -> bool:
         """
         Bridge: Extracts tools from a dictionary and processes them.
@@ -192,7 +194,7 @@ class TAORLoop:
             should_continue = await self._process_action(action)
             if not should_continue:
                 return False
-            
+
         return True
 
     async def _process_action(self, action: Dict) -> bool:
@@ -234,7 +236,7 @@ class TAORLoop:
         # If it's already a dict, it's not a 'ghost' string—it's parsed data.
         if isinstance(response, dict):
             return False
-        
+
         # Ensure we are dealing with a string before processing
         if not isinstance(response, str):
             return False
@@ -243,10 +245,10 @@ class TAORLoop:
             # Look specifically for tool calls, not any JSON-like structure
             if "```json" in response or response.strip().startswith("{"):
                 # Extract just the JSON part for validation
-                lines = response.split('\n')
+                lines = response.split("\n")
                 json_lines = []
                 in_json = False
-        
+
                 for line in lines:
                     if line.strip() == "```json":
                         in_json = True
@@ -257,13 +259,13 @@ class TAORLoop:
                         json_lines.append(line)
                     elif line.strip().startswith("{") and not in_json:
                         json_lines.append(line)
-        
+
                 if json_lines:
-                    json_str = '\n'.join(json_lines)
+                    json_str = "\n".join(json_lines)
                     json.loads(json_str)
                 return False
         except json.JSONDecodeError:
             # If it looks like JSON but fails to parse, it's a ghost tool
             return True
-    
+
         return False

@@ -14,10 +14,15 @@ from prompt_toolkit.patch_stdout import patch_stdout
 
 # --- IMPORTS ---
 from .base import UI, ToolResult
-from .renderers.message import render_agent_message, render_user_message, clean_think_tags
+from .renderers.message import (
+    render_agent_message,
+    render_user_message,
+    clean_think_tags,
+)
 from .renderers.models import render_model_table, render_switch_report
 from .renderers.streaming import generate_stream_panel
 from .renderers.tools import render_tool_call_pretty, render_tool_result
+
 # ADD: Import the think tag cleanser
 
 # ADD: Import the new factory function
@@ -57,7 +62,6 @@ class RichUI(UI):
         self._stop_thinking()
         self._streaming_active = True
 
-
         # CRITICAL FIX: Enhanced Live display configuration to prevent artifacts
         # transient=False: Live display stays visible on exit (no panel transition artifacts)
         # refresh_per_second=6: Increased for smoother animation
@@ -82,15 +86,13 @@ class RichUI(UI):
             # Simply accumulate and display (no tool detection needed)
             if len(text) > 0:
                 self._accumulated_text += text
-                
+
                 # Clean think tags for display
                 display_content = clean_think_tags(self._accumulated_text)
-                
+
                 # Update display if there's content
                 if display_content.strip() and self._live_display:
-                    self._live_display.update(
-                        generate_stream_panel(display_content)
-                    )
+                    self._live_display.update(generate_stream_panel(display_content))
         except asyncio.CancelledError:
             # Handle cancellation gracefully
             self._streaming_active = False
@@ -102,7 +104,7 @@ class RichUI(UI):
                 self._live_display = None
         except Exception as e:
             await self.print_error(f"Stream processing error: {e}")
-                
+
     async def _end_streaming(self):
         """End streaming safely - panel stays visible with transient=False."""
         if not self._streaming_active:
@@ -237,14 +239,28 @@ class RichUI(UI):
 
     # --- 5. MODEL MANAGER RENDERERS ---
 
-    async def display_model_list(self, models: List[Any], current_model: str, current_provider: str = None):
-        header = f"\n=== Available Models for {current_provider}" if current_provider else "\n=== Available Models"
+    async def display_model_list(
+        self, models: List[Any], current_model: str, current_provider: str = None
+    ):
+        header = (
+            f"\n=== Available Models for {current_provider}"
+            if current_provider
+            else "\n=== Available Models"
+        )
         print(f"{header} (Current: {current_model}) ===")
-        
+
         for m in models:
             name = getattr(m, "name", m.get("name") if isinstance(m, dict) else str(m))
-            prov = getattr(m, "provider", m.get("provider", "unknown") if isinstance(m, dict) else "unknown")
-            ctx = getattr(m, "context_window", m.get("context_window", 0) if isinstance(m, dict) else 0)
+            prov = getattr(
+                m,
+                "provider",
+                m.get("provider", "unknown") if isinstance(m, dict) else "unknown",
+            )
+            ctx = getattr(
+                m,
+                "context_window",
+                m.get("context_window", 0) if isinstance(m, dict) else 0,
+            )
             marker = "*" if name == current_model else " "
             # Added Provider column for clarity
             print(f" {marker} {name:<25} ({prov:<12}) [{ctx:,}] ")
@@ -275,10 +291,10 @@ class RichUI(UI):
     async def display_tool_call(self, tool_call: Dict, auto_confirm: bool = False):
         """Display tool call using Rich renderer"""
         from .renderers.tools import render_tool_call_pretty
-        
+
         action = tool_call.get("action", "unknown")
         params = tool_call.get("parameters", {})
-        
+
         # Use the Rich renderer to display the tool call
         render_tool_call_pretty(action, params)
 
@@ -286,7 +302,7 @@ class RichUI(UI):
         """Display execution start notification using Rich"""
         from rich.panel import Panel
         from rich.text import Text
-        
+
         message = Text(f"Executing {count} tool(s)...", style="bold green")
         panel = Panel(message, border_style="green")
         console.print(panel)
@@ -294,10 +310,10 @@ class RichUI(UI):
     async def display_progress(self, current: int, total: int):
         """Display progress using Rich progress bar"""
         from rich.progress import ProgressBar
-        
+
         if not hasattr(self, "_progress_bar"):
             self._progress_bar = ProgressBar(total=total, width=50)
-        
+
         self._progress_bar.update(current)
         console.print(self._progress_bar)
 
@@ -322,18 +338,16 @@ class RichUI(UI):
     async def display_startup_frame(self, frame: str):
         """Display startup frame using Rich"""
         from rich.panel import Panel
-        
+
         console.print(Panel(frame, border_style="dim"))
 
     async def print_error_stderr(self, message: str):
         """Print error to stderr using Rich"""
         from rich.panel import Panel
         from rich.text import Text
-        
+
         error_panel = Panel(
-            Text(message, style="red"),
-            title="[bold red]Error[/]",
-            border_style="red"
+            Text(message, style="red"), title="[bold red]Error[/]", border_style="red"
         )
         console.print(error_panel, stderr=True)
 
@@ -354,4 +368,3 @@ class RichUI(UI):
         except Exception as e:
             logger.error(f"Error during RichUI cleanup: {e}", exc_info=True)
             raise
-            

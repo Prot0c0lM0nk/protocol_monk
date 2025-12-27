@@ -1,10 +1,12 @@
 """
 ui/textual/widgets/chat_input.py
 """
+
 from textual.containers import Container, Vertical, Horizontal
 from textual.widgets import TextArea, Button
 from textual.message import Message
 from textual.binding import Binding
+
 
 class ChatInput(Container):
     """
@@ -19,6 +21,7 @@ class ChatInput(Container):
 
     class Submitted(Message):
         """Event sent when the message is finalized."""
+
         def __init__(self, value: str):
             self.value = value
             super().__init__()
@@ -39,7 +42,7 @@ class ChatInput(Container):
         """Triggered by Ctrl+Enter or the Button."""
         text_area = self.query_one(TextArea)
         value = text_area.text.strip()
-        
+
         if value:
             # 1. Clear the input
             text_area.text = ""

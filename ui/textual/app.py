@@ -1,6 +1,7 @@
 """
 ui/textual/app.py
 """
+
 import asyncio
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer
@@ -11,20 +12,21 @@ from .screens.chat_screen import ChatScreen
 from .messages import StreamText, AgentMessage, UpdateStatus
 
 # 1. IMPORT THE PROVIDER
-from .commands import MonkCommandProvider 
+from .commands import MonkCommandProvider
+
 
 class ProtocolMonkApp(App):
     """
     The Protocol Monk TUI.
     """
-    
+
     CSS_PATH = "styles/orthodox.tcss"
     TITLE = "Protocol Monk ✠"
-    
+
     # 2. REGISTER THE PROVIDER
     # This enables Ctrl+P to find our commands
-    COMMANDS = {MonkCommandProvider}  
-    
+    COMMANDS = {MonkCommandProvider}
+
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+l", "clear_screen", "Clear"),
@@ -83,7 +85,7 @@ class ProtocolMonkApp(App):
         if message.type == "error":
             # Errors are best shown as tool outputs (Red)
             display.add_tool_output("SYSTEM ERROR", message.data, False)
-            
+
         elif message.type == "info":
             # Info can go to log or notification
             self.notify(message.data)
@@ -98,7 +100,7 @@ class ProtocolMonkApp(App):
             display.add_tool_output(
                 tool_name=data.get("name", "Unknown Tool"),
                 output=data.get("output", ""),
-                success=data.get("success", True)
+                success=data.get("success", True),
             )
 
     def on_update_status(self, message: UpdateStatus):

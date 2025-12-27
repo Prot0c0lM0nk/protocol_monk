@@ -135,7 +135,7 @@ class ProperToolCalling:
 
     def extract_tool_calls(self, api_response: Dict[str, Any]) -> List[ToolCall]:
         tool_calls = []
-    
+
         # Extract the message object regardless of top-level key (choices or message)
         message = {}
         if "choices" in api_response:
@@ -157,16 +157,18 @@ class ProperToolCalling:
                 try:
                     parameters = json.loads(raw_args)
                 except json.JSONDecodeError:
-                    parameters = {} # Or handle partial JSON
+                    parameters = {}  # Or handle partial JSON
             else:
                 parameters = raw_args if isinstance(raw_args, dict) else {}
 
-            tool_calls.append(ToolCall(
-                id=tc.get("id", ""),
-                action=name,
-                parameters=parameters,
-                reasoning=message.get("content") # Use assistant text as reasoning
-            ))
+            tool_calls.append(
+                ToolCall(
+                    id=tc.get("id", ""),
+                    action=name,
+                    parameters=parameters,
+                    reasoning=message.get("content"),  # Use assistant text as reasoning
+                )
+            )
 
         return tool_calls
 

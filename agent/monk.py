@@ -61,7 +61,7 @@ class ProtocolAgent:
             working_dir=self.working_dir,
             tool_registry=tool_registry,
         )
-        
+
         self.proper_tool_caller = (
             ProperToolCalling(tool_registry) if tool_registry else None
         )
@@ -156,8 +156,7 @@ class ProtocolAgent:
         try:
             # FIX: Pass provider to get_context
             context = await self.context_manager.get_context(
-                self.current_model, 
-                self.current_provider
+                self.current_model, self.current_provider
             )
 
             # Remove duplicate system messages (keep only the first one)
@@ -258,28 +257,36 @@ class ProtocolAgent:
         Handles both text responses and API tool calls.
         """
         actions = []
-    
+
         # CASE 1: Response is already a Dictionary (Structured API Call)
         if isinstance(response_data, dict):
             # 1. Try your primary utility
             tool_calls = self.proper_tool_caller.extract_tool_calls(response_data)
             for tool_call in tool_calls:
-                actions.append({
-                    "action": tool_call.action,
-                    "parameters": tool_call.parameters,
-                    "reasoning": getattr(tool_call, 'reasoning', None),
-                })
-            
+                actions.append(
+                    {
+                        "action": tool_call.action,
+                        "parameters": tool_call.parameters,
+                        "reasoning": getattr(tool_call, "reasoning", None),
+                    }
+                )
+
             # 2. Backup: Manual extraction if utility returned nothing
             if not actions:
                 # Check for standard 'tool_calls' array (OpenAI/OpenRouter style)
                 if "tool_calls" in response_data:
                     for tc in response_data["tool_calls"]:
                         func = tc.get("function", {})
-                        actions.append({
-                            "action": func.get("name"),
-                            "parameters": json.loads(func.get("arguments", "{}")) if isinstance(func.get("arguments"), str) else func.get("arguments")
-                        })
+                        actions.append(
+                            {
+                                "action": func.get("name"),
+                                "parameters": (
+                                    json.loads(func.get("arguments", "{}"))
+                                    if isinstance(func.get("arguments"), str)
+                                    else func.get("arguments")
+                                ),
+                            }
+                        )
                 # Check for direct action/parameters (Custom/Ollama style)
                 elif "action" in response_data and "parameters" in response_data:
                     actions.append(response_data)
@@ -288,13 +295,13 @@ class ProtocolAgent:
 
         # CASE 2: Response is a String (Text-based or "Ghost" Tool)
         # [Keep your existing regex/text parsing logic here if you still want a fallback]
-    
+
         return [], False
 
     async def _record_results(self, summary: ExecutionSummary) -> bool:
         """
         Record results and return True if any failures occurred.
-        
+
         Tool results are formatted with tool name information to enable
         proper display in the context window.
         """
@@ -303,7 +310,9 @@ class ProtocolAgent:
             # Format result with tool name for proper context display
             # This allows the ContextManager to extract the name for the header
             formatted_output = f"Tool: {result.tool_name}\nOutput: {result.output}"
-            await self.context_manager.add_message("tool", formatted_output, importance=5)
+            await self.context_manager.add_message(
+                "tool", formatted_output, importance=5
+            )
 
             if not result.success:
                 had_failure = True
@@ -338,11 +347,11 @@ class ProtocolAgent:
         """Switch the current model and update context limits."""
         self.current_model = model_name
         self.model_client.set_model(model_name)
-        
+
         # FIX: Pass current_provider to RuntimeModelManager
         model_manager = RuntimeModelManager(provider=self.current_provider)
         model_info = model_manager.get_available_models().get(model_name)
-        
+
         if model_info:
             self.context_manager.accountant.max_tokens = model_info.context_window
             self.context_manager.pruner.max_tokens = model_info.context_window
