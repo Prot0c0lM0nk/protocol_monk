@@ -88,6 +88,79 @@ ChatMessage > CodeBlock {
     padding: 1;
 }
 
+/* --- TOOL CONFIRM MODAL --- */
+#modal_dialog {
+    width: 70;
+    height: auto;
+    max_height: 80%;
+    background: #1a1a1a;
+    border: tall #ffaa44; /* Orthodox Gold */
+    padding: 1;
+    align: center middle; 
+    /* "align" handles content inside; margins handle the modal itself if needed */
+}
+
+#title {
+    width: 100%;
+    text-align: center;
+    background: #ffaa44;
+    color: #0f0f0f;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#tool_details {
+    height: auto;
+    max_height: 20;
+    margin-bottom: 1;
+    background: #0f0f0f;
+    border: solid #00d7ff; /* Tech Cyan */
+    padding: 1;
+    overflow-y: scroll;
+}
+
+/* Modification Area */
+#modification_area {
+    height: auto;
+    margin-bottom: 1;
+}
+
+.instruction {
+    color: #ffaa44;
+    margin-bottom: 1;
+}
+
+#suggestion_input {
+    height: 8;
+    background: #0f0f0f;
+    border: solid #ffaa44;
+    color: white;
+}
+
+/* Buttons */
+.button_grid {
+    layout: grid;
+    grid-size: 3;
+    grid-gutter: 1;
+    height: 3;
+    margin-top: 1;
+}
+
+#mod_buttons {
+    height: 3;
+    align: center middle;
+    margin-top: 1;
+}
+
+#mod_buttons Button {
+    margin: 0 1;
+}
+
+/* Utilities */
+.hidden {
+    display: none;
+}
+
 Header {
     dock: top;
     background: #00ff41;

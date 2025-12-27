@@ -1,38 +1,55 @@
 """
 ui/textual/app.py
-The Main Application Container.
-Wires the Agent Bridge to the Visual Widgets.
 """
 import asyncio
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer
 from textual.binding import Binding
 
-# Import the screen we just created
+# Import screens/messages
 from .screens.chat_screen import ChatScreen
 from .messages import StreamText, AgentMessage, UpdateStatus
+
+# 1. IMPORT THE PROVIDER
+from .commands import MonkCommandProvider 
 
 class ProtocolMonkApp(App):
     """
     The Protocol Monk TUI.
     """
     
-    # Corrected to point to .tcss
     CSS_PATH = "styles/orthodox.tcss"
     TITLE = "Protocol Monk ✠"
+    
+    # 2. REGISTER THE PROVIDER
+    # This enables Ctrl+P to find our commands
+    COMMANDS = {MonkCommandProvider}  
     
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+l", "clear_screen", "Clear"),
+        # Textual adds Ctrl+P automatically [cite: 468]
     ]
 
     def __init__(self):
         super().__init__()
-        self.input_future = None
+        self.input_future: asyncio.Future = None
         self.input_handler = None
 
+    def set_input_handler(self, handler):
+        self.input_handler = handler
+
+    # 3. ADD THE HELPER METHOD
+    def trigger_slash_command(self, command: str):
+        """
+        Called by Command Palette to execute a slash command.
+        """
+        if self.input_handler:
+            # We treat this exactly like the user typed it in the chat box
+            self.run_worker(self.input_handler(command))
+
+    # ... (Keep the rest of your existing methods: compose, on_mount, etc.) ...
     def compose(self) -> ComposeResult:
-        """Build the UI structure."""
         yield Header(show_clock=True)
         yield ChatScreen(id="chat_screen")
         yield Footer()
@@ -40,68 +57,54 @@ class ProtocolMonkApp(App):
     def on_mount(self) -> None:
         self.notify("Protocol Monk Initialized", title="System")
 
-    # --- INPUT HANDLING (The Pause/Resume Logic) ---
-    def set_input_handler(self, handler):
-        self.input_handler = handler
-
     async def await_user_input(self, prompt: str) -> str:
-        """
-        Called by the Bridge (Agent).
-        Waits for the user to type in the ChatScreen.
-        """
-        # Focus the input widget
         screen = self.query_one(ChatScreen)
         screen.focus_input()
-        
-        # Create a future that the ChatScreen will resolve
         self.input_future = asyncio.Future()
-        
-        # This await blocks the Agent until resolve_input is called
         return await self.input_future
 
-    async def resolve_input(self, value: str):
-        """Called by ChatScreen when user hits Enter."""
-        
-        # CASE 1: The Agent is paused waiting for input (Mid-Loop Prompt)
+    def resolve_input(self, value: str):
         if self.input_future and not self.input_future.done():
             self.input_future.set_result(value)
             self.input_future = None
             return
 
-        # CASE 2: The Agent is idle, this is a new request
         if self.input_handler:
-            # Run the handler as a worker so we don't block the UI
             self.run_worker(self.input_handler(value))
 
-    # --- MESSAGE HANDLERS (From Bridge) ---
-
     def on_stream_text(self, message: StreamText):
-        """Route streaming text to the chat screen."""
         self.query_one(ChatScreen).write_to_log(message.text)
 
     def on_agent_message(self, message: AgentMessage):
         """Route general agent events (info/error/tools)"""
-        # For now, we just dump these to the log. 
-        # Later we will route tool_calls to specific widgets.
         screen = self.query_one(ChatScreen)
-        
+        display = screen.query_one("ChatDisplay")  # Access display directly
+
         if message.type == "error":
-            screen.write_to_log(f"[bold red]ERROR: {message.data}[/]")
+            # Errors are best shown as tool outputs (Red)
+            display.add_tool_output("SYSTEM ERROR", message.data, False)
+            
         elif message.type == "info":
-            screen.write_to_log(f"[dim]{message.data}[/]")
+            # Info can go to log or notification
+            self.notify(message.data)
+
         elif message.type == "tool_call":
-            screen.write_to_log(f"[bold cyan]Tool Call: {message.data.get('tool', 'unknown')}[/]")
+            # Just notify that a tool is starting
+            self.notify(f"Calling: {message.data.get('tool', 'unknown')}")
+
         elif message.type == "tool_result":
-            screen.write_to_log(f"[cyan]Result: {message.data.get('output', '')}[/]")
+            # USE THE NEW WIDGET FOR RESULTS
+            data = message.data
+            display.add_tool_output(
+                tool_name=data.get("name", "Unknown Tool"),
+                output=data.get("output", ""),
+                success=data.get("success", True)
+            )
 
     def on_update_status(self, message: UpdateStatus):
-        """Route status updates (thinking/loading)"""
         screen = self.query_one(ChatScreen)
-        
         if message.key == "thinking":
             if message.value:
-                # Started thinking
                 screen.show_loading_indicator()
             else:
-                # Stopped thinking -> Finish the stream
                 screen.finalize_response()

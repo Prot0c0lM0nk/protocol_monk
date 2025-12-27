@@ -26,27 +26,25 @@ class ChatScreen(Container):
 
     def write_to_log(self, text: str):
         """Called by App to stream text to display."""
-        # FIX: Call the custom method 'write_to_log', not 'write'
         self.query_one(ChatDisplay).write_to_log(text)
 
-    # --- New Methods for Status Updates ---
+    # --- Status Methods ---
 
     def show_loading_indicator(self):
-        """Optional: Could show a spinner. For now, do nothing."""
         pass
 
     def finalize_response(self):
-        """Tell display the stream is done."""
         self.query_one(ChatDisplay).end_current_message()
 
+    # --- THE FIX IS HERE ---
     async def on_chat_input_submitted(self, message: ChatInput.Submitted):
         """
         When user hits Enter:
         1. Show user message in display
-        2. Resolve the Future so the Agent gets the input
+        2. Pass input to the App
         """
         display = self.query_one(ChatDisplay)
         display.add_user_message(message.value)
         
-        # Notify the App (Container) that we have input for the Agent
-        await self.app.resolve_input(message.value)
+        # FIX: Remove 'await'. resolve_input is synchronous.
+        self.app.resolve_input(message.value)

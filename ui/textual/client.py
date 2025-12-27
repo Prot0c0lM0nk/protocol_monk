@@ -7,6 +7,7 @@ from typing import Dict, Union, Any
 from ui.base import UI, ToolResult
 from .app import ProtocolMonkApp
 from .messages import StreamText, AgentMessage, UpdateStatus
+from .screens.tool_confirm import ToolConfirmModal
 
 class TextualUI(UI):
     """
@@ -74,6 +75,22 @@ class TextualUI(UI):
             self.app.post_message(UpdateStatus("thinking", False))
 
     # --- 3. TOOLING & INTERACTION ---
+
+    async def confirm_tool_call(self, tool_call: Dict, auto_confirm: bool = False) -> Union[bool, Dict]:
+        """
+        Ask user to confirm a tool call.
+        Matches plain.py workflow: Returns True, False, or {'modified': ...}
+        """
+        if auto_confirm:
+            return True
+
+        if self.app.is_running:
+            # push_screen_wait blocks this async function until self.dismiss() is called in the Modal
+            result = await self.app.push_screen_wait(ToolConfirmModal(tool_call))
+            return result
+            
+        # Fallback (shouldn't happen in TUI mode)
+        return False
 
     async def display_tool_call(self, tool_call: Dict, auto_confirm: bool = False):
         if self.app.is_running:
