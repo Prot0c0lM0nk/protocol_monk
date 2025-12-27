@@ -117,27 +117,9 @@ class CommandDispatcher:
         await self.ui.print_info(status_text)
 
     async def _display_model_list(self, available_models: Dict):
-        """
-        Print the list of available models.
-
-        Args:
-            available_models: Dictionary of available models
-        """
-        await self.ui.print_info("Available Models:")
-        for i, model_name in enumerate(available_models.keys(), 1):
-            m = available_models[model_name]
-            # Handle both object and dict access safely
-            prov = getattr(
-                m,
-                "provider",
-                m.get("provider", "unknown") if isinstance(m, dict) else "unknown",
-            )
-            ctx = getattr(
-                m,
-                "context_window",
-                m.get("context_window", 0) if isinstance(m, dict) else 0,
-            )
-            await self.ui.print_info(f"  {i}. {model_name} ({prov}, {ctx:,} tokens)")
+        models_list = list(available_models.values())
+        # Use the generic method
+        await self.ui.display_selection_list("Available Models", models_list)
 
     async def _get_model_choice(self, available_models: Dict) -> Optional[str]:
         """
@@ -358,10 +340,11 @@ class CommandDispatcher:
                 else "unknown"
             )
 
-            await self.ui.print_info("Available Providers:")
-            for i, provider in enumerate(available_providers, 1):
-                current_marker = " (current)" if provider == current_provider else ""
-                await self.ui.print_info(f"  {i}. {provider}{current_marker}")
+            # Use the unified display method
+            await self.ui.display_selection_list("Available Providers", available_providers)
+
+            # The prompt will auto-fill from the TUI modal selection
+            choice = await self.ui.prompt_user("Select a provider (enter number or name): ")
 
             # 2. Get User Provider Choice
             choice = await self.ui.prompt_user(

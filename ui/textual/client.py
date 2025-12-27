@@ -8,6 +8,7 @@ from ui.base import UI, ToolResult
 from .app import ProtocolMonkApp
 from .screens.tool_confirm import ToolConfirmModal
 from .messages import StreamText, AgentMessage, UpdateStatus
+from .screens.selection import SelectionModal
 
 class TextualUI(UI):
     """
@@ -101,8 +102,39 @@ class TextualUI(UI):
             
         return False
 
+    async def display_selection_list(self, title: str, items: List[Any]):
+        """
+        Show a modal list for ANY selection (Provider, Model, etc).
+        """
+        # 1. robust string conversion
+        options = []
+        for item in items:
+            # If it's a model object/dict, get the name. If it's a string, use it.
+            if isinstance(item, dict):
+                text = item.get("name", str(item))
+            elif hasattr(item, "name"):
+                text = getattr(item, "name")
+            else:
+                text = str(item)
+            options.append(text)
+
+        if self.app.is_running:
+            # 2. Show the modal
+            selected = await self.app.push_screen_wait(SelectionModal(title, options))
+            
+            # 3. Store result for the NEXT prompt_user call
+            if selected:
+                self.app.pending_selection = selected
+
+    # Ensure prompt_user is ready to catch the result
     async def prompt_user(self, prompt: str) -> str:
-        """Pause agent and wait for TUI input."""
+        # Check if we have a "pre-selected" answer from a modal
+        if hasattr(self.app, "pending_selection") and self.app.pending_selection:
+            result = self.app.pending_selection
+            self.app.pending_selection = None
+            return result
+
+        # Fallback to normal typing
         if self.app.is_running:
             return await self.app.await_user_input(prompt)
         return ""

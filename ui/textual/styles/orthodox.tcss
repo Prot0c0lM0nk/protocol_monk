@@ -156,6 +156,23 @@ ChatMessage > CodeBlock {
     margin: 0 1;
 }
 
+/* --- SELECTION MODAL --- */
+#selection_list {
+    height: auto;
+    max_height: 15;
+    border: solid #00d7ff; /* Tech Cyan */
+    margin-bottom: 1;
+    background: #0f0f0f;
+    color: #00ff41;
+}
+
+.selection_buttons {
+    layout: grid;
+    grid-size: 2;
+    grid-gutter: 1;
+    height: 3;
+}
+
 /* Utilities */
 .hidden {
     display: none;

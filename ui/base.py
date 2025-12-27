@@ -1,7 +1,7 @@
 # ui/base.py
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Dict, Union, Any, Optional
+from typing import Dict, Union, Any, Optional, List
 from dataclasses import dataclass
 
 @dataclass
@@ -34,6 +34,15 @@ class UI(ABC):
 
     @abstractmethod
     async def prompt_user(self, prompt: str) -> str: pass
+
+    @abstractmethod
+    async def display_selection_list(self, title: str, items: List[Any]):
+        """
+        Display a selectable list of items (models, providers, files).
+        For TUI: Shows a popup modal.
+        For CLI: Prints a numbered list.
+        """
+        pass
     
     # --- Stubs for compatibility (we will fill these later) ---
     async def close(self): pass

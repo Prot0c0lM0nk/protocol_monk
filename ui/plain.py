@@ -248,6 +248,21 @@ class PlainUI(UI):
             print(f" {marker} {name:<25} ({prov:<12}) [{ctx:,}] ")
         print()
 
+    async def display_selection_list(self, title: str, items: List[Any]):
+        """Print a numbered list for CLI users."""
+        print(f"\n=== {title} ===")
+        for i, item in enumerate(items, 1):
+            # Same extraction logic as TUI
+            if isinstance(item, dict):
+                text = f"{item.get('name')} ({item.get('provider', '')})"
+            elif hasattr(item, "name"):
+                text = f"{item.name} ({getattr(item, 'provider', '')})"
+            else:
+                text = str(item)
+            
+            print(f"  {i}. {text}")
+        print()
+
     async def display_switch_report(
         self, report: Any, current_model: str, target_model: str
     ):
