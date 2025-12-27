@@ -6,13 +6,13 @@ Screen {
     color: #00ff41;
 }
 
+/* Match the class name ChatScreen */
 ChatScreen {
     layout: vertical;
     height: 1fr;
     background: #0f0f0f;
 }
 
-/* --- THE DISPLAY (Top, grows to fill space) --- */
 ChatDisplay {
     height: 1fr;
     border: solid #00ff41;
@@ -21,14 +21,12 @@ ChatDisplay {
     overflow-y: scroll;
 }
 
-/* --- THE INPUT (Bottom, fixed height) --- */
 ChatInput {
     dock: bottom;
     height: 3;
     border: tall #00ff41;
     background: #1a1a1a;
     color: white;
-    margin-bottom: 1; 
 }
 
 ChatInput:focus {
@@ -49,19 +47,7 @@ Footer {
 }
 
 /* --- TEXT STYLES --- */
-.user-msg {
-    color: #ffaa44;
-    text-style: bold;
-}
-
-.agent-msg {
-    color: #00ff41;
-}
-
-.tool-output {
-    color: #00d7ff;
-}
-
-.error-msg {
-    color: #ff4444;
-}
+.user-msg { color: #ffaa44; text-style: bold; }
+.agent-msg { color: #00ff41; }
+.tool-output { color: #00d7ff; }
+.error-msg { color: #ff4444; }

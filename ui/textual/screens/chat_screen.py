@@ -1,12 +1,12 @@
 """
 ui/textual/screens/chat_screen.py
 """
-from textual.screen import Screen
+from textual.containers import Container
 from textual.app import ComposeResult
 from ui.textual.widgets.chat_input import ChatInput
 from ui.textual.widgets.chat_display import ChatDisplay
 
-class ChatScreen(Screen):
+class ChatScreen(Container):
     """
     The Main Interface Screen.
     """
