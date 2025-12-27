@@ -46,7 +46,8 @@ class ChatInput(Container):
             # 2. Post the message up to the parent
             self.post_message(self.Submitted(value))
 
-    def on_button_pressed(self, event: Button.Pressed):
+    async def on_button_pressed(self, event: Button.Pressed):
         """Handle the UI button click."""
         if event.button.id == "send_button":
-            self.action_submit()
+            # We must AWAIT the submit action
+            await self.action_submit()
