@@ -1,70 +1,54 @@
 """
 ui/textual/client.py
-The Bridge between the Real Agent and the Textual App.
+The Bridge: Connects the Agent (logic) to the Textual App (visuals).
 """
 import asyncio
-from typing import Dict, Union, Any
+from typing import Dict, Union, Any, List
 from ui.base import UI, ToolResult
 from .app import ProtocolMonkApp
-from .messages import StreamText, AgentMessage, UpdateStatus
 from .screens.tool_confirm import ToolConfirmModal
+from .messages import StreamText, AgentMessage, UpdateStatus
 
 class TextualUI(UI):
     """
-    The Textual implementation of the UI contract.
+    Implementation of the UI abstract class that drives a Textual App.
     """
     
     def __init__(self):
         super().__init__()
         self.app = ProtocolMonkApp()
-        self.agent = None  # We will attach the agent later
+        self.agent = None
+        self.dispatcher = None
 
     def set_agent(self, agent):
-        """Attach the real agent instance."""
+        """Connect the agent and initialize the command dispatcher."""
         self.agent = agent
+        # Lazy import to avoid circular dependency
+        from agent.command_dispatcher import CommandDispatcher
+        self.dispatcher = CommandDispatcher(agent)
 
-    # --- 1. RUNNING THE APP ---
     async def run_async(self):
-        """
-        Async entry point for main.py.
-        Uses Textual's run_async to avoid conflicting with the existing event loop.
-        """
-        # Inject the input handler
+        """Start the TUI loop."""
+        # Inject our input handler into the App
         self.app.set_input_handler(self.handle_user_input)
-        
-        # Start the app asynchronously
         await self.app.run_async()
 
     async def handle_user_input(self, user_input: str):
-        """
-        Called when user hits Enter in the TUI.
-        We pass this input to the Real Agent.
-        """
+        """Callback: The App sends us user input here."""
+        # 1. Try Slash Commands
+        if self.dispatcher:
+            result = await self.dispatcher.dispatch(user_input)
+            if result is False: # /quit
+                await self.app.action_quit()
+                return
+            if result is True: # Command handled
+                return
+
+        # 2. Pass to Agent
         if self.agent:
-            # Run the TAOR loop for this input
-            # We treat it as a task so it doesn't freeze the UI
             await self.agent.process_request(user_input)
-        else:
-            await self.print_error("Agent not connected!")
 
-    # --- 2. OUTPUT METHODS (Agent -> UI) ---
-
-    async def print_stream(self, text: str):
-        """Receives a string from monk.py and posts it to Textual."""
-        if self.app.is_running:
-            self.app.post_message(StreamText(text))
-
-    async def print_info(self, message: str):
-        if self.app.is_running:
-            self.app.post_message(AgentMessage("info", message))
-
-    async def print_error(self, message: str):
-        if self.app.is_running:
-            self.app.post_message(AgentMessage("error", message))
-            
-    async def print_warning(self, message: str):
-        if self.app.is_running:
-            self.app.post_message(AgentMessage("warning", message))
+    # --- UI Contract Implementation ---
 
     async def start_thinking(self):
         if self.app.is_running:
@@ -74,23 +58,21 @@ class TextualUI(UI):
         if self.app.is_running:
             self.app.post_message(UpdateStatus("thinking", False))
 
-    # --- 3. TOOLING & INTERACTION ---
-
-    async def confirm_tool_call(self, tool_call: Dict, auto_confirm: bool = False) -> Union[bool, Dict]:
-        """
-        Ask user to confirm a tool call.
-        Matches plain.py workflow: Returns True, False, or {'modified': ...}
-        """
-        if auto_confirm:
-            return True
-
+    async def print_stream(self, text: str):
         if self.app.is_running:
-            # push_screen_wait blocks this async function until self.dismiss() is called in the Modal
-            result = await self.app.push_screen_wait(ToolConfirmModal(tool_call))
-            return result
+            self.app.post_message(StreamText(text))
+
+    async def print_error(self, message: str):
+        if self.app.is_running:
+            self.app.post_message(AgentMessage("error", message))
+
+    async def print_info(self, message: str):
+        if self.app.is_running:
+            self.app.post_message(AgentMessage("info", message))
             
-        # Fallback (shouldn't happen in TUI mode)
-        return False
+    async def print_warning(self, message: str):
+        if self.app.is_running:
+            self.app.post_message(AgentMessage("warning", message))
 
     async def display_tool_call(self, tool_call: Dict, auto_confirm: bool = False):
         if self.app.is_running:
@@ -104,25 +86,35 @@ class TextualUI(UI):
                 "success": result.success
             }))
 
-    async def prompt_user(self, prompt: str) -> str:
+    async def confirm_tool_call(self, tool_call: Dict, auto_confirm: bool = False) -> Union[bool, Dict]:
         """
-        Used when the Agent needs to ask a question MID-LOOP 
-        (like "Confirm delete file?").
+        CRITICAL: Intercept confirmation and show the Modal.
         """
+        if auto_confirm:
+            return True
+
         if self.app.is_running:
-            # This pauses the Agent until the user types in the TUI
+            # push_screen_wait pauses here until the Modal calls dismiss()
+            # This allows the Agent to "block" while the User decides.
+            result = await self.app.push_screen_wait(ToolConfirmModal(tool_call))
+            return result
+            
+        return False
+
+    async def prompt_user(self, prompt: str) -> str:
+        """Pause agent and wait for TUI input."""
+        if self.app.is_running:
             return await self.app.await_user_input(prompt)
         return ""
 
-    # --- Stubs ---
+    # --- Stubs for required abstract methods ---
     async def close(self): pass
     async def display_startup_banner(self, greeting: str): pass
-    async def confirm_tool_call(self, tool_call, auto_confirm=False): return True
-    async def display_execution_start(self, count): pass
-    async def display_progress(self, current, total): pass
-    async def display_task_complete(self, summary=""): pass
-    async def print_error_stderr(self, message): pass
-    async def set_auto_confirm(self, value): pass
-    async def display_startup_frame(self, frame): pass
+    async def display_execution_start(self, count: int): pass
+    async def display_progress(self, current: int, total: int): pass
+    async def display_task_complete(self, summary: str = ""): pass
+    async def print_error_stderr(self, message: str): pass
+    async def set_auto_confirm(self, value: bool): pass
+    async def display_startup_frame(self, frame: str): pass
     async def display_model_list(self, models, current): pass
     async def display_switch_report(self, report, current, target): pass

@@ -372,25 +372,28 @@ async def _select_new_model(ui: UI, current_model: str, current_provider: str) -
 
 
 async def _run_tui(agent: ProtocolAgent):
-    """
-    Launch the Textual User Interface.
-    Swaps the agent's UI reference from PlainUI to TextualUI.
-    """
+    """Launch the Textual User Interface."""
     from ui.textual.client import TextualUI
 
-    # 1. Create the Matrix Bridge
+    # 1. Initialize the Bridge
     tui = TextualUI()
 
-    # 2. Hot Swap: Replace PlainUI (used for config) with TextualUI
-    # The agent now talks to the TUI for all future output
+    # 2. HOT SWAP: Replace the CLI PlainUI with our Textual Bridge
+    # This ensures calls like 'agent.ui.confirm_tool_call' go to the TUI
     agent.ui = tui
-
-    # 3. Connect: Give the TUI control over the Agent
+    
+    # 3. Connect the Bridge to the Agent (so it can send input back)
     tui.set_agent(agent)
 
-    # 4. Launch: Start the visual interface
-    # We use run_async because main() is already running an asyncio loop
-    await tui.run_async()
+    # 4. Run the App
+    try:
+        await tui.run_async()
+    except Exception as e:
+        print(f"Error running TUI: {e}", file=sys.stderr)
+        # Try to restore UI just in case
+        from ui.plain import PlainUI
+        agent.ui = PlainUI()
+        raise
 
 
 async def _run_cli(agent: ProtocolAgent, use_rich: bool):
