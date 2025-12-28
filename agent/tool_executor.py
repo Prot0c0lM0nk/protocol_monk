@@ -255,17 +255,10 @@ class ToolExecutor:
     ) -> Tuple[Optional[ToolResult], bool]:
         """
         Process the lifecycle of a single tool call.
-        Returns: (ToolResult, should_finish_flag)
-
-        Args:
-            tool_call: Single tool call dictionary to process
-
-        Returns:
-            Tuple[Optional[ToolResult], bool]: Tool result and finish flag
-
-        Raises:
-            ToolExecutionError: If tool call format is invalid
         """
+        # NEW: Extract ID early
+        call_id = tool_call.get("id")
+
         # 1. Normalize
         try:
             normalized = self._normalize_tool_call(tool_call)
@@ -273,13 +266,18 @@ class ToolExecutor:
             error_msg = f"Invalid tool call format: {str(tool_call)[:100]}..."
             self.logger.warning(error_msg)
             await self.ui_callback("tool_error", {"error": error_msg})
-            return ToolResult(success=False, output=error_msg), False
+            # Attach ID to error result
+            result = ToolResult(success=False, output=error_msg)
+            result.tool_call_id = call_id 
+            return result, False
 
         if "action" not in normalized or not normalized["action"]:
             error_msg = f"Missing 'action': {str(tool_call)[:100]}..."
             self.logger.warning(error_msg)
             await self.ui_callback("tool_error", {"error": error_msg})
-            return ToolResult(success=False, output=error_msg), False
+            result = ToolResult(success=False, output=error_msg)
+            result.tool_call_id = call_id
+            return result, False
 
         # 2. Check for Finish
         if normalized["action"] == "finish":
@@ -287,28 +285,32 @@ class ToolExecutor:
                 "task_complete",
                 {"summary": normalized["parameters"].get("summary", "")},
             )
-            # Return a success result with finish message instead of None
-            return (
-                ToolResult(success=True, output="Task completed", tool_name="finish"),
-                True,
-            )
+            result = ToolResult(success=True, output="Task completed", tool_name="finish")
+            result.tool_call_id = call_id
+            return result, True
 
-        # 3. Confirmation & Modification (Refactored)
+        # 3. Confirmation & Modification
         final_tool_call, suggestion_result = await self._confirm_and_handle_edits(
             normalized
         )
 
         if suggestion_result:
+            suggestion_result.tool_call_id = call_id
             return suggestion_result, False
 
-        # 4. Execute - Check that final_tool_call is not None
+        # 4. Execute
         if final_tool_call is None:
             raise ToolExecutionError("Tool call was None after confirmation")
+        
         result = await self._execute_tool(final_tool_call)
 
-        # 5. Stamp Name & Display
+        # 5. Stamp Name & ID & Display
         if not hasattr(result, "tool_name") or not result.tool_name:
             result.tool_name = final_tool_call["action"]
+            
+        # NEW: Attach the ID so it flows back to the agent
+        result.tool_call_id = call_id
+
         await self.ui_callback(
             "result", {"result": result, "tool_name": final_tool_call["action"]}
         )

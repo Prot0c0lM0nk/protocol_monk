@@ -187,12 +187,6 @@ class ProtocolAgent:
     async def _get_model_response(self, context: List[Dict]):
         """
         Stream the model response and handle errors with fallback logic.
-
-        Args:
-            context: Conversation context for the model
-
-        Returns:
-            str: Full response text, None if interrupted, False if error
         """
         await self.ui.start_thinking()
         full_response = ""
@@ -209,18 +203,35 @@ class ProtocolAgent:
                 if isinstance(chunk, str):
                     full_response += chunk
                     await self.ui.print_stream(chunk)
-                elif isinstance(chunk, dict):
-                    # Store tool call response for parsing
-                    full_response = chunk  # This will be processed by _parse_response
-            # Save Assistant thought
+                elif isinstance(chunk, (dict, list)):
+                    full_response = chunk
+
+            # Processing after stream ends
             if full_response:
+                # 1. Normalize Extraction of Tool Calls
+                tool_calls = []
+                if isinstance(full_response, list):
+                    tool_calls = full_response
+                elif isinstance(full_response, dict):
+                    # Check top-level (OpenAI style)
+                    if "tool_calls" in full_response:
+                        tool_calls = full_response["tool_calls"]
+                    # Check nested in message (Ollama style)
+                    elif "message" in full_response and "tool_calls" in full_response["message"]:
+                        tool_calls = full_response["message"]["tool_calls"]
+
+                # 2. Add to Context if Tools Found
+                if tool_calls:
+                    await self.context_manager.add_tool_call_message(tool_calls)
+                    return full_response
+
+                # 3. Otherwise, handle as Text
                 if isinstance(full_response, str):
-                    await self.context_manager.add_message("assistant", full_response)
-                else:
-                    # For tool calls, don't add a text message - let the UI handle the visual indicator
-                    # The UI will show a loading state instead of adding this to conversation history
-                    pass  # Skip adding "Tool calls requested" message
+                    await self.context_manager.add_assistant_message(full_response)
+                    return full_response
+                    
             return full_response
+
         except ModelRateLimitError as e:
             e.log_error()
             await self.ui.print_warning(e.user_hint)
@@ -228,25 +239,13 @@ class ProtocolAgent:
             return await self._get_model_response(context)  # Retry
         except ModelResponseParseError as e:
             e.log_error()
-            await self.ui.print_error(
-                "Model returned invalid data. Using fallback response."
-            )
-            fallback_response = "Fallback: I encountered an error processing your request. Please try again."
-            await self.context_manager.add_message("assistant", fallback_response)
-            return fallback_response
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            self.logger.exception("Model unavailable. Using fallback response.")
-            await self.ui.print_error("Model unavailable. Using fallback response.")
-            fallback_response = (
-                "Fallback: The model is currently unavailable. Please try again later."
-            )
-            await self.context_manager.add_message("assistant", fallback_response)
-            return fallback_response
-        except KeyboardInterrupt:
-            await self.ui.print_warning("\n🛑 Interrupted.")
-            return None
+            await self.ui.print_error("Model returned invalid data.")
+            return "Fallback error."
+        except Exception as e:
+            self.logger.exception("Model unavailable.")
+            await self.ui.print_error("Model unavailable.")
+            return "Fallback error."
         finally:
-            # Ensure thinking spinner is always stopped
             await self.ui.stop_thinking()
 
     def _parse_response(
@@ -300,18 +299,25 @@ class ProtocolAgent:
 
     async def _record_results(self, summary: ExecutionSummary) -> bool:
         """
-        Record results and return True if any failures occurred.
-
-        Tool results are formatted with tool name information to enable
-        proper display in the context window.
+        Record results using Native Tool protocol.
+        Extracts file paths from read_file results to trigger 'Smart Invalidation'.
         """
         had_failure = False
         for result in summary.results:
-            # Format result with tool name for proper context display
-            # This allows the ContextManager to extract the name for the header
-            formatted_output = f"Tool: {result.tool_name}\nOutput: {result.output}"
-            await self.context_manager.add_message(
-                "tool", formatted_output, importance=5
+            
+            # Detect if this was a file read (for invalidation)
+            file_path = None
+            if result.tool_name == "read_file" and result.success:
+                # Extract path from data payload if available
+                if hasattr(result, "data") and result.data:
+                    file_path = result.data.get("filepath")
+
+            # NEW: Add via specific method
+            await self.context_manager.add_tool_result_message(
+                tool_name=result.tool_name or "unknown_tool",
+                tool_call_id=getattr(result, "tool_call_id", None),
+                content=result.output,
+                file_path=file_path 
             )
 
             if not result.success:

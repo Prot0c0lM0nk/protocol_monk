@@ -10,6 +10,7 @@ class ToolResult:
     success: bool
     output: str
     tool_name: Optional[str] = None
+    tool_call_id: Optional[str] = None
 
 
 class UI(ABC):

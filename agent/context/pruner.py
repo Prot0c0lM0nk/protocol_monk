@@ -7,6 +7,7 @@ Prioritizes messages based on importance scores, recency, and role.
 """
 
 import logging
+import json
 from typing import List, Tuple
 
 from exceptions import TokenEstimationError
@@ -26,12 +27,6 @@ class ContextPruner:
     ) -> List[Tuple[float, int, Message]]:
         """
         Calculate importance scores for each message.
-
-        Args:
-            conversation: List of conversation messages to score
-
-        Returns:
-            List[Tuple[float, int, Message]]: Scored messages with importance scores
         """
         scored_messages = []
         total_messages = len(conversation)
@@ -40,13 +35,14 @@ class ContextPruner:
             score = float(msg.importance)
 
             # Recency boost: more recent = higher score
-            # Scales from 0 (oldest) to 2 (newest)
             recency_boost = (i / total_messages) * 2
             score += recency_boost
 
-            # Role boost: user messages are always important
+            # Role boost
             if msg.role == "user":
                 score += 2
+            elif msg.role == "tool":
+                score += 1
 
             scored_messages.append((score, i, msg))
         return scored_messages
@@ -56,33 +52,35 @@ class ContextPruner:
     ) -> int:
         """
         Estimate tokens for a single message with error handling.
-
-        Args:
-            msg: Message to estimate tokens for
-            accountant: TokenAccountant for estimation
-
-        Returns:
-            int: Estimated token count for the message
-
-        Raises:
-            TokenEstimationError: If token estimation fails
+        Handles both text content and native tool calls.
         """
         try:
-            return accountant.estimate(msg.content)
+            total_tokens = 0
+            
+            # 1. Estimate Text Content
+            if msg.content:
+                total_tokens += accountant.estimate(msg.content)
+            
+            # 2. Estimate Tool Calls (Assistant)
+            if msg.tool_calls:
+                # Serialize to string to get a rough token count for the JSON structure
+                tool_str = json.dumps(msg.tool_calls)
+                total_tokens += accountant.estimate(tool_str)
+                
+            # 3. Estimate Tool Results (Tool)
+            # (Content is already handled in step 1, but if we had extra fields they'd go here)
+            
+            return max(1, total_tokens) # Ensure we never return 0 for a valid message
+
         except TokenEstimationError:
-            # Re-raise known token estimation errors
             raise
         except Exception as e:
-            # Wrap unknown errors
             estimator_name = getattr(
                 accountant.estimator, "__class__.__name__", "Unknown"
             )
-            raise TokenEstimationError(
-                f"Token estimation failed during pruning: {e}",
-                estimator_name=estimator_name,
-                failed_text=msg.content[:100] if msg.content else "",
-                original_error=e,
-            ) from e
+            # Fallback for safety
+            self.logger.warning(f"Token estimation failed: {e}. using fallback.")
+            return 10
 
     def _select_fitting_messages(
         self,
@@ -91,19 +89,10 @@ class ContextPruner:
     ) -> List[Tuple[int, Message]]:
         """
         Select highest scoring messages that fit within the budget.
-
-        Args:
-            scored_messages: List of scored messages with importance scores
-            accountant: TokenAccountant for token estimation
-
-        Returns:
-            List[Tuple[int, Message]]: Selected messages with original indices
         """
         kept_messages = []
         current_tokens = 0
-        target_tokens = int(
-            self.max_tokens * 0.7
-        )  # Target 70% after pruning (more aggressive)
+        target_tokens = int(self.max_tokens * 0.7)
 
         # Iterate through messages (highest score first)
         for _, original_index, msg in scored_messages:
@@ -119,33 +108,15 @@ class ContextPruner:
         self, conversation: List[Message], accountant: TokenAccountant
     ) -> List[Message]:
         """
-        Prunes the conversation list to fit 60% of max_tokens.
-        Uses the TokenAccountant for accurate token estimation.
-
-        Args:
-            conversation: List of conversation messages to prune
-            accountant: TokenAccountant for token estimation
-
-        Returns:
-            List[Message]: Pruned conversation messages
+        Prunes the conversation list to fit within max_tokens.
         """
         self.logger.info("Pruning conversation. Start count: %d", len(conversation))
 
-        # Enhanced minimum conversation logic
         if len(conversation) <= 4:
-            current_tokens = sum(
-                accountant.estimate(msg.content) for msg in conversation
-            )
+            # Minimal logic for short convos
+            current_tokens = sum(self._estimate_message_tokens(msg, accountant) for msg in conversation)
             if current_tokens > self.max_tokens:
-                self.logger.warning(
-                    "Minimum conversation (%d msgs) exceeds budget (%d > %d)",
-                    len(conversation),
-                    current_tokens,
-                    self.max_tokens,
-                )
-                # Even for minimum conversations, we must fit within limits
-                # Try to prune individual messages if needed
-                return self._select_fitting_messages(
+                 return self._select_fitting_messages(
                     [(0.0, i, msg) for i, msg in enumerate(conversation)], accountant
                 )
             return conversation
@@ -160,7 +131,7 @@ class ContextPruner:
         kept_messages = self._select_fitting_messages(scored_messages, accountant)
 
         # 4. Rebuild conversation in chronological order
-        final_list = [msg for _, msg in sorted(kept_messages, key=lambda x: x[0])]
+        final_list = [msg for _, msg in sorted(kept_messages, key=lambda x: x[1])]
 
         self.logger.info("Pruning complete. New count: %d", len(final_list))
         return final_list
