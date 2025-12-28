@@ -326,7 +326,7 @@ class ContextManager:
 
                     # 2. Use the simple variable inside the f-string
                     implicit_intent = (
-                        f"I will use the {tool_name} tool to help with your request."
+                        f"Using {tool_name} tool."
                     )
                     context.append({"role": "assistant", "content": implicit_intent})
 
