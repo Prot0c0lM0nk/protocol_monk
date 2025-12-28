@@ -7,13 +7,14 @@ A terminal-based AI agent with reliable task execution and comprehensive error h
 ---
 
 ## Overview
-
 Protocol Monk is a sophisticated terminal-based AI agent designed for reliable task execution through natural language interaction. **This is a demonstration version** provided for evaluation purposes only. The system implements a TAOR (Think-Act-Observe-Reflect) cognitive loop with comprehensive error handling that prevents crashes and ensures graceful degradation.
 
 **⚠️ Important Demo Notice:**
 This version is provided as-is for evaluation. Features may be incomplete, context management may not work reliably in all scenarios, and this software should not be used for critical work.
-## Key Features
 
+---
+
+## Key Features
 - **Reliable Operation**: Comprehensive exception handling prevents crashes
 - **Multi-Provider Support**: Runtime switching between Ollama and OpenRouter
 - **Secure Tool Execution**: Path validation and dangerous pattern detection
@@ -24,12 +25,13 @@ This version is provided as-is for evaluation. Features may be incomplete, conte
 - **Robust JSON Parsing**: Multiple fallback strategies for handling model outputs
 - **Async Architecture**: Fully asynchronous design for optimal performance
 
+---
+
 ## Installation
 
 **IMPORTANT: This is a DEMO version for evaluation only.**
 
 ### From PyPI (Demo Version)
-
 ```bash
 pip install protocol-monk
 monk
@@ -43,7 +45,6 @@ monk
 - Features are incomplete and may contain bugs
 
 ### From Source
-
 ```bash
 # Clone the repository
 git clone <repository-url>
@@ -61,28 +62,32 @@ python main.py
 ```
 
 ### Development Installation
-
 ```bash
 pip install -e .[dev]
 ```
 
-## Prerequisites
+---
 
+## Prerequisites
 - Python 3.8+
 - Ollama (for local models) OR OpenRouter API key
 
+---
+
 ## Configuration
+*(Section previously empty)*
+
+---
+
 ## Usage
 
 ### First Run
-
 The agent will guide you through initial setup:
 1. Select working directory
 2. Choose AI provider and model
 3. Configure optional settings
 
 ### Basic Commands
-
 - Create files and directories
 - Edit specific lines of files
 - Execute shell commands
@@ -103,15 +108,15 @@ User: Commit the current changes with a descriptive message
 ```
 
 ### Slash Commands
-
 - `/help` - Show available commands
-- `/models` - Switch AI model
+- `/model <name>` - Switch AI model
 - `/clear` - Clear conversation context
 - `/status` - Show current status and token usage
 - `/quit` - Exit the agent
 
-## Architecture
+---
 
+## Architecture
 ```
 agent/          # Core orchestration and TAOR loop
 tools/          # Secure tool execution system
@@ -121,15 +126,17 @@ config/         # Configuration management
 utils/          # Shared utilities
 ```
 
-## Security
+---
 
+## Security
 - Path validation prevents access to sensitive files
 - Dangerous pattern detection blocks harmful operations
 - Sandboxed tool execution with configurable policies
 - Input validation for all user inputs
 
-## AI Collaboration
+---
 
+## AI Collaboration
 Protocol Monk is designed to work with AI models as collaborative partners. The system supports multiple AI backends and provides reliable tool execution for iterative development workflows.
 
 ### AI Model Integration
@@ -138,8 +145,9 @@ Protocol Monk is designed to work with AI models as collaborative partners. The 
 - Runtime model switching
 - Customizable prompting strategies
 
-## Development
+---
 
+## Development
 ```bash
 # Format code
 black .
@@ -154,27 +162,12 @@ mypy .
 pytest
 ```
 
+---
+
 ## License
-
-MIT License - see LICENSE file for details.
-
----
-
-Developed with ☦︎ by Nicholas Pitzarella
-### Slash Commands
-- `/help` - Show available commands
-- `/model <name>` - Switch AI model
-- `/status` - Show token usage and current model
-
-## AI Collaboration
-
-Protocol Monk is designed to work with AI models as collaborative partners. The system is built to leverage AI capabilities for itirative tasks with Human-in-the-Loop.
-
-### AI Model Integration
-- Seamless integration with Ollama models
-- Support for multiple AI backends
-- Customizable prompting strategies
+see LICENSE file for details.
 
 ---
 
 Developed with ☦︎ by Nicholas Pitzarella
+
