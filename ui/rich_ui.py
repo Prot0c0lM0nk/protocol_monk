@@ -368,3 +368,54 @@ class RichUI(UI):
         except Exception as e:
             logger.error(f"Error during RichUI cleanup: {e}", exc_info=True)
             raise
+
+    async def display_selection_list(self, title: str, items: List[Any]):
+        """
+        Display a selectable list of items using Rich components.
+        For RichUI: Shows a numbered list and prompts user for selection.
+        """
+        await self._end_streaming()
+        self._stop_thinking()
+        
+        # Convert items to display strings (same logic as TextualUI)
+        options = []
+        for item in items:
+            if isinstance(item, dict):
+                text = item.get("name", str(item))
+            elif hasattr(item, "name"):
+                text = getattr(item, "name")
+            else:
+                text = str(item)
+            options.append(text)
+        
+        # Display the list with numbers
+        console.print(f"\n[bold holy.gold]{title}[/]")
+        console.print()
+        
+        for i, option in enumerate(options, 1):
+            console.print(f"  [dim]{i}.[/] {option}")
+        
+        console.print()
+        
+        # Prompt for selection
+        while True:
+            try:
+                response = await self.prompt_user("Select by number")
+                if not response.strip():
+                    continue
+                    
+                # Try to parse as number
+                selection = int(response.strip())
+                if 1 <= selection <= len(options):
+                    selected = options[selection - 1]
+                    # Store result for the next prompt_user call (same pattern as TextualUI)
+                    self._pending_selection = selected
+                    break
+                else:
+                    console.print(f"[error]Please enter a number between 1 and {len(options)}[/]")
+                    
+            except ValueError:
+                console.print("[error]Please enter a valid number[/]")
+                
+            except (KeyboardInterrupt, EOFError):
+                break
