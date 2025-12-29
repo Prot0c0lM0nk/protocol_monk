@@ -68,12 +68,15 @@ class ContextManager:
     ):
         """Add a standard text message (User/System)."""
         async with self._lock:
-            # Basic pruning check
+            # 1. Run Decay Tick
+            await self.tracker.tick(self.conversation)
+
+            # 2. Basic pruning check
             temp_tokens = self.accountant.estimate(content or "")
             if not self.accountant.check_budget(temp_tokens):
                 self.conversation = self.pruner.prune(self.conversation, self.accountant)
             
-            # Create and add
+            # 3. Create and add
             imp = importance if importance is not None else (4 if role == "user" else 3)
             msg = Message(role=role, content=content, importance=imp)
             self.conversation.append(msg)
@@ -94,16 +97,16 @@ class ContextManager:
     async def add_tool_call_message(self, tool_calls: List[Dict]):
         """
         Add an Assistant message containing tool calls.
-        
-        Args:
-            tool_calls: List of dicts from the model response.
         """
         async with self._lock:
+            # 1. Run Decay Tick
+            await self.tracker.tick(self.conversation)
+
             msg = Message(
                 role="assistant",
                 content=None,
                 tool_calls=tool_calls,
-                importance=5 # High importance to keep context valid
+                importance=5 
             )
             self.conversation.append(msg)
             # Estimate tokens roughly
@@ -118,17 +121,22 @@ class ContextManager:
     ):
         """
         Add a Tool Result message.
-        Handles "Smart Invalidation" if a file path is involved.
+        Handles "Graceful Decay" if a file path is involved.
         """
         async with self._lock:
-            # 1. Trigger Smart Invalidation
+            # 1. Run Decay Tick first
+            await self.tracker.tick(self.conversation)
+
+            # 2. Trigger Decay for OLD reads (if this is a file read)
             if file_path:
-                await self.tracker.invalidate_file_content(file_path, self.conversation)
+                # We start the countdown for ANY previous copies of this file
+                # Default 20 messages = approx 5 turns
+                await self.tracker.trigger_decay(file_path, self.conversation, grace_period_msgs=20)
                 metadata = {"file_read": file_path}
             else:
                 metadata = {}
 
-            # 2. Add Message
+            # 3. Add New Message
             msg = Message(
                 role="tool",
                 content=content,
@@ -139,8 +147,15 @@ class ContextManager:
             )
             self.conversation.append(msg)
             
-            # 3. Update Tokens
+            # 4. Update Tokens
             self.accountant.add(self.accountant.estimate(content))
+
+    async def _tick(self):
+        """
+        Run the decay timer on the file tracker.
+        Should be called before adding new messages.
+        """
+        await self.tracker.tick(self.conversation)
 
     # --- Context Retrieval ---
 
