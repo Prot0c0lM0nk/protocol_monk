@@ -10,9 +10,8 @@ from typing import Dict, Optional
 
 from agent.model_manager import RuntimeModelManager
 from agent.monk import ProtocolAgent
+from agent.events import AgentEvents
 from config.session import get_active_session
-
-from exceptions import ModelConfigurationError
 
 # Reuse the blessing from main.py
 BLESSING = """☦ Go in peace. May your code compile without warning. ☦"""
@@ -23,7 +22,9 @@ class CommandDispatcher:
 
     def __init__(self, agent: ProtocolAgent):
         self.agent = agent
-        self.ui = agent.ui
+        self.logger = logging.getLogger(__name__)
+        # UI access will be replaced with event system calls
+        self.ui = getattr(agent, 'ui', None)
         self.logger = logging.getLogger(__name__)
 
     async def dispatch(self, user_input: str) -> Optional[bool]:
@@ -42,7 +43,7 @@ class CommandDispatcher:
         cmd = user_input.strip().lower()
 
         if cmd == "/quit":
-            await self.ui.print_info(BLESSING)
+            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": BLESSING, "context": "shutdown"})
             return False
 
         if cmd == "/help":
@@ -69,40 +70,7 @@ class CommandDispatcher:
             await self._handle_provider_switch()
             return True
             
-        await self.ui.print_error("Unknown command")
-        return True
-        
-
-        cmd = user_input.strip().lower()
-
-        if cmd == "/quit":
-            await self.ui.print_info(BLESSING)
-            return False
-
-        if cmd == "/help":
-            await self._handle_help()
-            return True
-
-        if cmd == "/status":
-            await self._handle_status()
-            return True
-
-        if cmd == "/clear":
-            await self.agent.clear_conversation()
-            return True
-
-        if cmd.startswith("/file"):
-            await self._handle_file_upload()
-            return True
-
-        if cmd.startswith("/model"):
-            await self._handle_model_switch()
-            return True
-
-        if cmd.startswith("/provider"):
-            await self._handle_provider_switch()
-            return True
-        await self.ui.print_error("Unknown command")
+        await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": "Unknown command", "context": "command_error"})
         return True
 
     async def _handle_help(self):
@@ -117,7 +85,7 @@ class CommandDispatcher:
 /file     - Upload a file to the workspace
 /quit     - Exit with blessing
 """
-        await self.ui.print_info(help_text)
+        await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": help_text, "context": "help"})
 
     async def _handle_status(self):
         """Display agent status."""
@@ -149,12 +117,12 @@ class CommandDispatcher:
 🧮 Token Usage: {stats['estimated_tokens']:,} / {stats['token_limit']:,} \
             ({token_percentage:.1f}%)
 """
-        await self.ui.print_info(status_text)
+        await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": status_text, "context": "status"})
 
     async def _display_model_list(self, available_models: Dict):
         models_list = list(available_models.values())
         # Use the generic method
-        await self.ui.display_selection_list("Available Models", models_list)
+        await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "Available Models", "data": models_list, "context": "model_selection"})
 
     async def _get_model_choice(self, available_models: Dict) -> Optional[str]:
         """
@@ -167,6 +135,12 @@ class CommandDispatcher:
             Optional[str]: Selected model name or None if invalid
         """
         try:
+            # For now, we still need UI for interactive prompts
+            # In the future, this will be handled by event system
+            if self.ui is None:
+                from ui.plain import PlainUI
+                self.ui = PlainUI()
+                
             choice = await self.ui.prompt_user(
                 "\nSelect a model (enter number or name): "
             )
@@ -177,17 +151,17 @@ class CommandDispatcher:
                 idx = int(choice) - 1
                 if 0 <= idx < len(model_list):
                     return model_list[idx]
-                await self.ui.print_error("Invalid selection.")
+                await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": "Invalid selection.", "context": "model_selection"})
                 return None
 
             if choice in available_models:
                 return choice
 
-            await self.ui.print_error(f"Model '{choice}' not found.")
+            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Model '{choice}' not found.", "context": "model_selection"})
             return None
 
         except ValueError as e:
-            await self.ui.print_error(f"Invalid model selection: {e}")
+            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Invalid model selection: {e}", "context": "model_selection"})
             return None
 
     async def _handle_guardrails(
@@ -208,13 +182,13 @@ class CommandDispatcher:
 
         if switch_report.safe:
             await self.agent.set_model(selected_model)
-            await self.ui.print_info(f"✅ Model switched to: {selected_model}")
+            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": f"✅ Model switched to: {selected_model}", "context": "model_switch"})
             return True
 
         # Handle Unsafe Switch
-        await self.ui.print_warning(f"⚠️  Context Warning: {switch_report.message}")
-        await self.ui.print_warning(f"Current tokens: {switch_report.current_tokens:,}")
-        await self.ui.print_warning(f"Target limit: {switch_report.target_limit:,}")
+        await self.agent.event_bus.emit(AgentEvents.WARNING.value, {"message": f"⚠️  Context Warning: {switch_report.message}", "context": "context_warning"})
+        await self.agent.event_bus.emit(AgentEvents.WARNING.value, {"message": f"Current tokens: {switch_report.current_tokens:,}", "context": "context_warning"})
+        await self.agent.event_bus.emit(AgentEvents.WARNING.value, {"message": f"Target limit: {switch_report.target_limit:,}", "context": "context_warning"})
 
         action = await self.ui.prompt_user("Prune, Archive, or Cancel? (p/a/c): ")
         action = action.strip().lower()
@@ -234,9 +208,8 @@ class CommandDispatcher:
                 "archive", switch_report.target_limit
             )
             await self.agent.set_model(selected_model)
-            await self.ui.print_info(
-                f"✅ Context archived and model switched to: {selected_model}"
-            )
+            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": f"✅ Context archived and model switched to: {selected_model}", "context": "model_switch"})
+            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "Model switch cancelled.", "context": "model_switch"})
             return True
 
         await self.ui.print_info("Model switch cancelled.")
@@ -244,14 +217,14 @@ class CommandDispatcher:
 
     async def _handle_file_upload(self):
         """Handle file upload command with user interaction."""
-        await self.ui.print_info("📁 File Upload Protocol")
-        await self.ui.print_info("Enter the path to the file you want to upload:")
+        await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "📁 File Upload Protocol", "context": "file_upload"})
+        await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "Enter the path to the file you want to upload:", "context": "file_upload"})
 
         file_path = await self.ui.prompt_user("File path: ")
         file_path = file_path.strip()
 
         if not file_path:
-            await self.ui.print_error("No file path provided.")
+            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": "No file path provided.", "context": "file_upload"})
             return
 
         # Import here to avoid circular imports
@@ -261,11 +234,11 @@ class CommandDispatcher:
 
         # Check if file exists
         if not os.path.exists(file_path):
-            await self.ui.print_error(f"File not found: {file_path}")
+            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"File not found: {file_path}", "context": "file_upload"})
             return
 
         if not os.path.isfile(file_path):
-            await self.ui.print_error(f"Path is not a file: {file_path}")
+            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Path is not a file: {file_path}", "context": "file_upload"})
             return
 
         # Get workspace directory from agent
@@ -281,7 +254,7 @@ class CommandDispatcher:
                 f"File '{filename}' already exists. Overwrite? (y/n): "
             )
             if overwrite.strip().lower() != "y":
-                await self.ui.print_info("File upload cancelled.")
+                await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "File upload cancelled.", "context": "file_upload"})
                 return
 
         try:
@@ -297,9 +270,9 @@ class CommandDispatcher:
                 size_str = f"{file_size / (1024 * 1024):.1f} MB"
 
             # Success messages
-            await self.ui.print_info("✅ File uploaded successfully!")
-            await self.ui.print_info(f"📄 {filename} ({size_str})")
-            await self.ui.print_info(f"📍 Location: {destination}")
+            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "✅ File uploaded successfully!", "context": "file_upload"})
+            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": f"📄 {filename} ({size_str})", "context": "file_upload"})
+            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": f"📍 Location: {destination}", "context": "file_upload"})
 
             # Add file content to conversation
             try:
@@ -336,11 +309,11 @@ class CommandDispatcher:
             )
 
         except PermissionError:
-            await self.ui.print_error("Permission denied. Check file access rights.")
+            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": "Permission denied. Check file access rights.", "context": "file_upload"})
         except shutil.SameFileError:
-            await self.ui.print_info("File is already in the workspace.")
+            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "File is already in the workspace.", "context": "file_upload"})
         except Exception as ex:
-            await self.ui.print_error(f"File upload failed: {str(ex)}")
+            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"File upload failed: {str(ex)}", "context": "file_upload"})
             self.logger.error("File upload error: %s", ex, exc_info=True)
 
     async def _handle_model_switch(self):
@@ -356,11 +329,11 @@ class CommandDispatcher:
                 await self._handle_guardrails(target_model, model_manager)
 
         except KeyError as e:
-            await self.ui.print_error(f"Model configuration error: {e}")
+            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Model configuration error: {e}", "context": "model_switch"})
         except RuntimeError as e:
-            await self.ui.print_error(f"Runtime error during model switch: {e}")
+            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Runtime error during model switch: {e}", "context": "model_switch"})
         except Exception as e:  # pylint: disable=broad-exception-caught
-            await self.ui.print_error(f"Unexpected error during model switch: {e}")
+            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Unexpected error during model switch: {e}", "context": "model_switch"})
             self.logger.error("Unexpected error in model switch: %s", e, exc_info=True)
 
     async def _handle_provider_switch(self):

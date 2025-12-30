@@ -10,7 +10,7 @@ import logging
 from asyncio import Lock
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from exceptions import (
     ToolExecutionError,
@@ -19,8 +19,9 @@ from exceptions import (
     ToolSecurityError,
     UserCancellationError,
 )
-from ui.base import ToolResult
+from agent.interfaces import ToolResult
 from config.static import settings
+from agent.events import EventBus, AgentEvents, get_event_bus
 
 
 @dataclass
@@ -39,7 +40,7 @@ class ToolExecutor:
         tool_registry,
         working_dir: Path,
         auto_confirm: bool = False,
-        ui_callback: Optional[Callable] = None,
+        event_bus: Optional[EventBus] = None,  # Replace ui_callback
     ):
         """
         Initialize the tool executor with registry and configuration.
@@ -48,31 +49,35 @@ class ToolExecutor:
             tool_registry: Registry of available tools
             working_dir: Working directory for file operations
             auto_confirm: Whether to auto-confirm tool executions (default: False)
-            ui_callback: Callback for UI interactions (default: None)
+            event_bus: Event bus for UI interactions (default: None)
         """
         self.tool_registry = tool_registry
         self.working_dir = working_dir
         self.auto_confirm = auto_confirm
-        self.ui_callback = ui_callback
+        self.event_bus = event_bus or get_event_bus()  # Use event bus
         self.logger = logging.getLogger(__name__)
         self.execution_lock = Lock()
         self._config_lock = Lock()
 
-    async def _default_ui_callback(self, event: str, _data: Dict[str, Any]) -> Any:
-        """
-        Fallback callback if UI is not initialized.
-
-        Args:
-            event: UI event type
-            _data: Event data dictionary
-
-        Returns:
-            Any: Response based on event type
-        """
-        if event == "confirm":
-            return self.auto_confirm
-        # For events that don't require a return value, return None
-        return None
+    async def _wait_for_confirmation(self, tool_call_id: str, timeout: float = 30.0) -> dict:
+        """Wait for user confirmation via event system"""
+        confirmation_future = asyncio.Future()
+        
+        def confirmation_handler(event_data):
+            if event_data.get("tool_call_id") == tool_call_id:
+                confirmation_future.set_result(event_data)
+        
+        # Subscribe to confirmation events
+        self.event_bus.subscribe("ui.tool_confirmation", confirmation_handler)
+        
+        try:
+            # Wait for confirmation with timeout
+            return await asyncio.wait_for(confirmation_future, timeout=timeout)
+        except asyncio.TimeoutError:
+            # Auto-deny on timeout
+            return {"approved": False, "reason": "timeout"}
+        finally:
+            self.event_bus.unsubscribe("ui.tool_confirmation", confirmation_handler)
 
     def _handle_tool_exception(self, error: Exception, action: str) -> ToolResult:
         """
@@ -201,13 +206,14 @@ class ToolExecutor:
         return normalized
 
     async def _confirm_and_handle_edits(
-        self, normalized: Dict
+        self, normalized: Dict, tool_call_id: str
     ) -> Tuple[Optional[Dict], Optional[ToolResult]]:
         """
-        Handle UI confirmation and user modifications.
+        Handle UI confirmation and user modifications via event system.
 
         Args:
             normalized: Normalized tool call dictionary
+            tool_call_id: ID of the tool call for tracking
 
         Returns:
             Tuple[Optional[Dict], Optional[ToolResult]]:
@@ -217,17 +223,28 @@ class ToolExecutor:
         Raises:
             UserCancellationError: User rejected tool execution
         """
-        confirmation = await self.ui_callback(
-            "confirm", {"tool_call": normalized, "auto_confirm": self.auto_confirm}
-        )
+        # Emit confirmation request event
+        await self.event_bus.emit(AgentEvents.TOOL_CONFIRMATION_REQUESTED.value, {
+            "tool_call": normalized,
+            "tool_call_id": tool_call_id,
+            "auto_confirm": self.auto_confirm
+        })
+
+        # Wait for user confirmation via event system
+        confirmation_event = await self._wait_for_confirmation(tool_call_id)
+        confirmation = confirmation_event.get("approved", False)
 
         if not confirmation:
-            await self.ui_callback("tool_rejected", {"tool_call": normalized})
+            await self.event_bus.emit(AgentEvents.TOOL_REJECTED.value, {
+                "tool_call": normalized,
+                "tool_call_id": tool_call_id,
+                "reason": "user_rejected"
+            })
             raise UserCancellationError("User rejected tool execution")
 
         # Handle user modifications
-        if isinstance(confirmation, dict) and "modified" in confirmation:
-            modified = confirmation["modified"]
+        if isinstance(confirmation_event, dict) and "modified" in confirmation_event:
+            modified = confirmation_event["modified"]
 
             if "human_suggestion" in modified:
                 # Feedback mode - return result immediately, do not execute
@@ -241,12 +258,20 @@ class ToolExecutor:
                     output=output_msg,
                     tool_name=modified["action"],
                 )
-                await self.ui_callback("tool_modified", {"tool_call": modified})
+                await self.event_bus.emit(AgentEvents.TOOL_MODIFIED.value, {
+                    "original_tool_call": normalized,
+                    "modified_tool_call": modified,
+                    "reason": "human_suggestion"
+                })
                 return None, result
 
             # Edit mode - update normalized and continue
             normalized = modified
-            await self.ui_callback("tool_modified", {"tool_call": modified})
+            await self.event_bus.emit(AgentEvents.TOOL_MODIFIED.value, {
+                "original_tool_call": normalized,
+                "modified_tool_call": modified,
+                "reason": "user_edited"
+            })
 
         return normalized, None
 
@@ -265,7 +290,10 @@ class ToolExecutor:
         except ToolExecutionError:
             error_msg = f"Invalid tool call format: {str(tool_call)[:100]}..."
             self.logger.warning(error_msg)
-            await self.ui_callback("tool_error", {"error": error_msg})
+            await self.event_bus.emit(AgentEvents.ERROR.value, {
+                "message": error_msg,
+                "context": "tool_execution"
+            })
             # Attach ID to error result
             result = ToolResult(success=False, output=error_msg)
             result.tool_call_id = call_id 
@@ -274,24 +302,26 @@ class ToolExecutor:
         if "action" not in normalized or not normalized["action"]:
             error_msg = f"Missing 'action': {str(tool_call)[:100]}..."
             self.logger.warning(error_msg)
-            await self.ui_callback("tool_error", {"error": error_msg})
+            await self.event_bus.emit(AgentEvents.ERROR.value, {
+                "message": error_msg,
+                "context": "tool_execution"
+            })
             result = ToolResult(success=False, output=error_msg)
             result.tool_call_id = call_id
             return result, False
 
         # 2. Check for Finish
         if normalized["action"] == "finish":
-            await self.ui_callback(
-                "task_complete",
-                {"summary": normalized["parameters"].get("summary", "")},
-            )
+            await self.event_bus.emit(AgentEvents.TASK_COMPLETE.value, {
+                "summary": normalized["parameters"].get("summary", "")
+            })
             result = ToolResult(success=True, output="Task completed", tool_name="finish")
             result.tool_call_id = call_id
             return result, True
 
         # 3. Confirmation & Modification
         final_tool_call, suggestion_result = await self._confirm_and_handle_edits(
-            normalized
+            normalized, call_id
         )
 
         if suggestion_result:
@@ -311,15 +341,16 @@ class ToolExecutor:
         # NEW: Attach the ID so it flows back to the agent
         result.tool_call_id = call_id
 
-        await self.ui_callback(
-            "result", {"result": result, "tool_name": final_tool_call["action"]}
-        )
+        await self.event_bus.emit(AgentEvents.TOOL_RESULT.value, {
+            "result": result,
+            "tool_name": final_tool_call["action"]
+        })
 
         return result, False
 
     async def execute_tool_calls(self, tool_calls: List[Dict]) -> ExecutionSummary:
         """
-        Execute a list of tool calls using async UI callback.
+        Execute a list of tool calls using event system for UI interaction.
 
         Args:
             tool_calls: List of tool call dictionaries to execute
@@ -334,13 +365,21 @@ class ToolExecutor:
             if not tool_calls:
                 return ExecutionSummary()
 
+            # Emit execution start
+            await self.event_bus.emit(AgentEvents.TOOL_EXECUTION_START.value, {
+                "count": len(tool_calls),
+                "tools": [call.get("action") for call in tool_calls]
+            })
+
             summary = ExecutionSummary()
-            await self.ui_callback("execution_start", {"count": len(tool_calls)})
 
             for i, tool_call in enumerate(tool_calls):
-                await self.ui_callback(
-                    "progress", {"current": i + 1, "total": len(tool_calls)}
-                )
+                # Emit progress
+                await self.event_bus.emit(AgentEvents.TOOL_EXECUTION_PROGRESS.value, {
+                    "current": i + 1,
+                    "total": len(tool_calls),
+                    "current_tool": tool_call.get("action")
+                })
 
                 result, should_finish = await self._process_single_tool(tool_call)
 
@@ -351,7 +390,12 @@ class ToolExecutor:
                 if result:
                     summary.results.append(result)
 
-            await self.ui_callback("execution_complete", {})
+            # Emit completion
+            await self.event_bus.emit(AgentEvents.TOOL_EXECUTION_COMPLETE.value, {
+                "summary": f"Executed {len(tool_calls)} tools",
+                "had_failures": any(not r.success for r in summary.results)
+            })
+            
             return summary
 
     async def set_auto_confirm(self, value: bool):
@@ -363,4 +407,7 @@ class ToolExecutor:
         """
         async with self._config_lock:
             self.auto_confirm = value
-        await self.ui_callback("auto_confirm_changed", {"value": value})
+        await self.event_bus.emit(AgentEvents.AUTO_CONFIRM_CHANGED.value, {
+            "value": value
+        })
+

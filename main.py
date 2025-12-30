@@ -77,7 +77,7 @@ class Application:
                 model_name=settings.model.default_model,
                 provider=settings.api.provider_chain[0] if settings.api.provider_chain else "ollama",
                 tool_registry=tool_registry,
-                ui=None,  # Agent will create its own UI
+                event_bus=None,  # Agent will create its own event bus
             )
             
             # Initialize agent asynchronously
