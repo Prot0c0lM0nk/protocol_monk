@@ -203,3 +203,78 @@ class ContextManager:
         Required by CommandDispatcher for guardrail checks.
         """
         return self.accountant.total_tokens
+
+    async def clear_old_messages(self):
+        """
+        Clear old messages when context overflow occurs.
+        This is a fallback method called when ContextOverflowError is caught.
+        It removes older messages to make room for new ones while trying to
+        maintain conversation coherence by keeping complete user-assistant pairs.
+        """
+        async with self._lock:
+            self.logger.info("Clearing old messages due to context overflow")
+            
+            # Keep at least the system message and recent context
+            if len(self.conversation) <= 2:
+                # Not enough messages to safely clear
+                return
+            
+            # Strategy: Keep system message + complete conversation pairs
+            # This maintains context while preserving turn order
+            
+            # Always keep system message if present (it should be first)
+            system_msg = None
+            if self.conversation and self.conversation[0].role == "system":
+                system_msg = self.conversation[0]
+                conversation_start = 1
+            else:
+                conversation_start = 0
+            
+            # Get the conversation messages (excluding system)
+            conv_messages = self.conversation[conversation_start:]
+            
+            # Find complete pairs from the end
+            # We want to keep the most recent complete pairs
+            kept_pairs = []
+            
+            # Work backwards from the end to find complete pairs
+            i = len(conv_messages) - 1
+            while i >= 1:
+                # Check if we have a user-assistant pair
+                if (conv_messages[i].role == "assistant" and 
+                    conv_messages[i-1].role == "user"):
+                    # Found a complete pair, keep it
+                    kept_pairs.insert(0, conv_messages[i-1])  # user message
+                    kept_pairs.insert(1, conv_messages[i])    # assistant message
+                    i -= 2
+                else:
+                    # Incomplete or single message, break
+                    break
+            
+            # If we have no complete pairs, keep the most recent messages
+            # but try to maintain some balance
+            if not kept_pairs:
+                if len(conv_messages) >= 2:
+                    # Keep the last 2 messages, but ensure they're not both the same role
+                    last_two = conv_messages[-2:]
+                    if last_two[0].role != last_two[1].role:
+                        # Different roles, good enough
+                        kept_pairs = last_two
+                    else:
+                        # Same roles, just keep the most recent one
+                        kept_pairs = [conv_messages[-1]]
+                else:
+                    # Only one message, keep it
+                    kept_pairs = [conv_messages[-1]]
+            
+            # Rebuild conversation
+            self.conversation = []
+            if system_msg:
+                self.conversation.append(system_msg)
+            self.conversation.extend(kept_pairs)
+            
+            # Recalculate tokens
+            self.accountant.recalculate(self.system_message, self.conversation)
+            
+            self.logger.info(f"Cleared old messages. New count: {len(self.conversation)}")
+            self.logger.info(f"Kept {len(kept_pairs)} messages, maintaining conversation coherence")

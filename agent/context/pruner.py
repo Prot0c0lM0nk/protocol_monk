@@ -131,7 +131,8 @@ class ContextPruner:
         kept_messages = self._select_fitting_messages(scored_messages, accountant)
 
         # 4. Rebuild conversation in chronological order
-        final_list = [msg for _, msg in sorted(kept_messages, key=lambda x: x[1])]
+        # 4. Rebuild conversation in chronological order
+        final_list = [msg for _, msg in sorted(kept_messages, key=lambda x: x[0])]
 
         self.logger.info("Pruning complete. New count: %d", len(final_list))
         return final_list

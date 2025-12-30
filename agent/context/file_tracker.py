@@ -18,7 +18,7 @@ class FileTracker:
         self._lock: asyncio.Lock = asyncio.Lock()
 
     async def trigger_decay(
-        self, filepath: str, conversation: List[Message], grace_period_msgs: int = 20
+        self, filepath: str, conversation: List[Message], grace_period_msgs: int = 40
     ):
         """
         Marks ACTIVE reads of 'filepath' to expire after 'grace_period_msgs'.
