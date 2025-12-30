@@ -34,10 +34,44 @@ class CommandDispatcher:
             user_input: The user's input string
 
         Returns:
-            Optional[bool]: True if command was handled, None if not a command
+            Optional[bool]: True if command was handled, False if quit command, None if not a command
         """
         if not user_input.startswith("/"):
             return None
+
+        cmd = user_input.strip().lower()
+
+        if cmd == "/quit":
+            await self.ui.print_info(BLESSING)
+            return False
+
+        if cmd == "/help":
+            await self._handle_help()
+            return True
+
+        if cmd == "/status":
+            await self._handle_status()
+            return True
+
+        if cmd == "/clear":
+            await self.agent.clear_conversation()
+            return True
+
+        if cmd.startswith("/file"):
+            await self._handle_file_upload()
+            return True
+
+        if cmd.startswith("/model"):
+            await self._handle_model_switch()
+            return True
+
+        if cmd.startswith("/provider"):
+            await self._handle_provider_switch()
+            return True
+            
+        await self.ui.print_error("Unknown command")
+        return True
+        
 
         cmd = user_input.strip().lower()
 
@@ -88,17 +122,18 @@ class CommandDispatcher:
     async def _handle_status(self):
         """Display agent status."""
         stats = await self.agent.get_status()
-        session = get_active_session()
-
-        env_info = "system"
-        if session.preferred_env:
-            env_info = f"conda: {session.preferred_env}"
-        elif session.venv_path:
-            env_info = f"venv: {session.venv_path}"
-        elif session.is_python_project:
-            env_info = "system Python"
-        else:
-            env_info = "general directory"
+        
+        # Get session info from agent instead of global session
+        working_dir = self.agent.working_dir
+        directory_name = working_dir.name if working_dir else "unknown"
+        
+        # Environment info from agent's tool registry if available
+        env_info = "general directory"
+        if hasattr(self.agent, 'tool_registry') and self.agent.tool_registry:
+            if self.agent.tool_registry.preferred_env:
+                env_info = f"conda: {self.agent.tool_registry.preferred_env}"
+            elif self.agent.tool_registry.venv_path:
+                env_info = f"venv: {self.agent.tool_registry.venv_path}"
 
         token_percentage = stats["estimated_tokens"] / stats["token_limit"] * 100
 
@@ -106,7 +141,7 @@ class CommandDispatcher:
 
 🤖 Model: {stats['current_model']}
 🔌 Provider: {stats['provider']}
-📁 Working Directory: {session.directory_name}
+📁 Working Directory: {directory_name}
    {stats['working_dir']}
 🐍 Environment: {env_info}
 
@@ -233,9 +268,8 @@ class CommandDispatcher:
             await self.ui.print_error(f"Path is not a file: {file_path}")
             return
 
-        # Get workspace directory from session
-        session = get_active_session()
-        workspace_dir = str(session.working_dir)
+        # Get workspace directory from agent
+        workspace_dir = str(self.agent.working_dir)
 
         # Create filename and destination path
         filename = os.path.basename(file_path)

@@ -299,3 +299,12 @@ class PlainUI(UI):
         # Just ensure thinking state is cleared
         if self._thinking:
             await self.stop_thinking()
+
+    
+    async def get_input(self) -> str:
+        """Get user input - simple wrapper for prompt_user."""
+        return await self.prompt_user(">")
+    
+    async def shutdown(self):
+        """Graceful shutdown."""
+        await self.close()

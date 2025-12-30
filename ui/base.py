@@ -95,3 +95,12 @@ class UI(ABC):
 
     async def display_switch_report(self, report, current, target):
         pass
+
+    
+    async def get_input(self) -> str:
+        """Get user input for main interaction loop."""
+        return await self.prompt_user(">")
+    
+    async def shutdown(self):
+        """Graceful shutdown."""
+        await self.close()

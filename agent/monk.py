@@ -422,3 +422,56 @@ class ProtocolAgent:
                     f"Failed to switch provider to {provider}: {e}",
                     details={"provider": provider, "original_error": str(e)},
                 ) from e
+
+
+    async def run(self):
+        """Main agent loop - now handles its own UI and interaction."""
+        try:
+            # Initialize UI if not provided
+            if self.ui is None:
+                from ui.plain import PlainUI
+                self.ui = PlainUI()
+            
+            # Initialize command dispatcher
+            from agent.command_dispatcher import CommandDispatcher
+            self.command_dispatcher = CommandDispatcher(self)
+            
+            # Start the interaction loop
+            await self.ui.print_info(f"🤖 Protocol Monk started in {self.working_dir}")
+            await self.ui.print_info(f"Model: {self.current_model} ({self.current_provider})")
+            await self.ui.print_info("Type 'help' for commands, 'quit' to exit.")
+            
+            while True:
+                try:
+                    user_input = await self.ui.get_input()
+                    if not user_input:
+                        continue
+                    
+                    # Handle special commands
+                    if user_input.lower() in ["quit", "exit", "/quit", "/exit"]:
+                        await self.ui.print_info("Goodbye!")
+                        break
+                    
+                    # Use command dispatcher to handle input
+                    result = await self.command_dispatcher.dispatch(user_input)
+                    
+                    if result is False:  # Quit command
+                        await self.ui.print_info("Goodbye!")
+                        break
+                    if result is True:  # Command handled
+                        continue
+                    
+                    # Not a command, process as chat
+                    success = await self.process_request(user_input)
+                    
+                except KeyboardInterrupt:
+                    await self.ui.print_info("\nUse 'quit' to exit.")
+                    continue
+                except Exception as e:
+                    await self.ui.print_error(f"Error: {e}")
+                    continue
+                    
+        except Exception as e:
+            self.logger.error(f"Agent run loop failed: {e}")
+            raise
+        

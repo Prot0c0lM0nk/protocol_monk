@@ -40,3 +40,9 @@ class ValidationError(MonkBaseError):
         super().__init__(message)
         self.field_name = field_name
         self.invalid_value = invalid_value
+
+
+
+class BootstrapError(MonkBaseError):
+    """Raised when bootstrap configuration fails."""
+    pass
