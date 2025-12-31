@@ -23,9 +23,8 @@ class CommandDispatcher:
     def __init__(self, agent: ProtocolAgent):
         self.agent = agent
         self.logger = logging.getLogger(__name__)
-        # UI access will be replaced with event system calls
-        self.ui = getattr(agent, 'ui', None)
-        self.logger = logging.getLogger(__name__)
+        # Event-driven architecture - no direct UI access needed
+        self.event_bus = agent.event_bus
 
     async def dispatch(self, user_input: str) -> Optional[bool]:
         """
@@ -70,8 +69,9 @@ class CommandDispatcher:
             await self._handle_provider_switch()
             return True
             
+        # Unknown command - return None so agent knows it wasn't handled
         await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": "Unknown command", "context": "command_error"})
-        return True
+        return None  # Return None to indicate command wasn't handled
 
     async def _handle_help(self):
         """Display help information."""
@@ -135,15 +135,22 @@ class CommandDispatcher:
             Optional[str]: Selected model name or None if invalid
         """
         try:
-            # For now, we still need UI for interactive prompts
-            # In the future, this will be handled by event system
-            if self.ui is None:
-                from ui.plain import PlainUI
-                self.ui = PlainUI()
-                
-            choice = await self.ui.prompt_user(
-                "\nSelect a model (enter number or name): "
-            )
+            # Emit event to request user input through UI subscribers
+            await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
+                "action": "model_selection_prompt", 
+                "message": "\nSelect a model (enter number or name): ",
+                "available_models": list(available_models.keys())
+            })
+            
+            # For now, we still need to get input synchronously
+            # This will be fully event-driven once we convert the agent's main loop
+            if self.agent.ui:
+                choice = await self.agent.ui.prompt_user("\nSelect a model (enter number or name): ")
+            else:
+                choice = input("\nSelect a model (enter number or name): ")
+            
+            choice = choice.strip()
+            model_list = list(available_models.keys())
             choice = choice.strip()
             model_list = list(available_models.keys())
 
@@ -185,12 +192,22 @@ class CommandDispatcher:
             await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": f"✅ Model switched to: {selected_model}", "context": "model_switch"})
             return True
 
-        # Handle Unsafe Switch
-        await self.agent.event_bus.emit(AgentEvents.WARNING.value, {"message": f"⚠️  Context Warning: {switch_report.message}", "context": "context_warning"})
-        await self.agent.event_bus.emit(AgentEvents.WARNING.value, {"message": f"Current tokens: {switch_report.current_tokens:,}", "context": "context_warning"})
-        await self.agent.event_bus.emit(AgentEvents.WARNING.value, {"message": f"Target limit: {switch_report.target_limit:,}", "context": "context_warning"})
+        # Handle Unsafe Switch with event-driven user interaction
+        await self.event_bus.emit(AgentEvents.WARNING.value, {"message": f"⚠️  Context Warning: {switch_report.message}", "context": "context_warning"})
+        await self.event_bus.emit(AgentEvents.WARNING.value, {"message": f"Current tokens: {switch_report.current_tokens:,}", "context": "context_warning"})
+        await self.event_bus.emit(AgentEvents.WARNING.value, {"message": f"Target limit: {switch_report.target_limit:,}", "context": "context_warning"})
 
-        action = await self.ui.prompt_user("Prune, Archive, or Cancel? (p/a/c): ")
+        # Emit event for user choice and get response through agent's UI
+        await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
+            "action": "context_management_prompt",
+            "message": "Prune, Archive, or Cancel? (p/a/c): ",
+            "options": ["p", "a", "c"]
+        })
+        
+        if self.agent.ui:
+            action = await self.agent.ui.prompt_user("Prune, Archive, or Cancel? (p/a/c): ")
+        else:
+            action = input("Prune, Archive, or Cancel? (p/a/c): ")
         action = action.strip().lower()
 
         if action in ["p", "prune"]:
@@ -198,9 +215,7 @@ class CommandDispatcher:
                 "strict", switch_report.target_limit
             )
             await self.agent.set_model(selected_model)
-            await self.ui.print_info(
-                f"✅ Context pruned and model switched to: {selected_model}"
-            )
+            await self.event_bus.emit(AgentEvents.INFO.value, {"message": f"✅ Context pruned and model switched to: {selected_model}", "context": "model_switch"})
             return True
 
         if action in ["a", "archive"]:
@@ -220,7 +235,17 @@ class CommandDispatcher:
         await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "📁 File Upload Protocol", "context": "file_upload"})
         await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "Enter the path to the file you want to upload:", "context": "file_upload"})
 
-        file_path = await self.ui.prompt_user("File path: ")
+        # Emit event for file path input and get response
+        await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
+            "action": "file_upload_prompt",
+            "message": "File path: "
+        })
+        
+        if self.agent.ui:
+            file_path = await self.agent.ui.prompt_user("File path: ")
+        else:
+            file_path = input("File path: ")
+        file_path = file_path.strip()
         file_path = file_path.strip()
 
         if not file_path:
@@ -250,10 +275,19 @@ class CommandDispatcher:
 
         # Check if file already exists
         if os.path.exists(destination):
-            overwrite = await self.ui.prompt_user(
-                f"File '{filename}' already exists. Overwrite? (y/n): "
-            )
+            await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
+                "action": "file_overwrite_prompt",
+                "message": f"File '{filename}' already exists. Overwrite? (y/n): "
+            })
+            
+            if self.agent.ui:
+                overwrite = await self.agent.ui.prompt_user(f"File '{filename}' already exists. Overwrite? (y/n): ")
+            else:
+                overwrite = input(f"File '{filename}' already exists. Overwrite? (y/n): ")
+                
             if overwrite.strip().lower() != "y":
+                await self.event_bus.emit(AgentEvents.INFO.value, {"message": "File upload cancelled.", "context": "file_upload"})
+                return
                 await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "File upload cancelled.", "context": "file_upload"})
                 return
 
@@ -284,9 +318,7 @@ class CommandDispatcher:
                 await self.agent.context_manager.add_user_message(
                     file_info, importance=4
                 )
-                await self.ui.print_info(
-                    "📖 File content added to conversation context"
-                )
+                await self.event_bus.emit(AgentEvents.INFO.value, {"message": "📖 File content added to conversation context", "context": "file_upload"})
 
             except UnicodeDecodeError:
                 # Handle binary files gracefully
@@ -296,9 +328,7 @@ class CommandDispatcher:
                 await self.agent.context_manager.add_user_message(
                     file_info, importance=4
                 )
-                await self.ui.print_info(
-                    "📎 Binary file uploaded (content not displayed)"
-                )
+                await self.event_bus.emit(AgentEvents.INFO.value, {"message": "📎 Binary file uploaded (content not displayed)", "context": "file_upload"})
             except Exception as e:
                 self.logger.warning(f"Could not add file content to conversation: {e}")
                 # Still report success since file was uploaded
@@ -347,20 +377,24 @@ class CommandDispatcher:
                 else "unknown"
             )
 
-            # Use the unified display method
-            await self.ui.display_selection_list(
-                "Available Providers", available_providers
-            )
+            # Emit event for provider selection display
+            await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
+                "action": "provider_selection_display",
+                "title": "Available Providers",
+                "items": available_providers,
+                "current_provider": current_provider
+            })
+            
+            # For now, still use UI for selection until we fully convert the input loop
+            if self.agent.ui:
+                await self.agent.ui.display_selection_list("Available Providers", available_providers)
+                choice = await self.agent.ui.prompt_user("Select a provider (enter number or name): ")
+            else:
+                print("\nAvailable Providers:")
+                for i, provider in enumerate(available_providers, 1):
+                    print(f"  {i}. {provider}")
+                choice = input("Select a provider (enter number or name): ")
 
-            # The prompt will auto-fill from the TUI modal selection
-            choice = await self.ui.prompt_user(
-                "Select a provider (enter number or name): "
-            )
-
-            # 2. Get User Provider Choice
-            choice = await self.ui.prompt_user(
-                "\nSelect a provider (enter number or name): "
-            )
             choice = choice.strip().lower()
 
             selected_provider = None
@@ -374,9 +408,12 @@ class CommandDispatcher:
             elif choice in available_providers:
                 selected_provider = choice
             else:
-                await self.ui.print_error(f"Provider '{choice}' not found.")
+                await self.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Provider '{choice}' not found.", "context": "provider_switch"})
                 return
 
+            if selected_provider == current_provider:
+                await self.event_bus.emit(AgentEvents.INFO.value, {"message": f"Already using provider: {selected_provider}", "context": "provider_switch"})
+                return
             if selected_provider == current_provider:
                 await self.ui.print_info(f"Already using provider: {selected_provider}")
                 return
@@ -386,9 +423,7 @@ class CommandDispatcher:
                 from config.static import settings
 
                 if not settings.environment.openrouter_api_key:
-                    await self.ui.print_error(
-                        "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable."
-                    )
+                    await self.event_bus.emit(AgentEvents.ERROR.value, {"message": "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.", "context": "provider_switch"})
                     return
 
             # 4. Show Models for the New Provider
@@ -396,27 +431,51 @@ class CommandDispatcher:
             target_models = target_model_manager.get_available_models()
 
             if not target_models:
-                await self.ui.print_warning(
-                    f"No models available for {selected_provider}. Staying with current provider."
-                )
+                await self.event_bus.emit(AgentEvents.WARNING.value, {"message": f"No models available for {selected_provider}. Staying with current provider.", "context": "provider_switch"})
                 return
 
-            await self.ui.print_info(f"\nAvailable models for {selected_provider}:")
-            await self._display_model_list(
-                target_models, current_provider=selected_provider
-            )
+            # Emit event for model list display
+            await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
+                "action": "model_list_display",
+                "provider": selected_provider,
+                "models": list(target_models.keys())
+            })
+            
+            if self.agent.ui:
+                await self.agent.ui.print_info(f"\nAvailable models for {selected_provider}:")
+                await self.agent.ui._display_model_list(target_models, current_provider=selected_provider)
+            else:
+                print(f"\nAvailable models for {selected_provider}:")
+                for i, model in enumerate(target_models.keys(), 1):
+                    print(f"  {i}. {model}")
 
             # 5. Optional Model Selection Flow (Simplified)
-            select_model_prompt = await self.ui.prompt_user(
-                f"Select a specific model for {selected_provider} now? (Y/n): "
-            )
+            # Emit event for model selection prompt
+            await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
+                "action": "model_selection_prompt",
+                "message": f"Select a specific model for {selected_provider} now? (Y/n): ",
+                "provider": selected_provider
+            })
+            
+            if self.agent.ui:
+                select_model_prompt = await self.agent.ui.prompt_user(f"Select a specific model for {selected_provider} now? (Y/n): ")
+            else:
+                select_model_prompt = input(f"Select a specific model for {selected_provider} now? (Y/n): ")
 
             selected_model = None
             if select_model_prompt.strip().lower() not in ["n", "no"]:
-                # User wants to pick a specific model
-                model_choice = await self.ui.prompt_user(
-                    f"\nSelect a model (enter number or name): "
-                )
+                # User wants to pick a specific model - emit event for model choice
+                await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
+                    "action": "model_choice_prompt",
+                    "message": f"\nSelect a model (enter number or name): ",
+                    "provider": selected_provider
+                })
+                
+                if self.agent.ui:
+                    model_choice = await self.agent.ui.prompt_user(f"\nSelect a model (enter number or name): ")
+                else:
+                    model_choice = input(f"\nSelect a model (enter number or name): ")
+                
                 model_choice = model_choice.strip()
 
                 model_list = list(target_models.keys())
@@ -428,21 +487,21 @@ class CommandDispatcher:
                     selected_model = model_choice
 
                 if not selected_model:
-                    await self.ui.print_error(
-                        "Invalid model selection. Staying with current provider."
-                    )
+                    await self.event_bus.emit(AgentEvents.ERROR.value, {"message": "Invalid model selection. Staying with current provider.", "context": "model_selection"})
                     return
             else:
                 # User skipped selection; use the first available model as a default
                 selected_model = list(target_models.keys())[0]
-                await self.ui.print_info(
-                    f"Using default model for {selected_provider}: {selected_model}"
-                )
-
+                # Emit event for default model selection
+                await self.event_bus.emit(AgentEvents.INFO.value, {
+                    "message": f"Using default model for {selected_provider}: {selected_model}",
+                    "context": "model_selection"
+                })
             # 6. Perform the Switch
-            await self.ui.print_info(
-                f"Switching to {selected_provider} with model {selected_model}..."
-            )
+            await self.event_bus.emit(AgentEvents.INFO.value, {
+                "message": f"Switching to {selected_provider} with model {selected_model}...",
+                "context": "provider_switch"
+            })
 
             # Update agent's model attribute before calling set_provider
             self.agent.current_model = selected_model
@@ -450,12 +509,20 @@ class CommandDispatcher:
             try:
                 success = await self.agent.set_provider(selected_provider)
                 if success:
-                    await self.ui.print_info(
-                        f"✅ Provider switched to: {selected_provider}"
-                    )
-                    await self.ui.print_info(f"   Model: {self.agent.current_model}")
+                    await self.event_bus.emit(AgentEvents.INFO.value, {
+                        "message": f"✅ Provider switched to: {selected_provider}",
+                        "context": "provider_switch"
+                    })
+                    await self.event_bus.emit(AgentEvents.INFO.value, {
+                        "message": f"   Model: {self.agent.current_model}",
+                        "context": "provider_switch"
+                    })
             except Exception as e:
-                await self.ui.print_error(f"Provider switch failed: {str(e)}")
+                await self.event_bus.emit(AgentEvents.ERROR.value, {
+                    "message": f"Provider switch failed: {str(e)}",
+                    "context": "provider_switch"
+                })
+                self.logger.error("Provider switch error: %s", str(e), exc_info=True)
                 self.logger.error("Provider switch error: %s", str(e), exc_info=True)
 
         except Exception as e:

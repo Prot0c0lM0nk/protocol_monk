@@ -441,10 +441,9 @@ class ProtocolAgent(AgentInterface):
             # Initialize UI if not provided
             # Initialize UI if not provided via event system
             if not hasattr(self, 'ui') or self.ui is None:
-                # For now, we'll create a simple UI for backward compatibility
-                # In the future, this will be handled entirely by event subscribers
-                from ui.plain import PlainUI
-                self.ui = PlainUI()
+                # Use the new EDA DevUI for development and testing
+                from ui.dev import create_dev_ui
+                self.ui = create_dev_ui()
             
             # Initialize command dispatcher
             from agent.command_dispatcher import CommandDispatcher
@@ -472,10 +471,11 @@ class ProtocolAgent(AgentInterface):
                     
                     if result is False:  # Quit command
                         await self.event_bus.emit(AgentEvents.INFO.value, {"message": "Goodbye!", "context": "shutdown"})
-                        continue
+                        break  # EXIT THE LOOP - don't continue running!
                     
-                    # Not a command, process as chat
-                    success = await self.process_request(user_input)
+                    # Not a command, process as chat - but only if it wasn't handled
+                    if result is None:  # Only process as chat if command dispatcher didn't handle it
+                        success = await self.process_request(user_input)
                     
                 except KeyboardInterrupt:
                     await self.event_bus.emit(AgentEvents.INFO.value, {"message": "\nUse 'quit' to exit.", "context": "user_interrupt"})
