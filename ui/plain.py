@@ -314,11 +314,11 @@ class PlainUI(UI):
         """Stream text, handling the ephemeral thinking state"""
         async with self._lock:
             if self._thinking:
-                # Clear the "Thinking..." line before starting stream
-                self.console.print("\r" + " " * 50 + "\r", end="")
+                # FIX: Use ANSI \x1b[2K to clear the WHOLE line properly, then \r
+                self.console.print("\x1b[2K\r", end="")
                 self._thinking = False
-
-                # Print the MONK tag once at the start of the response
+                
+                # Print the MONK tag once at the start
                 self.console.print("[bold green][MONK][/bold green] ", end="")
 
             self.console.print(text, end="", highlight=False)
@@ -326,9 +326,9 @@ class PlainUI(UI):
     async def start_thinking(self, message: str = "Thinking..."):
         async with self._lock:
             self._thinking = True
-            # Use \r to allow overwriting
+            # FIX: Changed magenta to green to match the response tag
             self.console.print(
-                f"\n[bold magenta][MONK] {message}[/bold magenta]", end="\r"
+                f"\n[bold green][MONK][/bold green] {message}", end="\r"
             )
 
     async def stop_thinking(self):
@@ -344,16 +344,17 @@ class PlainUI(UI):
             is_main_loop = prompt == "" or prompt.strip() == ">>>"
 
             if is_main_loop:
-                label = "\n[bold green][USER][/bold green] > "
+                # White (default) label, passed to prompt_toolkit to fix cursor
+                label = "\n[USER] > "
             else:
+                # Blue ANSI for SYS to preserve color without Rich conflicts
                 clean_prompt = prompt.rstrip(" :>")
-                label = f"[bold blue][SYS] {clean_prompt}[/bold blue] > "
-
-            self.console.print(label, end="")
+                label = f"\n\x1b[34m[SYS] {clean_prompt}\x1b[0m > "
 
             try:
+                # Pass label directly to prompt_async
                 with patch_stdout():
-                    return await self.session.prompt_async("")
+                    return await self.session.prompt_async(label)
             except (KeyboardInterrupt, EOFError):
                 self.console.print("\n[dim]Cancelled.[/dim]")
                 return ""
