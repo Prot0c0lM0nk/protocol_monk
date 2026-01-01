@@ -37,12 +37,14 @@ class ProtocolAgent(AgentInterface):
         provider: str = "ollama",
         tool_registry=None,
         event_bus: Optional[EventBus] = None,
+        ui = None,
     ):
         # 1. IMMEDIATE ASSIGNMENTS
         self.working_dir = Path(working_dir).resolve()
         self.current_model = model_name
         self.current_provider = provider
         self.event_bus = event_bus or get_event_bus()
+        self.ui = ui
         self.logger = logging.getLogger(__name__)
         self.enhanced_logger = EnhancedLogger(self.working_dir)
 
@@ -438,12 +440,9 @@ class ProtocolAgent(AgentInterface):
     async def run(self):
         """Main agent loop - now handles its own UI and interaction."""
         try:
-            # Initialize UI if not provided
-            # Initialize UI if not provided via event system
-            if not hasattr(self, 'ui') or self.ui is None:
-                # Use the new EDA DevUI for development and testing
-                from ui.dev import create_dev_ui
-                self.ui = create_dev_ui()
+            # Ensure UI is available
+            if not self.ui:
+                raise RuntimeError("UI not initialized. Please inject a UI instance.")
             
             # Initialize command dispatcher
             from agent.command_dispatcher import CommandDispatcher

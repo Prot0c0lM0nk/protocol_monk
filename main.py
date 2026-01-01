@@ -65,6 +65,10 @@ class Application:
             # Create and start the agent
             from agent.monk import ProtocolAgent
             from tools.registry import ToolRegistry
+            from ui.plain import create_plain_ui
+
+            # Create the UI instance
+            ui_instance = create_plain_ui()
             
             tool_registry = ToolRegistry(
                 working_dir=self.working_dir,
@@ -78,6 +82,7 @@ class Application:
                 provider=settings.api.provider_chain[0] if settings.api.provider_chain else "ollama",
                 tool_registry=tool_registry,
                 event_bus=None,  # Agent will create its own event bus
+                ui=ui_instance,
             )
             
             # Initialize agent asynchronously
