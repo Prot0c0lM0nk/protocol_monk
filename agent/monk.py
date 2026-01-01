@@ -485,7 +485,7 @@ class ProtocolAgent(AgentInterface):
             await self.event_bus.emit(
                 AgentEvents.INFO.value,
                 {
-                    "message": f"🤖 Protocol Monk started in {self.working_dir}",
+                    "message": f"✠ Protocol Monk started in {self.working_dir}",
                     "context": "startup",
                 },
             )
@@ -499,7 +499,7 @@ class ProtocolAgent(AgentInterface):
             await self.event_bus.emit(
                 AgentEvents.INFO.value,
                 {
-                    "message": "Type 'help' for commands, 'quit' to exit.",
+                    "message": "Type '/help' for commands, '/quit' to exit.",
                     "context": "startup",
                 },
             )
