@@ -2,15 +2,11 @@
 """
 ui/plain.py - Event-Driven Plain CLI for Protocol Monk EDA
 
-Purpose: Professional, developer-focused interface with clean formatting,
-visible think tags, and event-driven architecture.
-
-Features:
-- Event-driven communication with agent
-- Rich Markdown rendering for responses
-- Visible think tag parsing (<Thought>, <Contemplation>)
-- Interactive Tool Confirmation (Y/N)
-- Professional indicators: [MONK], [SYS], [TOOL]
+Purpose: Professional "Standard Output" interface.
+- "Flat" text blocks for tools (No panels/boxes).
+- Ephemeral "Thinking..." indicator.
+- Strict [TAG] prefixes ([USER], [SYS], [MONK], [TOOL]).
+- Event-driven architecture with background input handling.
 """
 
 import asyncio
@@ -22,7 +18,6 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.panel import Panel
 from rich.text import Text
 from rich.style import Style
 
@@ -32,7 +27,7 @@ from agent.events import AgentEvents, get_event_bus
 
 class PlainUI(UI):
     """
-    Event-Driven Plain CLI - Professional developer interface with Rich support
+    Event-Driven Plain CLI - Standard Output Aesthetic
     """
 
     def __init__(self):
@@ -43,18 +38,21 @@ class PlainUI(UI):
         self.session = PromptSession()
         self._lock: asyncio.Lock = asyncio.Lock()
 
-        # NEW: State variable for the Traffic Controller
-        # Stores {tool_call_id, tool_name} when waiting for user
+        # Traffic Controller State
         self.pending_confirmation: Optional[Dict[str, Any]] = None
 
-        # Initialize Rich Console
-        self.console = Console()
+        # Buffer for markdown processing
+        self._response_buffer = ""
+        self._in_markdown_block = False
 
-        # Subscribe to all agent events
+        # Initialize Rich Console (Force terminal for colors, but keep layout plain)
+        self.console = Console(
+            force_terminal=True, color_system="truecolor", highlight=False
+        )
         self._setup_event_listeners()
 
     def _setup_event_listeners(self):
-        """Subscribe to all agent events for professional display"""
+        """Subscribe to all agent events"""
         # Core agent events
         self._event_bus.subscribe(AgentEvents.ERROR.value, self._on_agent_error)
         self._event_bus.subscribe(AgentEvents.WARNING.value, self._on_agent_warning)
@@ -81,7 +79,7 @@ class PlainUI(UI):
         self._event_bus.subscribe(AgentEvents.TOOL_ERROR.value, self._on_tool_error)
         self._event_bus.subscribe(AgentEvents.TOOL_RESULT.value, self._on_tool_result)
 
-        # CRITICAL FIX: Tool Confirmation Listener
+        # Tool Confirmation
         self._event_bus.subscribe(
             AgentEvents.TOOL_CONFIRMATION_REQUESTED.value,
             self._on_tool_confirmation_requested,
@@ -112,59 +110,70 @@ class PlainUI(UI):
             AgentEvents.STATUS_CHANGED.value, self._on_status_changed
         )
 
-    # --- FIXED: Background Task for Confirmation ---
+    # --- Tool Confirmation Logic ---
     async def _on_tool_confirmation_requested(self, data: Dict[str, Any]):
         """
-        Handle tool approval requests.
-        Action: Spawns a background input task to avoid blocking the Event Bus.
+        Handle tool approval requests using a Flat Text Block.
+        Spawns background task for input to keep Event Bus free.
         """
         tool_call = data.get("tool_call", {})
         tool_call_id = data.get("tool_call_id")
         tool_name = tool_call.get("action", "Unknown Tool")
         params = tool_call.get("parameters", {})
 
-        # Display the Request Panel
-        self.console.print(
-            Panel(
-                f"[bold yellow]Tool Execution Request[/bold yellow]\n"
-                f"Tool: [cyan]{tool_name}[/cyan]\n"
-                f"Params: {params}",
-                title="[SYS] Permission Required",
-                border_style="yellow",
-            )
-        )
+        # Extract common parameters for cleaner display
+        path = params.get("path", params.get("filename", "N/A"))
+        command = params.get("command", params.get("operation", "execute"))
 
-        # CRITICAL FIX: Spawn a background task to handle input.
-        # This allows this handler to return IMMEDIATELY, releasing the Event Bus lock.
-        # The Agent is waiting for the 'ui.tool_confirmation' event, which the task will emit.
+        # Determine lines if available
+        lines = "N/A"
+        if "start_line" in params and "end_line" in params:
+            lines = f"{params['start_line']} - {params['end_line']}"
+        elif "line" in params:
+            lines = str(params["line"])
+
+        # Render the Flat Block
+        self.console.print()
+        self.console.print("[bold white][TOOL] PROPOSED ACTION[/bold white]")
+        self.console.print(f"Tool:      [cyan]{tool_name}[/cyan]")
+        self.console.print(f"Path:      [yellow]{path}[/yellow]")
+        self.console.print(f"Command:   [yellow]{command}[/yellow]")
+        if lines != "N/A":
+            self.console.print(f"Lines:     {lines}")
+
+        # Pretty print other params if complex
+        # We skip the 'full' params dump if we extracted the key info above to keep it clean,
+        # unless it's a tool we don't recognize well.
+        if tool_name not in ["FileEditor", "FileReader"]:
+            self.console.print(f"Params:    {params}")
+
+        self.console.print("-" * 50, style="dim")
+
+        # Spawn background task
         asyncio.create_task(self._get_confirmation_input(tool_call_id, tool_name))
 
     async def _get_confirmation_input(self, tool_call_id: str, tool_name: str):
         """
-        Input loop specifically for tool confirmation.
-        Runs in background to keep Event Bus free.
+        Background input loop for confirmation.
         """
-        # Small delay to let the panel render and bus unlock
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.1)  # Allow render to finish
 
         try:
-            # We can safely call prompt_user here because the Agent
-            # is waiting for us and is NOT asking for chat input.
-            response = await self.prompt_user(
-                f"Approve execution of '{tool_name}'? (y/n)"
-            )
+            # Using prompt_user for consistent styling
+            # The prompt_user method handles the [SYS] tag
+            response = await self.prompt_user("Approve execution? (y/n)")
             approved = response.lower().startswith("y")
         except Exception as e:
-            self.console.print(f"[red]Input Error: {e}[/red]")
+            self.console.print(f"[bold red][ERR] Input Error: {e}[/bold red]")
             approved = False
 
         # Feedback
         if approved:
-            self.console.print(f"[green]✓ Approved {tool_name}[/green]")
+            self.console.print(f"[bold green]✓ Approved {tool_name}[/bold green]")
         else:
-            self.console.print(f"[red]✗ Rejected {tool_name}[/red]")
+            self.console.print(f"[bold red]✗ Rejected {tool_name}[/bold red]")
 
-        # Send the result event to wake up the Agent
+        # Send result
         await self._event_bus.emit(
             "ui.tool_confirmation", {"tool_call_id": tool_call_id, "approved": approved}
         )
@@ -172,16 +181,21 @@ class PlainUI(UI):
     # --- Event Handler Methods ---
     async def _on_agent_error(self, data: Dict[str, Any]):
         message = data.get("message", "Unknown error")
-        self.console.print(f"[bold red][ERR][/bold red] {message}")
+        self.console.print(f"[bold red][ERR] {message}[/bold red]")
 
     async def _on_agent_warning(self, data: Dict[str, Any]):
         message = data.get("message", "Unknown warning")
-        self.console.print(f"[bold yellow][WARN][/bold yellow] {message}")
+        self.console.print(f"[bold yellow][WARN] {message}[/bold yellow]")
 
     async def _on_agent_info(self, data: Dict[str, Any]):
         message = data.get("message", "Info message")
+        payload = data.get("data")
+
         if message.strip():
-            self.console.print(f"[bold blue][SYS][/bold blue] {message}")
+            self.console.print(f"[bold blue][SYS] {message}[/bold blue]")
+
+        if payload and isinstance(payload, list):
+            self._display_info_list(payload)
 
     async def _on_thinking_started(self, data: Dict[str, Any]):
         message = data.get("message", "Thinking...")
@@ -191,7 +205,6 @@ class PlainUI(UI):
         await self.stop_thinking()
 
     async def _on_tool_start(self, data: Dict[str, Any]):
-        # Handle both single tool and list of tools
         if "tools" in data and isinstance(data["tools"], list):
             names = ", ".join(data["tools"])
             self.console.print(f"[dim][SYS] Executing: {names}...[/dim]")
@@ -205,15 +218,13 @@ class PlainUI(UI):
         self.console.print(f"[dim][SYS] {message} ({progress}%)[/dim]")
 
     async def _on_tool_complete(self, data: Dict[str, Any]):
-        tool_name = data.get("tool_name", "Unknown tool")
-        self.console.print(f"[dim][SYS] Completed: {tool_name}[/dim]")
+        # Minimal noise on completion, specific results handled by _on_tool_result
+        pass
 
     async def _on_tool_error(self, data: Dict[str, Any]):
         tool_name = data.get("tool_name", "Unknown tool")
         error = data.get("error", "Unknown error")
-        self.console.print(
-            f"[bold red][ERR] Tool Error ({tool_name}):[/bold red] {error}"
-        )
+        self.console.print(f"[bold red][TOOL] Error ({tool_name}): {error}[/bold red]")
 
     async def _on_tool_result(self, data: Dict[str, Any]):
         result = data.get("result", "")
@@ -222,171 +233,201 @@ class PlainUI(UI):
 
     async def _on_stream_chunk(self, data: Dict[str, Any]):
         chunk = data.get("chunk", "")
-        await self.print_stream(chunk)
+
+        # Process markdown blocks
+        if "```markdown" in chunk:
+            self._in_markdown_block = True
+            chunk = chunk.split("```markdown", 1)[-1]
+
+        if self._in_markdown_block:
+            if "```" in chunk:
+                self._in_markdown_block = False
+                chunk = chunk.split("```", 1)[0]
+                if chunk.strip():
+                    self._response_buffer += chunk
+
+                # Render buffered markdown
+                if self._response_buffer.strip():
+                    md = Markdown(self._response_buffer.strip())
+                    self.console.print(md)
+                self._response_buffer = ""
+            else:
+                self._response_buffer += chunk
+        else:
+            # Stream normally
+            await self.print_stream(chunk)
 
     async def _on_response_complete(self, data: Dict[str, Any]):
-        response = data.get("response", "")
-        metadata = data.get("metadata", {})
-        self.console.print()  # Newline after stream
-        if metadata:
-            await self._display_metadata(metadata)
+        # Flush buffer
+        if self._response_buffer.strip():
+            md = Markdown(self._response_buffer.strip())
+            self.console.print(md)
+            self._response_buffer = ""
+
+        self._in_markdown_block = False
+        self.console.print()  # Newline after response
 
     async def _on_context_overflow(self, data: Dict[str, Any]):
         current = data.get("current_tokens", 0)
         max_t = data.get("max_tokens", 0)
         self.console.print(
-            f"[bold yellow][WARN] Context overflow: {current}/{max_t}[/bold yellow]"
+            f"[bold yellow][WARN] Context: {current}/{max_t}[/bold yellow]"
         )
 
     async def _on_model_switched(self, data: Dict[str, Any]):
         self.console.print(
-            f"[dim][SYS] Model switched: {data.get('old_model')} → {data.get('new_model')}[/dim]"
+            f"[bold blue][SYS] Model: {data.get('old_model')} → {data.get('new_model')}[/bold blue]"
         )
 
     async def _on_provider_switched(self, data: Dict[str, Any]):
         self.console.print(
-            f"[dim][SYS] Provider switched: {data.get('old_provider')} → {data.get('new_provider')}[/dim]"
+            f"[bold blue][SYS] Provider: {data.get('old_provider')} → {data.get('new_provider')}[/bold blue]"
         )
 
     async def _on_command_result(self, data: Dict[str, Any]):
-        success = data.get("success", False)
+        success = data.get("success", True)
         message = data.get("message", "")
+
+        if not message:
+            return
+
         if success:
-            self.console.print(f"[bold green]✓ {message}[/bold green]")
+            await self.print_info(message)
         else:
-            self.console.print(f"[bold red]✗ {message}[/bold red]")
+            await self.print_error(message)
 
     async def _on_status_changed(self, data: Dict[str, Any]):
-        self.console.print(
-            f"[dim][SYS] Status: {data.get('old_status')} → {data.get('new_status')}[/dim]"
-        )
+        pass
 
     # --- Display Logic ---
+
     async def _display_tool_result_markdown(self, tool_name: str, result: Any):
-        """Display tool result in a Rich panel"""
-        if hasattr(result, "output"):
-            content = str(result.output)
-        else:
-            content = str(result)
+        """Display tool result as clean text"""
+        content = str(result.output) if hasattr(result, "output") else str(result)
 
-        panel = Panel(
-            content,  # Simple text for now, could be Markdown(content) if tool output is MD
-            title=f"[TOOL] {tool_name}",
-            border_style="blue",
-            expand=False,
-        )
-        self.console.print(panel)
-
-    async def _display_metadata(self, metadata: Dict[str, Any]):
-        """Display metadata nicely"""
-        text = Text()
-        for k, v in metadata.items():
-            text.append(f"{k}: ", style="bold")
-            text.append(f"{v}\n")
-
-        self.console.print(
-            Panel(text, title="[SYS] Metadata", border_style="dim white", expand=False)
-        )
+        self.console.print(f"[bold white][TOOL] Result ({tool_name}):[/bold white]")
+        # Indent slightly for readability
+        for line in content.splitlines():
+            self.console.print(f"  {line}", style="dim")
 
     async def print_stream(self, text: str):
-        """Stream text with Rich support and think tag visibility"""
+        """Stream text, handling the ephemeral thinking state"""
         async with self._lock:
             if self._thinking:
+                # Clear the "Thinking..." line before starting stream
                 self.console.print("\r" + " " * 50 + "\r", end="")
                 self._thinking = False
-                self.console.print()
+
+                # Print the MONK tag once at the start of the response
                 self.console.print("[bold green][MONK][/bold green] ", end="")
 
-            # Simple streaming for now - complex Rich streaming is harder to mix with regex
-            # We stick to print(end="") for the stream to keep it fluid
             self.console.print(text, end="", highlight=False)
 
     async def start_thinking(self, message: str = "Thinking..."):
         async with self._lock:
             self._thinking = True
+            # Use \r to allow overwriting
             self.console.print(
-                f"\n[bold magenta][MONK] {message}[/bold magenta]", end=""
+                f"\n[bold magenta][MONK] {message}[/bold magenta]", end="\r"
             )
 
     async def stop_thinking(self):
         async with self._lock:
             if self._thinking:
+                # Clear the line
                 self.console.print("\r" + " " * 50 + "\r", end="")
                 self._thinking = False
 
     async def prompt_user(self, prompt: str) -> str:
+        """Prompt user with standard output styling"""
         async with self._lock:
-            formatted_prompt = f"\n[bold green]>>> {prompt}:[/bold green] "
-            self.console.print(formatted_prompt, end="")
+            is_main_loop = prompt == "" or prompt.strip() == ">>>"
+
+            if is_main_loop:
+                label = "\n[bold green][USER][/bold green] > "
+            else:
+                clean_prompt = prompt.rstrip(" :>")
+                label = f"[bold blue][SYS] {clean_prompt}[/bold blue] > "
+
+            self.console.print(label, end="")
+
             try:
                 with patch_stdout():
                     return await self.session.prompt_async("")
             except (KeyboardInterrupt, EOFError):
+                self.console.print("\n[dim]Cancelled.[/dim]")
                 return ""
+
+    def _display_info_list(self, items: List[Any]):
+        """Render a numbered list cleanly"""
+        for i, item in enumerate(items, 1):
+            if isinstance(item, dict):
+                name = item.get("name", str(item))
+                extra = f" ({item.get('provider')})" if item.get("provider") else ""
+                self.console.print(f"  {i}. [cyan]{name}[/cyan][dim]{extra}[/dim]")
+            else:
+                self.console.print(f"  {i}. [cyan]{item}[/cyan]")
+
+    async def display_selection_list(self, title: str, items: List[Any]) -> Any:
+        """Interactive selection list if requested by agent"""
+        self.console.print(f"\n[bold blue][SYS] {title}[/bold blue]")
+        self._display_info_list(items)
+
+        while True:
+            # Local input loop for selection
+            self.console.print("[bold blue][SYS] Select #[/bold blue] > ", end="")
+            try:
+                with patch_stdout():
+                    choice = await self.session.prompt_async("")
+
+                index = int(choice) - 1
+                if 0 <= index < len(items):
+                    return items[index]
+            except ValueError:
+                pass
+            except (KeyboardInterrupt, EOFError):
+                return None
+
+            self.console.print("[red]Invalid selection[/red]")
 
     # --- Boilerplate Implementations ---
     async def confirm_action(self, message: str) -> bool:
         response = await self.prompt_user(f"{message} (y/n)")
         return response.lower().startswith("y")
 
-    async def display_selection_list(self, title: str, items: List[Any]) -> Any:
-        self.console.print(f"\n[bold underline]{title}[/bold underline]")
-        for i, item in enumerate(items, 1):
-            self.console.print(f"  {i}. {item}")
-
-        while True:
-            choice = await self.prompt_user("Select (number)")
-            try:
-                index = int(choice) - 1
-                if 0 <= index < len(items):
-                    return items[index]
-            except ValueError:
-                pass
-            self.console.print("[red]Invalid selection[/red]")
-
     async def display_tool_result(self, result: ToolResult):
-        # Redirected to _on_tool_result via event bus usually, but here as fallback
         await self._display_tool_result_markdown(
             result.tool_name or "Tool", result.output
         )
 
     async def get_input(self) -> str:
+        # Main loop calls this with empty prompt
         return await self.prompt_user("")
 
     async def print_error(self, message: str):
-        self.console.print(f"[bold red]{message}[/bold red]")
+        self.console.print(f"[bold red][ERR] {message}[/bold red]")
 
     async def print_info(self, message: str):
-        self.console.print(f"[blue]{message}[/blue]")
+        self.console.print(f"[bold blue][SYS] {message}[/bold blue]")
 
     async def run_async(self):
-        """Main UI loop - Acts as the Traffic Controller for user input"""
+        """Main UI Loop"""
         self.console.print(
-            Panel.fit(
-                "[bold green]Protocol Monk EDA - PlainUI[/bold green]\n"
-                "Event-Driven Architecture Active\n"
-                "Professional Mode",
-                border_style="green",
-            )
+            "[bold green]Protocol Monk EDA - PlainUI[/bold green]\n"
+            "[dim]Standard Output Mode Active[/dim]"
         )
 
         try:
             while True:
-                # Single point of input entry
                 user_input = await self.get_input()
 
                 if not user_input.strip():
                     continue
 
-                # PRIORITY 1: Check for Tool Confirmation (Traffic Controller)
-                # This MUST be checked locally to prevent 'y/n' from going to the model
                 if self.pending_confirmation:
                     await self._handle_pending_confirmation(user_input)
                     continue
 
-                # PRIORITY 2: Standard Input (Chat & Commands)
-                # We send EVERYTHING else to the Agent.
-                # The Agent is responsible for detecting slash commands (e.g., /help)
                 await self._event_bus.emit(
                     AgentEvents.COMMAND_RESULT.value,
                     {"input": user_input, "timestamp": datetime.now().isoformat()},
@@ -396,27 +437,15 @@ class PlainUI(UI):
             self.console.print("\n[bold red]Shutting down...[/bold red]")
 
     async def _handle_pending_confirmation(self, user_input: str):
-        """Process input specifically for tool confirmation"""
-        # Retrieve the context we stored
+        # Fallback if manual confirmation handling is needed outside the background task
+        # (Usually handled by _get_confirmation_input, but kept for safety)
         data = self.pending_confirmation
         tool_call_id = data["tool_call_id"]
-        tool_name = data["tool_name"]
-
-        # Determine approval
         approved = user_input.lower().startswith("y")
 
-        # Feedback to user
-        if approved:
-            self.console.print(f"[green]✓ Approved {tool_name}[/green]")
-        else:
-            self.console.print(f"[red]✗ Rejected {tool_name}[/red]")
-
-        # Emit the result event
         await self._event_bus.emit(
             "ui.tool_confirmation", {"tool_call_id": tool_call_id, "approved": approved}
         )
-
-        # Reset the Traffic Controller Flag
         self.pending_confirmation = None
 
 
