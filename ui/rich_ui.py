@@ -376,7 +376,7 @@ class RichUI(UI):
         """
         await self._end_streaming()
         self._stop_thinking()
-        
+
         # Convert items to display strings (same logic as TextualUI)
         options = []
         for item in items:
@@ -387,23 +387,23 @@ class RichUI(UI):
             else:
                 text = str(item)
             options.append(text)
-        
+
         # Display the list with numbers
         console.print(f"\n[bold holy.gold]{title}[/]")
         console.print()
-        
+
         for i, option in enumerate(options, 1):
             console.print(f"  [dim]{i}.[/] {option}")
-        
+
         console.print()
-        
+
         # Prompt for selection
         while True:
             try:
                 response = await self.prompt_user("Select by number")
                 if not response.strip():
                     continue
-                    
+
                 # Try to parse as number
                 selection = int(response.strip())
                 if 1 <= selection <= len(options):
@@ -412,10 +412,12 @@ class RichUI(UI):
                     self._pending_selection = selected
                     break
                 else:
-                    console.print(f"[error]Please enter a number between 1 and {len(options)}[/]")
-                    
+                    console.print(
+                        f"[error]Please enter a number between 1 and {len(options)}[/]"
+                    )
+
             except ValueError:
                 console.print("[error]Please enter a valid number[/]")
-                
+
             except (KeyboardInterrupt, EOFError):
                 break

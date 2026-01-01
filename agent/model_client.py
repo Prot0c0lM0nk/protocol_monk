@@ -182,12 +182,13 @@ class ModelClient:
         # Close the old client's session before creating a new one
         # This prevents "Unclosed client session" warnings
         if self._client:
-            if hasattr(self._client, 'sync_close'):
+            if hasattr(self._client, "sync_close"):
                 self._client.sync_close()
-            elif hasattr(self._client, 'close'):
+            elif hasattr(self._client, "close"):
                 # Fallback: try to close if possible, but don't fail if we can't
                 try:
                     import asyncio
+
                     loop = asyncio.get_event_loop()
                     if loop.is_running():
                         asyncio.create_task(self._client.close())

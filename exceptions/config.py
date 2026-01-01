@@ -42,7 +42,7 @@ class ValidationError(MonkBaseError):
         self.invalid_value = invalid_value
 
 
-
 class BootstrapError(MonkBaseError):
     """Raised when bootstrap configuration fails."""
+
     pass

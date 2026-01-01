@@ -42,7 +42,9 @@ class CommandDispatcher:
         cmd = user_input.strip().lower()
 
         if cmd == "/quit":
-            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": BLESSING, "context": "shutdown"})
+            await self.agent.event_bus.emit(
+                AgentEvents.INFO.value, {"message": BLESSING, "context": "shutdown"}
+            )
             return False
 
         if cmd == "/help":
@@ -68,9 +70,12 @@ class CommandDispatcher:
         if cmd.startswith("/provider"):
             await self._handle_provider_switch()
             return True
-            
+
         # Unknown command - return None so agent knows it wasn't handled
-        await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": "Unknown command", "context": "command_error"})
+        await self.agent.event_bus.emit(
+            AgentEvents.ERROR.value,
+            {"message": "Unknown command", "context": "command_error"},
+        )
         return None  # Return None to indicate command wasn't handled
 
     async def _handle_help(self):
@@ -85,19 +90,21 @@ class CommandDispatcher:
 /file     - Upload a file to the workspace
 /quit     - Exit with blessing
 """
-        await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": help_text, "context": "help"})
+        await self.agent.event_bus.emit(
+            AgentEvents.INFO.value, {"message": help_text, "context": "help"}
+        )
 
     async def _handle_status(self):
         """Display agent status."""
         stats = await self.agent.get_status()
-        
+
         # Get session info from agent instead of global session
         working_dir = self.agent.working_dir
         directory_name = working_dir.name if working_dir else "unknown"
-        
+
         # Environment info from agent's tool registry if available
         env_info = "general directory"
-        if hasattr(self.agent, 'tool_registry') and self.agent.tool_registry:
+        if hasattr(self.agent, "tool_registry") and self.agent.tool_registry:
             if self.agent.tool_registry.preferred_env:
                 env_info = f"conda: {self.agent.tool_registry.preferred_env}"
             elif self.agent.tool_registry.venv_path:
@@ -117,12 +124,21 @@ class CommandDispatcher:
 🧮 Token Usage: {stats['estimated_tokens']:,} / {stats['token_limit']:,} \
             ({token_percentage:.1f}%)
 """
-        await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": status_text, "context": "status"})
+        await self.agent.event_bus.emit(
+            AgentEvents.INFO.value, {"message": status_text, "context": "status"}
+        )
 
     async def _display_model_list(self, available_models: Dict):
         models_list = list(available_models.values())
         # Use the generic method
-        await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "Available Models", "data": models_list, "context": "model_selection"})
+        await self.agent.event_bus.emit(
+            AgentEvents.INFO.value,
+            {
+                "message": "Available Models",
+                "data": models_list,
+                "context": "model_selection",
+            },
+        )
 
     async def _get_model_choice(self, available_models: Dict) -> Optional[str]:
         """
@@ -136,19 +152,24 @@ class CommandDispatcher:
         """
         try:
             # Emit event to request user input through UI subscribers
-            await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
-                "action": "model_selection_prompt", 
-                "message": "\nSelect a model (enter number or name): ",
-                "available_models": list(available_models.keys())
-            })
-            
+            await self.event_bus.emit(
+                AgentEvents.COMMAND_RESULT.value,
+                {
+                    "action": "model_selection_prompt",
+                    "message": "\nSelect a model (enter number or name): ",
+                    "available_models": list(available_models.keys()),
+                },
+            )
+
             # For now, we still need to get input synchronously
             # This will be fully event-driven once we convert the agent's main loop
             if self.agent.ui:
-                choice = await self.agent.ui.prompt_user("\nSelect a model (enter number or name): ")
+                choice = await self.agent.ui.prompt_user(
+                    "\nSelect a model (enter number or name): "
+                )
             else:
                 choice = input("\nSelect a model (enter number or name): ")
-            
+
             choice = choice.strip()
             model_list = list(available_models.keys())
             choice = choice.strip()
@@ -158,17 +179,32 @@ class CommandDispatcher:
                 idx = int(choice) - 1
                 if 0 <= idx < len(model_list):
                     return model_list[idx]
-                await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": "Invalid selection.", "context": "model_selection"})
+                await self.agent.event_bus.emit(
+                    AgentEvents.ERROR.value,
+                    {"message": "Invalid selection.", "context": "model_selection"},
+                )
                 return None
 
             if choice in available_models:
                 return choice
 
-            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Model '{choice}' not found.", "context": "model_selection"})
+            await self.agent.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": f"Model '{choice}' not found.",
+                    "context": "model_selection",
+                },
+            )
             return None
 
         except ValueError as e:
-            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Invalid model selection: {e}", "context": "model_selection"})
+            await self.agent.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": f"Invalid model selection: {e}",
+                    "context": "model_selection",
+                },
+            )
             return None
 
     async def _handle_guardrails(
@@ -189,23 +225,52 @@ class CommandDispatcher:
 
         if switch_report.safe:
             await self.agent.set_model(selected_model)
-            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": f"✅ Model switched to: {selected_model}", "context": "model_switch"})
+            await self.agent.event_bus.emit(
+                AgentEvents.INFO.value,
+                {
+                    "message": f"✅ Model switched to: {selected_model}",
+                    "context": "model_switch",
+                },
+            )
             return True
 
         # Handle Unsafe Switch with event-driven user interaction
-        await self.event_bus.emit(AgentEvents.WARNING.value, {"message": f"⚠️  Context Warning: {switch_report.message}", "context": "context_warning"})
-        await self.event_bus.emit(AgentEvents.WARNING.value, {"message": f"Current tokens: {switch_report.current_tokens:,}", "context": "context_warning"})
-        await self.event_bus.emit(AgentEvents.WARNING.value, {"message": f"Target limit: {switch_report.target_limit:,}", "context": "context_warning"})
+        await self.event_bus.emit(
+            AgentEvents.WARNING.value,
+            {
+                "message": f"⚠️  Context Warning: {switch_report.message}",
+                "context": "context_warning",
+            },
+        )
+        await self.event_bus.emit(
+            AgentEvents.WARNING.value,
+            {
+                "message": f"Current tokens: {switch_report.current_tokens:,}",
+                "context": "context_warning",
+            },
+        )
+        await self.event_bus.emit(
+            AgentEvents.WARNING.value,
+            {
+                "message": f"Target limit: {switch_report.target_limit:,}",
+                "context": "context_warning",
+            },
+        )
 
         # Emit event for user choice and get response through agent's UI
-        await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
-            "action": "context_management_prompt",
-            "message": "Prune, Archive, or Cancel? (p/a/c): ",
-            "options": ["p", "a", "c"]
-        })
-        
+        await self.event_bus.emit(
+            AgentEvents.COMMAND_RESULT.value,
+            {
+                "action": "context_management_prompt",
+                "message": "Prune, Archive, or Cancel? (p/a/c): ",
+                "options": ["p", "a", "c"],
+            },
+        )
+
         if self.agent.ui:
-            action = await self.agent.ui.prompt_user("Prune, Archive, or Cancel? (p/a/c): ")
+            action = await self.agent.ui.prompt_user(
+                "Prune, Archive, or Cancel? (p/a/c): "
+            )
         else:
             action = input("Prune, Archive, or Cancel? (p/a/c): ")
         action = action.strip().lower()
@@ -215,7 +280,13 @@ class CommandDispatcher:
                 "strict", switch_report.target_limit
             )
             await self.agent.set_model(selected_model)
-            await self.event_bus.emit(AgentEvents.INFO.value, {"message": f"✅ Context pruned and model switched to: {selected_model}", "context": "model_switch"})
+            await self.event_bus.emit(
+                AgentEvents.INFO.value,
+                {
+                    "message": f"✅ Context pruned and model switched to: {selected_model}",
+                    "context": "model_switch",
+                },
+            )
             return True
 
         if action in ["a", "archive"]:
@@ -223,8 +294,17 @@ class CommandDispatcher:
                 "archive", switch_report.target_limit
             )
             await self.agent.set_model(selected_model)
-            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": f"✅ Context archived and model switched to: {selected_model}", "context": "model_switch"})
-            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "Model switch cancelled.", "context": "model_switch"})
+            await self.agent.event_bus.emit(
+                AgentEvents.INFO.value,
+                {
+                    "message": f"✅ Context archived and model switched to: {selected_model}",
+                    "context": "model_switch",
+                },
+            )
+            await self.agent.event_bus.emit(
+                AgentEvents.INFO.value,
+                {"message": "Model switch cancelled.", "context": "model_switch"},
+            )
             return True
 
         await self.ui.print_info("Model switch cancelled.")
@@ -232,15 +312,24 @@ class CommandDispatcher:
 
     async def _handle_file_upload(self):
         """Handle file upload command with user interaction."""
-        await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "📁 File Upload Protocol", "context": "file_upload"})
-        await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "Enter the path to the file you want to upload:", "context": "file_upload"})
+        await self.agent.event_bus.emit(
+            AgentEvents.INFO.value,
+            {"message": "📁 File Upload Protocol", "context": "file_upload"},
+        )
+        await self.agent.event_bus.emit(
+            AgentEvents.INFO.value,
+            {
+                "message": "Enter the path to the file you want to upload:",
+                "context": "file_upload",
+            },
+        )
 
         # Emit event for file path input and get response
-        await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
-            "action": "file_upload_prompt",
-            "message": "File path: "
-        })
-        
+        await self.event_bus.emit(
+            AgentEvents.COMMAND_RESULT.value,
+            {"action": "file_upload_prompt", "message": "File path: "},
+        )
+
         if self.agent.ui:
             file_path = await self.agent.ui.prompt_user("File path: ")
         else:
@@ -249,7 +338,10 @@ class CommandDispatcher:
         file_path = file_path.strip()
 
         if not file_path:
-            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": "No file path provided.", "context": "file_upload"})
+            await self.agent.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {"message": "No file path provided.", "context": "file_upload"},
+            )
             return
 
         # Import here to avoid circular imports
@@ -259,11 +351,20 @@ class CommandDispatcher:
 
         # Check if file exists
         if not os.path.exists(file_path):
-            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"File not found: {file_path}", "context": "file_upload"})
+            await self.agent.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {"message": f"File not found: {file_path}", "context": "file_upload"},
+            )
             return
 
         if not os.path.isfile(file_path):
-            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Path is not a file: {file_path}", "context": "file_upload"})
+            await self.agent.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": f"Path is not a file: {file_path}",
+                    "context": "file_upload",
+                },
+            )
             return
 
         # Get workspace directory from agent
@@ -275,20 +376,33 @@ class CommandDispatcher:
 
         # Check if file already exists
         if os.path.exists(destination):
-            await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
-                "action": "file_overwrite_prompt",
-                "message": f"File '{filename}' already exists. Overwrite? (y/n): "
-            })
-            
+            await self.event_bus.emit(
+                AgentEvents.COMMAND_RESULT.value,
+                {
+                    "action": "file_overwrite_prompt",
+                    "message": f"File '{filename}' already exists. Overwrite? (y/n): ",
+                },
+            )
+
             if self.agent.ui:
-                overwrite = await self.agent.ui.prompt_user(f"File '{filename}' already exists. Overwrite? (y/n): ")
+                overwrite = await self.agent.ui.prompt_user(
+                    f"File '{filename}' already exists. Overwrite? (y/n): "
+                )
             else:
-                overwrite = input(f"File '{filename}' already exists. Overwrite? (y/n): ")
-                
+                overwrite = input(
+                    f"File '{filename}' already exists. Overwrite? (y/n): "
+                )
+
             if overwrite.strip().lower() != "y":
-                await self.event_bus.emit(AgentEvents.INFO.value, {"message": "File upload cancelled.", "context": "file_upload"})
+                await self.event_bus.emit(
+                    AgentEvents.INFO.value,
+                    {"message": "File upload cancelled.", "context": "file_upload"},
+                )
                 return
-                await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "File upload cancelled.", "context": "file_upload"})
+                await self.agent.event_bus.emit(
+                    AgentEvents.INFO.value,
+                    {"message": "File upload cancelled.", "context": "file_upload"},
+                )
                 return
 
         try:
@@ -304,9 +418,18 @@ class CommandDispatcher:
                 size_str = f"{file_size / (1024 * 1024):.1f} MB"
 
             # Success messages
-            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "✅ File uploaded successfully!", "context": "file_upload"})
-            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": f"📄 {filename} ({size_str})", "context": "file_upload"})
-            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": f"📍 Location: {destination}", "context": "file_upload"})
+            await self.agent.event_bus.emit(
+                AgentEvents.INFO.value,
+                {"message": "✅ File uploaded successfully!", "context": "file_upload"},
+            )
+            await self.agent.event_bus.emit(
+                AgentEvents.INFO.value,
+                {"message": f"📄 {filename} ({size_str})", "context": "file_upload"},
+            )
+            await self.agent.event_bus.emit(
+                AgentEvents.INFO.value,
+                {"message": f"📍 Location: {destination}", "context": "file_upload"},
+            )
 
             # Add file content to conversation
             try:
@@ -318,7 +441,13 @@ class CommandDispatcher:
                 await self.agent.context_manager.add_user_message(
                     file_info, importance=4
                 )
-                await self.event_bus.emit(AgentEvents.INFO.value, {"message": "📖 File content added to conversation context", "context": "file_upload"})
+                await self.event_bus.emit(
+                    AgentEvents.INFO.value,
+                    {
+                        "message": "📖 File content added to conversation context",
+                        "context": "file_upload",
+                    },
+                )
 
             except UnicodeDecodeError:
                 # Handle binary files gracefully
@@ -328,7 +457,13 @@ class CommandDispatcher:
                 await self.agent.context_manager.add_user_message(
                     file_info, importance=4
                 )
-                await self.event_bus.emit(AgentEvents.INFO.value, {"message": "📎 Binary file uploaded (content not displayed)", "context": "file_upload"})
+                await self.event_bus.emit(
+                    AgentEvents.INFO.value,
+                    {
+                        "message": "📎 Binary file uploaded (content not displayed)",
+                        "context": "file_upload",
+                    },
+                )
             except Exception as e:
                 self.logger.warning(f"Could not add file content to conversation: {e}")
                 # Still report success since file was uploaded
@@ -339,11 +474,26 @@ class CommandDispatcher:
             )
 
         except PermissionError:
-            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": "Permission denied. Check file access rights.", "context": "file_upload"})
+            await self.agent.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": "Permission denied. Check file access rights.",
+                    "context": "file_upload",
+                },
+            )
         except shutil.SameFileError:
-            await self.agent.event_bus.emit(AgentEvents.INFO.value, {"message": "File is already in the workspace.", "context": "file_upload"})
+            await self.agent.event_bus.emit(
+                AgentEvents.INFO.value,
+                {
+                    "message": "File is already in the workspace.",
+                    "context": "file_upload",
+                },
+            )
         except Exception as ex:
-            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"File upload failed: {str(ex)}", "context": "file_upload"})
+            await self.agent.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {"message": f"File upload failed: {str(ex)}", "context": "file_upload"},
+            )
             self.logger.error("File upload error: %s", ex, exc_info=True)
 
     async def _handle_model_switch(self):
@@ -359,11 +509,29 @@ class CommandDispatcher:
                 await self._handle_guardrails(target_model, model_manager)
 
         except KeyError as e:
-            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Model configuration error: {e}", "context": "model_switch"})
+            await self.agent.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": f"Model configuration error: {e}",
+                    "context": "model_switch",
+                },
+            )
         except RuntimeError as e:
-            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Runtime error during model switch: {e}", "context": "model_switch"})
+            await self.agent.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": f"Runtime error during model switch: {e}",
+                    "context": "model_switch",
+                },
+            )
         except Exception as e:  # pylint: disable=broad-exception-caught
-            await self.agent.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Unexpected error during model switch: {e}", "context": "model_switch"})
+            await self.agent.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": f"Unexpected error during model switch: {e}",
+                    "context": "model_switch",
+                },
+            )
             self.logger.error("Unexpected error in model switch: %s", e, exc_info=True)
 
     async def _handle_provider_switch(self):
@@ -378,17 +546,24 @@ class CommandDispatcher:
             )
 
             # Emit event for provider selection display
-            await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
-                "action": "provider_selection_display",
-                "title": "Available Providers",
-                "items": available_providers,
-                "current_provider": current_provider
-            })
-            
+            await self.event_bus.emit(
+                AgentEvents.COMMAND_RESULT.value,
+                {
+                    "action": "provider_selection_display",
+                    "title": "Available Providers",
+                    "items": available_providers,
+                    "current_provider": current_provider,
+                },
+            )
+
             # For now, still use UI for selection until we fully convert the input loop
             if self.agent.ui:
-                await self.agent.ui.display_selection_list("Available Providers", available_providers)
-                choice = await self.agent.ui.prompt_user("Select a provider (enter number or name): ")
+                await self.agent.ui.display_selection_list(
+                    "Available Providers", available_providers
+                )
+                choice = await self.agent.ui.prompt_user(
+                    "Select a provider (enter number or name): "
+                )
             else:
                 print("\nAvailable Providers:")
                 for i, provider in enumerate(available_providers, 1):
@@ -408,11 +583,23 @@ class CommandDispatcher:
             elif choice in available_providers:
                 selected_provider = choice
             else:
-                await self.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Provider '{choice}' not found.", "context": "provider_switch"})
+                await self.event_bus.emit(
+                    AgentEvents.ERROR.value,
+                    {
+                        "message": f"Provider '{choice}' not found.",
+                        "context": "provider_switch",
+                    },
+                )
                 return
 
             if selected_provider == current_provider:
-                await self.event_bus.emit(AgentEvents.INFO.value, {"message": f"Already using provider: {selected_provider}", "context": "provider_switch"})
+                await self.event_bus.emit(
+                    AgentEvents.INFO.value,
+                    {
+                        "message": f"Already using provider: {selected_provider}",
+                        "context": "provider_switch",
+                    },
+                )
                 return
             if selected_provider == current_provider:
                 await self.ui.print_info(f"Already using provider: {selected_provider}")
@@ -423,7 +610,13 @@ class CommandDispatcher:
                 from config.static import settings
 
                 if not settings.environment.openrouter_api_key:
-                    await self.event_bus.emit(AgentEvents.ERROR.value, {"message": "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.", "context": "provider_switch"})
+                    await self.event_bus.emit(
+                        AgentEvents.ERROR.value,
+                        {
+                            "message": "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.",
+                            "context": "provider_switch",
+                        },
+                    )
                     return
 
             # 4. Show Models for the New Provider
@@ -431,19 +624,32 @@ class CommandDispatcher:
             target_models = target_model_manager.get_available_models()
 
             if not target_models:
-                await self.event_bus.emit(AgentEvents.WARNING.value, {"message": f"No models available for {selected_provider}. Staying with current provider.", "context": "provider_switch"})
+                await self.event_bus.emit(
+                    AgentEvents.WARNING.value,
+                    {
+                        "message": f"No models available for {selected_provider}. Staying with current provider.",
+                        "context": "provider_switch",
+                    },
+                )
                 return
 
             # Emit event for model list display
-            await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
-                "action": "model_list_display",
-                "provider": selected_provider,
-                "models": list(target_models.keys())
-            })
-            
+            await self.event_bus.emit(
+                AgentEvents.COMMAND_RESULT.value,
+                {
+                    "action": "model_list_display",
+                    "provider": selected_provider,
+                    "models": list(target_models.keys()),
+                },
+            )
+
             if self.agent.ui:
-                await self.agent.ui.print_info(f"\nAvailable models for {selected_provider}:")
-                await self.agent.ui._display_model_list(target_models, current_provider=selected_provider)
+                await self.agent.ui.print_info(
+                    f"\nAvailable models for {selected_provider}:"
+                )
+                await self.agent.ui._display_model_list(
+                    target_models, current_provider=selected_provider
+                )
             else:
                 print(f"\nAvailable models for {selected_provider}:")
                 for i, model in enumerate(target_models.keys(), 1):
@@ -451,31 +657,43 @@ class CommandDispatcher:
 
             # 5. Optional Model Selection Flow (Simplified)
             # Emit event for model selection prompt
-            await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
-                "action": "model_selection_prompt",
-                "message": f"Select a specific model for {selected_provider} now? (Y/n): ",
-                "provider": selected_provider
-            })
-            
+            await self.event_bus.emit(
+                AgentEvents.COMMAND_RESULT.value,
+                {
+                    "action": "model_selection_prompt",
+                    "message": f"Select a specific model for {selected_provider} now? (Y/n): ",
+                    "provider": selected_provider,
+                },
+            )
+
             if self.agent.ui:
-                select_model_prompt = await self.agent.ui.prompt_user(f"Select a specific model for {selected_provider} now? (Y/n): ")
+                select_model_prompt = await self.agent.ui.prompt_user(
+                    f"Select a specific model for {selected_provider} now? (Y/n): "
+                )
             else:
-                select_model_prompt = input(f"Select a specific model for {selected_provider} now? (Y/n): ")
+                select_model_prompt = input(
+                    f"Select a specific model for {selected_provider} now? (Y/n): "
+                )
 
             selected_model = None
             if select_model_prompt.strip().lower() not in ["n", "no"]:
                 # User wants to pick a specific model - emit event for model choice
-                await self.event_bus.emit(AgentEvents.COMMAND_RESULT.value, {
-                    "action": "model_choice_prompt",
-                    "message": f"\nSelect a model (enter number or name): ",
-                    "provider": selected_provider
-                })
-                
+                await self.event_bus.emit(
+                    AgentEvents.COMMAND_RESULT.value,
+                    {
+                        "action": "model_choice_prompt",
+                        "message": f"\nSelect a model (enter number or name): ",
+                        "provider": selected_provider,
+                    },
+                )
+
                 if self.agent.ui:
-                    model_choice = await self.agent.ui.prompt_user(f"\nSelect a model (enter number or name): ")
+                    model_choice = await self.agent.ui.prompt_user(
+                        f"\nSelect a model (enter number or name): "
+                    )
                 else:
                     model_choice = input(f"\nSelect a model (enter number or name): ")
-                
+
                 model_choice = model_choice.strip()
 
                 model_list = list(target_models.keys())
@@ -487,21 +705,33 @@ class CommandDispatcher:
                     selected_model = model_choice
 
                 if not selected_model:
-                    await self.event_bus.emit(AgentEvents.ERROR.value, {"message": "Invalid model selection. Staying with current provider.", "context": "model_selection"})
+                    await self.event_bus.emit(
+                        AgentEvents.ERROR.value,
+                        {
+                            "message": "Invalid model selection. Staying with current provider.",
+                            "context": "model_selection",
+                        },
+                    )
                     return
             else:
                 # User skipped selection; use the first available model as a default
                 selected_model = list(target_models.keys())[0]
                 # Emit event for default model selection
-                await self.event_bus.emit(AgentEvents.INFO.value, {
-                    "message": f"Using default model for {selected_provider}: {selected_model}",
-                    "context": "model_selection"
-                })
+                await self.event_bus.emit(
+                    AgentEvents.INFO.value,
+                    {
+                        "message": f"Using default model for {selected_provider}: {selected_model}",
+                        "context": "model_selection",
+                    },
+                )
             # 6. Perform the Switch
-            await self.event_bus.emit(AgentEvents.INFO.value, {
-                "message": f"Switching to {selected_provider} with model {selected_model}...",
-                "context": "provider_switch"
-            })
+            await self.event_bus.emit(
+                AgentEvents.INFO.value,
+                {
+                    "message": f"Switching to {selected_provider} with model {selected_model}...",
+                    "context": "provider_switch",
+                },
+            )
 
             # Update agent's model attribute before calling set_provider
             self.agent.current_model = selected_model
@@ -509,19 +739,28 @@ class CommandDispatcher:
             try:
                 success = await self.agent.set_provider(selected_provider)
                 if success:
-                    await self.event_bus.emit(AgentEvents.INFO.value, {
-                        "message": f"✅ Provider switched to: {selected_provider}",
-                        "context": "provider_switch"
-                    })
-                    await self.event_bus.emit(AgentEvents.INFO.value, {
-                        "message": f"   Model: {self.agent.current_model}",
-                        "context": "provider_switch"
-                    })
+                    await self.event_bus.emit(
+                        AgentEvents.INFO.value,
+                        {
+                            "message": f"✅ Provider switched to: {selected_provider}",
+                            "context": "provider_switch",
+                        },
+                    )
+                    await self.event_bus.emit(
+                        AgentEvents.INFO.value,
+                        {
+                            "message": f"   Model: {self.agent.current_model}",
+                            "context": "provider_switch",
+                        },
+                    )
             except Exception as e:
-                await self.event_bus.emit(AgentEvents.ERROR.value, {
-                    "message": f"Provider switch failed: {str(e)}",
-                    "context": "provider_switch"
-                })
+                await self.event_bus.emit(
+                    AgentEvents.ERROR.value,
+                    {
+                        "message": f"Provider switch failed: {str(e)}",
+                        "context": "provider_switch",
+                    },
+                )
                 self.logger.error("Provider switch error: %s", str(e), exc_info=True)
                 self.logger.error("Provider switch error: %s", str(e), exc_info=True)
 

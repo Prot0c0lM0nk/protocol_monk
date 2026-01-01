@@ -12,6 +12,7 @@ from enum import Enum
 
 class AgentEvents(Enum):
     """All events that the agent can emit"""
+
     ERROR = "agent.error"
     WARNING = "agent.warning"
     INFO = "agent.info"
@@ -47,6 +48,7 @@ class AgentEvents(Enum):
 @dataclass
 class Event:
     """Event data container"""
+
     type: str
     data: Dict[str, Any]
     timestamp: float
@@ -79,7 +81,7 @@ class EventBus:
                 event = Event(
                     type=event_type,
                     data=data,
-                    timestamp=asyncio.get_event_loop().time()
+                    timestamp=asyncio.get_event_loop().time(),
                 )
 
                 # Call all subscribers

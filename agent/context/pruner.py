@@ -56,21 +56,21 @@ class ContextPruner:
         """
         try:
             total_tokens = 0
-            
+
             # 1. Estimate Text Content
             if msg.content:
                 total_tokens += accountant.estimate(msg.content)
-            
+
             # 2. Estimate Tool Calls (Assistant)
             if msg.tool_calls:
                 # Serialize to string to get a rough token count for the JSON structure
                 tool_str = json.dumps(msg.tool_calls)
                 total_tokens += accountant.estimate(tool_str)
-                
+
             # 3. Estimate Tool Results (Tool)
             # (Content is already handled in step 1, but if we had extra fields they'd go here)
-            
-            return max(1, total_tokens) # Ensure we never return 0 for a valid message
+
+            return max(1, total_tokens)  # Ensure we never return 0 for a valid message
 
         except TokenEstimationError:
             raise
@@ -114,9 +114,11 @@ class ContextPruner:
 
         if len(conversation) <= 4:
             # Minimal logic for short convos
-            current_tokens = sum(self._estimate_message_tokens(msg, accountant) for msg in conversation)
+            current_tokens = sum(
+                self._estimate_message_tokens(msg, accountant) for msg in conversation
+            )
             if current_tokens > self.max_tokens:
-                 return self._select_fitting_messages(
+                return self._select_fitting_messages(
                     [(0.0, i, msg) for i, msg in enumerate(conversation)], accountant
                 )
             return conversation

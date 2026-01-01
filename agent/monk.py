@@ -23,9 +23,18 @@ from agent.taor_loop import TAORLoop
 from agent.tool_executor import ExecutionSummary, ToolExecutor
 from config.static import settings
 from agent.events import EventBus, AgentEvents, get_event_bus
-from agent.interfaces import AgentInterface, AgentResponse, CommandResult, ToolExecutionRequest, ToolExecutionResult, UserInputRequest, UserInputResponse
+from agent.interfaces import (
+    AgentInterface,
+    AgentResponse,
+    CommandResult,
+    ToolExecutionRequest,
+    ToolExecutionResult,
+    UserInputRequest,
+    UserInputResponse,
+)
 from utils.enhanced_logger import EnhancedLogger
 from utils.proper_tool_calling import ProperToolCalling
+
 
 class ProtocolAgent(AgentInterface):
     """Core agent that handles the main interaction loop without UI dependencies."""
@@ -37,7 +46,7 @@ class ProtocolAgent(AgentInterface):
         provider: str = "ollama",
         tool_registry=None,
         event_bus: Optional[EventBus] = None,
-        ui = None,
+        ui=None,
     ):
         # 1. IMMEDIATE ASSIGNMENTS
         self.working_dir = Path(working_dir).resolve()
@@ -100,11 +109,11 @@ class ProtocolAgent(AgentInterface):
     async def _handle_agent_event(self, event: str, data: Dict[str, Any]) -> Any:
         """
         Handle agent events by emitting them to the event bus.
-        
+
         Args:
             event: Type of agent event (confirm, progress, result, etc.)
             data: Event data dictionary
-            
+
         Returns:
             Any: Response based on event type (None for most events)
         """
@@ -114,12 +123,12 @@ class ProtocolAgent(AgentInterface):
             tool_request = ToolExecutionRequest(
                 tool_name=data["tool_call"]["name"],
                 parameters=data["tool_call"]["arguments"],
-                tool_call_id=data["tool_call"].get("id")
+                tool_call_id=data["tool_call"].get("id"),
             )
             # Emit confirmation request and wait for response
             # For now, we'll use the event bus to handle this
             return await self._request_tool_confirmation(tool_request)
-            
+
         # Events that emit but don't return values
         event_mapping = {
             "execution_start": AgentEvents.TOOL_EXECUTION_START,
@@ -131,11 +140,11 @@ class ProtocolAgent(AgentInterface):
             "task_complete": AgentEvents.TOOL_EXECUTION_COMPLETE,
             "auto_confirm_changed": AgentEvents.STATUS_CHANGED,
         }
-        
+
         if event in event_mapping:
             agent_event = event_mapping[event]
             await self.event_bus.emit(agent_event.value, data)
-            
+
         return None
 
     async def process_request(self, user_input: str) -> bool:
@@ -181,20 +190,29 @@ class ProtocolAgent(AgentInterface):
             self.enhanced_logger.log_context_snapshot(filtered)
             return filtered
         except ContextValidationError as e:
-            await self.event_bus.emit(AgentEvents.ERROR.value, {
-                "message": f"Context validation error: {e}",
-                "context": "context_validation"
-            })
-            await self.event_bus.emit(AgentEvents.ERROR.value, {
-                "message": "Please clear the context with '/clear' command and try again.",
-                "context": "context_validation"
-            })
+            await self.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": f"Context validation error: {e}",
+                    "context": "context_validation",
+                },
+            )
+            await self.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": "Please clear the context with '/clear' command and try again.",
+                    "context": "context_validation",
+                },
+            )
             return None
         except Exception as e:
-            await self.event_bus.emit(AgentEvents.ERROR.value, {
-                "message": f"Error getting context: {e}",
-                "context": "context_retrieval"
-            })
+            await self.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": f"Error getting context: {e}",
+                    "context": "context_retrieval",
+                },
+            )
             return None
 
     async def _get_model_response(self, context: List[Dict]):
@@ -215,7 +233,9 @@ class ProtocolAgent(AgentInterface):
                 # Handle both text and dict responses
                 if isinstance(chunk, str):
                     full_response += chunk
-                    await self.event_bus.emit(AgentEvents.STREAM_CHUNK.value, {"chunk": chunk})
+                    await self.event_bus.emit(
+                        AgentEvents.STREAM_CHUNK.value, {"chunk": chunk}
+                    )
                 elif isinstance(chunk, (dict, list)):
                     full_response = chunk
 
@@ -230,7 +250,10 @@ class ProtocolAgent(AgentInterface):
                     if "tool_calls" in full_response:
                         tool_calls = full_response["tool_calls"]
                     # Check nested in message (Ollama style)
-                    elif "message" in full_response and "tool_calls" in full_response["message"]:
+                    elif (
+                        "message" in full_response
+                        and "tool_calls" in full_response["message"]
+                    ):
                         tool_calls = full_response["message"]["tool_calls"]
 
                 # 2. Add to Context if Tools Found
@@ -242,21 +265,30 @@ class ProtocolAgent(AgentInterface):
                 if isinstance(full_response, str):
                     await self.context_manager.add_assistant_message(full_response)
                     return full_response
-                    
+
             return full_response
 
         except ModelRateLimitError as e:
             e.log_error()
-            await self.event_bus.emit(AgentEvents.WARNING.value, {"message": e.user_hint, "context": "rate_limit"})
+            await self.event_bus.emit(
+                AgentEvents.WARNING.value,
+                {"message": e.user_hint, "context": "rate_limit"},
+            )
             await asyncio.sleep(e.retry_after)
             return await self._get_model_response(context)  # Retry
         except ModelResponseParseError as e:
             e.log_error()
-            await self.event_bus.emit(AgentEvents.ERROR.value, {"message": "Model returned invalid data.", "context": "parse_error"})
+            await self.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {"message": "Model returned invalid data.", "context": "parse_error"},
+            )
             return "Fallback error."
         except Exception as e:
             self.logger.exception("Model unavailable.")
-            await self.event_bus.emit(AgentEvents.ERROR.value, {"message": "Model unavailable.", "context": "model_unavailable"})
+            await self.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {"message": "Model unavailable.", "context": "model_unavailable"},
+            )
             return "Fallback error."
         finally:
             await self.event_bus.emit(AgentEvents.THINKING_STOPPED.value, {})
@@ -317,7 +349,7 @@ class ProtocolAgent(AgentInterface):
         """
         had_failure = False
         for result in summary.results:
-            
+
             # Detect if this was a file read (for invalidation)
             file_path = None
             if result.tool_name == "read_file" and result.success:
@@ -330,7 +362,7 @@ class ProtocolAgent(AgentInterface):
                 tool_name=result.tool_name or "unknown_tool",
                 tool_call_id=getattr(result, "tool_call_id", None),
                 content=result.output,
-                file_path=file_path 
+                file_path=file_path,
             )
 
             if not result.success:
@@ -343,7 +375,10 @@ class ProtocolAgent(AgentInterface):
         Reset the context manager and UI.
         """
         await self.context_manager.clear()
-        await self.event_bus.emit(AgentEvents.INFO.value, {"message": "✓ Cleared.", "context": "context_cleared"})
+        await self.event_bus.emit(
+            AgentEvents.INFO.value,
+            {"message": "✓ Cleared.", "context": "context_cleared"},
+        )
 
     async def get_status(self) -> Dict:
         """
@@ -436,21 +471,39 @@ class ProtocolAgent(AgentInterface):
                     details={"provider": provider, "original_error": str(e)},
                 ) from e
 
-
     async def run(self):
         """Main agent loop - now handles its own UI and interaction."""
         try:
             # Ensure UI is available
             if not self.ui:
                 raise RuntimeError("UI not initialized. Please inject a UI instance.")
-            
+
             # Initialize command dispatcher
             from agent.command_dispatcher import CommandDispatcher
+
             self.command_dispatcher = CommandDispatcher(self)
-            await self.event_bus.emit(AgentEvents.INFO.value, {"message": f"🤖 Protocol Monk started in {self.working_dir}", "context": "startup"})
-            await self.event_bus.emit(AgentEvents.INFO.value, {"message": f"Model: {self.current_model} ({self.current_provider})", "context": "startup"})
-            await self.event_bus.emit(AgentEvents.INFO.value, {"message": "Type 'help' for commands, 'quit' to exit.", "context": "startup"})
-            
+            await self.event_bus.emit(
+                AgentEvents.INFO.value,
+                {
+                    "message": f"🤖 Protocol Monk started in {self.working_dir}",
+                    "context": "startup",
+                },
+            )
+            await self.event_bus.emit(
+                AgentEvents.INFO.value,
+                {
+                    "message": f"Model: {self.current_model} ({self.current_provider})",
+                    "context": "startup",
+                },
+            )
+            await self.event_bus.emit(
+                AgentEvents.INFO.value,
+                {
+                    "message": "Type 'help' for commands, 'quit' to exit.",
+                    "context": "startup",
+                },
+            )
+
             while True:
                 try:
                     # Use new interface method for user input
@@ -460,32 +513,50 @@ class ProtocolAgent(AgentInterface):
                         continue
                     if not user_input:
                         continue
-                    
+
                     # Handle special commands
                     if user_input.lower() in ["quit", "exit", "/quit", "/exit"]:
-                        await self.event_bus.emit(AgentEvents.INFO.value, {"message": "Goodbye!", "context": "shutdown"})
-                    
+                        await self.event_bus.emit(
+                            AgentEvents.INFO.value,
+                            {"message": "Goodbye!", "context": "shutdown"},
+                        )
+
                     # Use command dispatcher to handle input
                     result = await self.command_dispatcher.dispatch(user_input)
-                    
+
                     if result is False:  # Quit command
-                        await self.event_bus.emit(AgentEvents.INFO.value, {"message": "Goodbye!", "context": "shutdown"})
+                        await self.event_bus.emit(
+                            AgentEvents.INFO.value,
+                            {"message": "Goodbye!", "context": "shutdown"},
+                        )
                         break  # EXIT THE LOOP - don't continue running!
-                    
+
                     # Not a command, process as chat - but only if it wasn't handled
-                    if result is None:  # Only process as chat if command dispatcher didn't handle it
+                    if (
+                        result is None
+                    ):  # Only process as chat if command dispatcher didn't handle it
                         success = await self.process_request(user_input)
-                    
+
                 except KeyboardInterrupt:
-                    await self.event_bus.emit(AgentEvents.INFO.value, {"message": "\nUse 'quit' to exit.", "context": "user_interrupt"})
-                except Exception as e:                
-                    await self.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Error: {e}", "context": "runtime_error"})
+                    await self.event_bus.emit(
+                        AgentEvents.INFO.value,
+                        {
+                            "message": "\nUse 'quit' to exit.",
+                            "context": "user_interrupt",
+                        },
+                    )
+                except Exception as e:
+                    await self.event_bus.emit(
+                        AgentEvents.ERROR.value,
+                        {"message": f"Error: {e}", "context": "runtime_error"},
+                    )
         except Exception as e:
             self.logger.error(f"Agent run loop failed: {e}")
             raise
-        
 
-    async def _request_tool_confirmation(self, tool_request: ToolExecutionRequest) -> bool:
+    async def _request_tool_confirmation(
+        self, tool_request: ToolExecutionRequest
+    ) -> bool:
         """Request tool execution confirmation through event system."""
         # For now, emit the event and provide a default response
         # In the future, this will wait for UI response via event bus
@@ -495,20 +566,20 @@ class ProtocolAgent(AgentInterface):
                 "tool_name": tool_request.tool_name,
                 "parameters": tool_request.parameters,
                 "tool_call_id": tool_request.tool_call_id,
-                "requires_confirmation": True
-            }
+                "requires_confirmation": True,
+            },
         )
         # Default to true for now - we'll implement proper confirmation later
         return True
-
 
     async def get_user_input(self, request: UserInputRequest) -> UserInputResponse:
         """Get user input - temporary implementation for backward compatibility"""
         # For now, delegate to UI for input
         # In the future, this will be handled by event system
-        if not hasattr(self, 'ui') or self.ui is None:
+        if not hasattr(self, "ui") or self.ui is None:
             from ui.plain import PlainUI
+
             self.ui = PlainUI()
-        
+
         text = await self.ui.get_input()
         return UserInputResponse(text=text, cancelled=False)
