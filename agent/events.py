@@ -25,6 +25,14 @@ class AgentEvents(Enum):
     TOOL_ERROR = "agent.tool_error"
     TOOL_RESULT = "agent.tool_result"
 
+    # --- NEW: Critical Tool Events (Fixed Crash) ---
+    TOOL_CONFIRMATION_REQUESTED = "agent.tool_confirmation_requested"
+    TOOL_REJECTED = "agent.tool_rejected"
+    TOOL_MODIFIED = "agent.tool_modified"
+    TASK_COMPLETE = "agent.task_complete"
+    AUTO_CONFIRM_CHANGED = "agent.auto_confirm_changed"
+    # -----------------------------------------------
+
     STREAM_CHUNK = "agent.stream_chunk"
     RESPONSE_COMPLETE = "agent.response_complete"
 
