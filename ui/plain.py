@@ -16,6 +16,7 @@ from datetime import datetime
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
+from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.syntax import Syntax
@@ -147,12 +148,6 @@ class PlainUI(UI):
         if lines != "N/A":
             self.console.print(f"Lines:     {lines}")
 
-        # Pretty print other params if complex
-        # We skip the 'full' params dump if we extracted the key info above to keep it clean,
-        # unless it's a tool we don't recognize well.
-        if tool_name not in ["FileEditor", "FileReader"]:
-            self.console.print(f"Params:    {params}")
-
         self.console.print("-" * 50, style="dim")
 
         # Spawn background task
@@ -219,9 +214,8 @@ class PlainUI(UI):
             self.console.print(f"[dim][SYS] Executing: {tool_name}...[/dim]")
 
     async def _on_tool_progress(self, data: Dict[str, Any]):
-        message = data.get("message", "Progress update")
-        progress = data.get("progress", 0)
-        self.console.print(f"[dim][SYS] {message} ({progress}%)[/dim]")
+        # User Feedback: This is usually noise. Silenced.
+        pass
 
     async def _on_tool_complete(self, data: Dict[str, Any]):
         # Minimal noise on completion, specific results handled by _on_tool_result
@@ -380,15 +374,15 @@ class PlainUI(UI):
             is_main_loop = prompt == "" or prompt.strip() == ">>>"
 
             if is_main_loop:
-                # White (default) label, passed to prompt_toolkit to fix cursor
-                label = "\n[USER] > "
+                # White (default) label for Main User Input
+                label = HTML("\nUSER &gt; ")
             else:
-                # Blue ANSI for SYS to preserve color without Rich conflicts
+                # FIX: Changed fg='blue' to fg='ansibrightblack' to match the [dim] style
+                # of the other system logs.
                 clean_prompt = prompt.rstrip(" :>")
-                label = f"\n\x1b[34m[SYS] {clean_prompt}\x1b[0m > "
+                label = HTML(f"\n<style fg='ansibrightblack'>[SYS] {clean_prompt}</style> &gt; ")
 
             try:
-                # Pass label directly to prompt_async
                 with patch_stdout():
                     return await self.session.prompt_async(label)
             except (KeyboardInterrupt, EOFError):
