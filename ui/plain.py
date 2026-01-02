@@ -274,91 +274,51 @@ class PlainUI(UI):
     async def _print_stream_line(self, line: str, is_thinking: bool = False):
         """Render a single line, handling code blocks and thinking state"""
         async with self._lock:
-            # Handle Thinking Cleanup (The old boolean spinner)
+            # 1. Handle Thinking Cleanup (The old boolean spinner)
+            # If the spinner was running, clear it and print the [MONK] tag once.
             if self._thinking:
                 self.console.print("\x1b[2K\r", end="")
                 self.console.print("[bold green][MONK][/bold green] ", end="")
                 self._thinking = False
 
-            # NEW: Thinking Block Rendering
+            # 2. Thinking Block Rendering (Dimmed)
             if is_thinking:
                 # Render raw text in dim italic, no markdown parsing
+                # This prevents 'rich' from breaking on partial reasoning streams
                 self.console.print(line, style="dim italic")
                 return
 
-            # --- Existing Markdown/Code Block Logic Below ---
-            
-            # Check for Code Block Toggles
-            if line.strip().startswith("```"):
-                if self._in_code_block:
-                    self._in_code_block = False
-                    self.console.print(line, style="dim")
-                else:
-                    self._in_code_block = True
-                    lang = line.strip().lstrip("`")
-                    self._code_lang = lang if lang else "text"
-                    self.console.print(line, style="dim")
-                return
-
-            # Render Content
-            if self._in_code_block:
-                syntax = Syntax(
-                    line, 
-                    self._code_lang, 
-                    theme="ansi_dark", 
-                    word_wrap=False, 
-                    padding=0, 
-                    background_color="default"
-                )
-                self.console.print(syntax)
-            else:
-                # Text Mode: Escape HTML tags
-                safe_line = line.replace("<", "\\<")
-                md = Markdown(safe_line)
-                self.console.print(md)
-        """Render a single line, handling code blocks with tighter spacing"""
-        async with self._lock:
-            # 1. Handle Thinking Cleanup
-            if self._thinking:
-                self.console.print("\x1b[2K\r", end="")
-                self.console.print("[bold green][MONK][/bold green] ", end="")
-                self._thinking = False
-
-            # 2. Check for Code Block Toggles
+            # 3. Code Block Toggles
             if line.strip().startswith("```"):
                 if self._in_code_block:
                     # Closing the block
                     self._in_code_block = False
-                    # Print the closing fence dimly
                     self.console.print(line, style="dim")
                 else:
                     # Opening the block
                     self._in_code_block = True
-                    # Extract language if present (e.g. ```python -> python)
                     lang = line.strip().lstrip("`")
                     self._code_lang = lang if lang else "text"
-                    # Print the opening fence dimly
                     self.console.print(line, style="dim")
                 return
 
-            # 3. Render Content
+            # 4. Content Rendering
             if self._in_code_block:
-                # CODE MODE: Use Syntax to highlight, but print directly to avoid margins
-                # We use 'background_color="default"' to prevent "striping" artifacts
+                # Code Mode: Syntax Highlighting
                 syntax = Syntax(
                     line,
                     self._code_lang,
-                    theme="ansi_dark",  # Uses terminal colors (safe)
+                    theme="ansi_dark",
                     word_wrap=False,
                     padding=0,
-                    background_color="default",
+                    background_color="default"
                 )
                 self.console.print(syntax)
             else:
-                # TEXT MODE: Render Markdown
-                # Note: Single lines of text will still have small margins,
-                # but this is acceptable for prose.
-                md = Markdown(line)
+                # Text Mode: Render Markdown
+                # Escape HTML-like tags to prevent Rich from interpreting them as styles
+                safe_line = line.replace("<", "\\<")
+                md = Markdown(safe_line)
                 self.console.print(md)
 
     async def _on_context_overflow(self, data: Dict[str, Any]):
