@@ -47,6 +47,8 @@ class PlainUI(UI):
         # Traffic Controller State
         self.pending_confirmation: Optional[Dict[str, Any]] = None
 
+        # NEW: Track thinking block state
+        self._in_thinking_block = False
         # Buffer for markdown processing
         self._response_buffer = ""
         self._in_markdown_block = False
@@ -231,26 +233,89 @@ class PlainUI(UI):
         await self._display_tool_result_markdown(tool_name, result)
 
     async def _on_stream_chunk(self, data: Dict[str, Any]):
-        chunk = data.get("chunk", "")
+        # Check for thinking content
+        thinking_chunk = data.get("thinking")
+        answer_chunk = data.get("chunk", "")
 
-        # Append to buffer safely (asyncio is single-threaded)
-        self._stream_line_buffer += chunk
+        if thinking_chunk:
+            self._in_thinking_block = True
+            self._stream_line_buffer += thinking_chunk
+        elif answer_chunk:
+            # If we were thinking, we are strictly NOT anymore
+            if self._in_thinking_block:
+                # Flush the buffer as thinking text first
+                if self._stream_line_buffer:
+                    await self._print_stream_line(self._stream_line_buffer, is_thinking=True)
+                    self._stream_line_buffer = ""
+                
+                # Print a visual separator or newline
+                self.console.print() 
+                self._in_thinking_block = False
+            
+            self._stream_line_buffer += answer_chunk
 
-        # Process all complete lines immediately
+        # Process complete lines
         while "\n" in self._stream_line_buffer:
             line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
-            await self._print_markdown_line(line)
-
+            # Pass the state to the printer
+            await self._print_stream_line(line, is_thinking=self._in_thinking_block)
     async def _on_response_complete(self, data: Dict[str, Any]):
         # Flush any remaining text in the buffer (e.g. text without final newline)
         if self._stream_line_buffer:
-            await self._print_markdown_line(self._stream_line_buffer)
+            await self._print_stream_line(self._stream_line_buffer, is_thinking=self._in_thinking_block)
             self._stream_line_buffer = ""
 
         # Print a final newline to separate from the next prompt
         self.console.print()
 
-    async def _print_markdown_line(self, line: str):
+        # Print a final newline to separate from the next prompt
+        self.console.print()
+
+    async def _print_stream_line(self, line: str, is_thinking: bool = False):
+        """Render a single line, handling code blocks and thinking state"""
+        async with self._lock:
+            # Handle Thinking Cleanup (The old boolean spinner)
+            if self._thinking:
+                self.console.print("\x1b[2K\r", end="")
+                self.console.print("[bold green][MONK][/bold green] ", end="")
+                self._thinking = False
+
+            # NEW: Thinking Block Rendering
+            if is_thinking:
+                # Render raw text in dim italic, no markdown parsing
+                self.console.print(line, style="dim italic")
+                return
+
+            # --- Existing Markdown/Code Block Logic Below ---
+            
+            # Check for Code Block Toggles
+            if line.strip().startswith("```"):
+                if self._in_code_block:
+                    self._in_code_block = False
+                    self.console.print(line, style="dim")
+                else:
+                    self._in_code_block = True
+                    lang = line.strip().lstrip("`")
+                    self._code_lang = lang if lang else "text"
+                    self.console.print(line, style="dim")
+                return
+
+            # Render Content
+            if self._in_code_block:
+                syntax = Syntax(
+                    line, 
+                    self._code_lang, 
+                    theme="ansi_dark", 
+                    word_wrap=False, 
+                    padding=0, 
+                    background_color="default"
+                )
+                self.console.print(syntax)
+            else:
+                # Text Mode: Escape HTML tags
+                safe_line = line.replace("<", "\\<")
+                md = Markdown(safe_line)
+                self.console.print(md)
         """Render a single line, handling code blocks with tighter spacing"""
         async with self._lock:
             # 1. Handle Thinking Cleanup

@@ -191,6 +191,11 @@ class OllamaModelClient(BaseModelClient):
                             if "message" in chunk_data:
                                 message = chunk_data["message"]
 
+                                # NEW: Check for thinking content
+                                if "thinking" in message and message["thinking"]:
+                                    # Yield a special packet that Monk will recognize
+                                    yield {"type": "thinking", "content": message["thinking"]}
+
                                 # Check for text content first
                                 if "content" in message and message["content"]:
                                     yield message["content"]
@@ -198,7 +203,6 @@ class OllamaModelClient(BaseModelClient):
                                 # Check for complete tool calls (Ollama format - direct JSON)
                                 elif "tool_calls" in message and message["tool_calls"]:
                                     yield chunk_data  # Return complete response with tool calls
-                                # Log debug info if enabled
                                 if "content" in message and message["content"]:
                                     self.logger.debug(
                                         "Ollama chunk: %s", message["content"]

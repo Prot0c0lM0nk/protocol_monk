@@ -230,7 +230,15 @@ class ProtocolAgent(AgentInterface):
             async for chunk in self.model_client.get_response_async(
                 context, stream=True, tools=tools
             ):
-                # Handle both text and dict responses
+                # NEW: Handle Thinking Packets First
+                if isinstance(chunk, dict) and chunk.get("type") == "thinking":
+                    await self.event_bus.emit(
+                        AgentEvents.STREAM_CHUNK.value, 
+                        {"thinking": chunk["content"]}
+                    )
+                    continue
+
+                # Handle both text and dict responses (EXISTING)
                 if isinstance(chunk, str):
                     full_response += chunk
                     await self.event_bus.emit(
@@ -238,7 +246,6 @@ class ProtocolAgent(AgentInterface):
                     )
                 elif isinstance(chunk, (dict, list)):
                     full_response = chunk
-
             # Processing after stream ends
             if full_response:
                 # 1. Normalize Extraction of Tool Calls
