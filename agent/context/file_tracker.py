@@ -59,8 +59,8 @@ class FileTracker:
                         filepath = msg.metadata.get("file_read", "unknown_file")
 
                         msg.content = (
-                            f"[System: The content of '{filepath}' has been invalidated "
-                            "to save context. See newer messages for the latest version.]"
+                            f"[System: File content '{filepath}' refreshed "
+                            "see latest messages for current version.]"
                         )
 
                         # Cleanup metadata tags
