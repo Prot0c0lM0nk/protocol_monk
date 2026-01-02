@@ -58,39 +58,6 @@ class ToolResult:
     tool_name: Optional[str] = None
 
 
-class AgentInterface(ABC):
-    """Interface that UI layers can use to interact with agent"""
-
-    @abstractmethod
-    async def process_request(self, user_input: str) -> AgentResponse:
-        """Process a user request and return response"""
-        pass
-
-    @abstractmethod
-    async def execute_command(
-        self, command: str, args: Dict[str, Any]
-    ) -> CommandResult:
-        """Execute a slash command"""
-        pass
-
-    @abstractmethod
-    async def execute_tool(
-        self, tool_request: ToolExecutionRequest
-    ) -> ToolExecutionResult:
-        """Execute a single tool with user approval"""
-        pass
-
-    @abstractmethod
-    async def clear_conversation(self) -> None:
-        """Clear conversation context"""
-        pass
-
-    @abstractmethod
-    async def get_status(self) -> Dict[str, Any]:
-        """Get current agent status"""
-        pass
-
-
 class UIEventHandler(ABC):
     """Interface that agent can use to handle UI events"""
 
@@ -127,6 +94,35 @@ class UserInputResponse:
 
 class AgentInterface(ABC):
     """Interface that UI layers can use to interact with agent"""
+
+    @abstractmethod
+    async def process_request(self, user_input: str) -> AgentResponse:
+        """Process a user request and return response"""
+        pass
+
+    @abstractmethod
+    async def execute_command(
+        self, command: str, args: Dict[str, Any]
+    ) -> CommandResult:
+        """Execute a slash command"""
+        pass
+
+    @abstractmethod
+    async def execute_tool(
+        self, tool_request: ToolExecutionRequest
+    ) -> ToolExecutionResult:
+        """Execute a single tool with user approval"""
+        pass
+
+    @abstractmethod
+    async def clear_conversation(self) -> None:
+        """Clear conversation context"""
+        pass
+
+    @abstractmethod
+    async def get_status(self) -> Dict[str, Any]:
+        """Get current agent status"""
+        pass
 
     @abstractmethod
     async def get_user_input(self, request: UserInputRequest) -> UserInputResponse:
