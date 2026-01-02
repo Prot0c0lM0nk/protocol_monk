@@ -38,6 +38,9 @@ class PlainUI(UI):
         self.session = PromptSession()
         self._lock: asyncio.Lock = asyncio.Lock()
 
+        # NEW: Robust Line Buffer
+        self._stream_line_buffer = ""
+
         # Traffic Controller State
         self.pending_confirmation: Optional[Dict[str, Any]] = None
 
@@ -233,39 +236,38 @@ class PlainUI(UI):
 
     async def _on_stream_chunk(self, data: Dict[str, Any]):
         chunk = data.get("chunk", "")
+        
+        # Append to buffer safely (asyncio is single-threaded)
+        self._stream_line_buffer += chunk
 
-        # Process markdown blocks
-        if "```markdown" in chunk:
-            self._in_markdown_block = True
-            chunk = chunk.split("```markdown", 1)[-1]
-
-        if self._in_markdown_block:
-            if "```" in chunk:
-                self._in_markdown_block = False
-                chunk = chunk.split("```", 1)[0]
-                if chunk.strip():
-                    self._response_buffer += chunk
-
-                # Render buffered markdown
-                if self._response_buffer.strip():
-                    md = Markdown(self._response_buffer.strip())
-                    self.console.print(md)
-                self._response_buffer = ""
-            else:
-                self._response_buffer += chunk
-        else:
-            # Stream normally
-            await self.print_stream(chunk)
+        # Process all complete lines immediately
+        while "\n" in self._stream_line_buffer:
+            line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
+            await self._print_markdown_line(line)
 
     async def _on_response_complete(self, data: Dict[str, Any]):
-        # Flush buffer
-        if self._response_buffer.strip():
-            md = Markdown(self._response_buffer.strip())
-            self.console.print(md)
-            self._response_buffer = ""
+        # Flush any remaining text in the buffer (e.g. text without final newline)
+        if self._stream_line_buffer:
+            await self._print_markdown_line(self._stream_line_buffer)
+            self._stream_line_buffer = ""
+        
+        # Print a final newline to separate from the next prompt
+        self.console.print()
 
-        self._in_markdown_block = False
-        self.console.print()  # Newline after response
+    async def _print_markdown_line(self, line: str):
+        """Render a single line of Markdown to the console"""
+        async with self._lock:
+            # Handle the "Thinking" state transition
+            if self._thinking:
+                # Clear the line and print the permanent [MONK] tag
+                self.console.print("\x1b[2K\r", end="")
+                self.console.print("[bold green][MONK][/bold green] ", end="")
+                self._thinking = False
+                
+            # Render the line as a Markdown block
+            # This preserves **bold** and `code` formatting
+            md = Markdown(line)
+            self.console.print(md)
 
     async def _on_context_overflow(self, data: Dict[str, Any]):
         current = data.get("current_tokens", 0)
