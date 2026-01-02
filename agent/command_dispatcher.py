@@ -87,13 +87,13 @@ class CommandDispatcher:
         working_dir = self.agent.working_dir
 
         status_text = f"""Current State:
-🤖 Model: {stats.get('current_model', 'Unknown')}
-🔌 Provider: {stats.get('provider', 'Unknown')}
-📁 Working Directory: {working_dir.name}
+Model: {stats.get('current_model', 'Unknown')}
+Provider: {stats.get('provider', 'Unknown')}
+Working Directory: {working_dir.name}
    {working_dir}
    
-💬 Conversation: {stats.get('conversation_length', 0)} messages
-🧮 Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}"""
+Conversation: {stats.get('conversation_length', 0)} messages
+Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}"""
 
         await self.event_bus.emit(
             AgentEvents.INFO.value, {"message": status_text, "context": "status"}
@@ -138,7 +138,7 @@ class CommandDispatcher:
             await self.event_bus.emit(
                 AgentEvents.INFO.value,
                 {
-                    "message": f"📖 Ingested '{filename}' ({len(content)} chars) into context."
+                    "message": f"Ingested '{filename}' ({len(content)} chars) into context."
                 },
             )
 
@@ -172,7 +172,7 @@ class CommandDispatcher:
         if selected_model:
             await self.agent.set_model(selected_model)
             await self.event_bus.emit(
-                AgentEvents.INFO.value, {"message": f"✅ Switched to {selected_model}"}
+                AgentEvents.INFO.value, {"message": f"✔️ Switched to {selected_model}"}
             )
         else:
             await self.event_bus.emit(
@@ -209,7 +209,7 @@ class CommandDispatcher:
 
             await self.event_bus.emit(
                 AgentEvents.INFO.value,
-                {"message": f"🔌 Switched provider to {selected}"},
+                {"message": f"Switched provider to {selected}"},
             )
 
             # 4. CHAINING: Automatically trigger model switch for the new provider

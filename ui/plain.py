@@ -390,14 +390,29 @@ class PlainUI(UI):
                 return ""
 
     def _display_info_list(self, items: List[Any]):
-        """Render a numbered list cleanly"""
+        """Render a numbered list cleanly (Model + Context only)"""
         for i, item in enumerate(items, 1):
+            # 1. Extract Name and Context safely (handle dict or object)
             if isinstance(item, dict):
-                name = item.get("name", str(item))
-                extra = f" ({item.get('provider')})" if item.get("provider") else ""
-                self.console.print(f"  {i}. [cyan]{name}[/cyan][dim]{extra}[/dim]")
+                name = item.get("name", "Unknown")
+                ctx = item.get("context_window", "N/A")
             else:
-                self.console.print(f"  {i}. [cyan]{item}[/cyan]")
+                # Handle Pydantic models or regular objects
+                name = getattr(item, "name", str(item))
+                ctx = getattr(item, "context_window", "N/A")
+
+            # 2. Format Context Window for readability (e.g., 262144 -> 262k)
+            try:
+                if isinstance(ctx, (int, float)) and ctx > 1000:
+                    ctx_str = f"{int(ctx/1024)}k"
+                else:
+                    ctx_str = str(ctx)
+            except (ValueError, TypeError):
+                ctx_str = str(ctx)
+
+            # 3. Render clean line
+            # Format: "1. ModelName (Context: 128k)"
+            self.console.print(f"  {i}. [cyan]{name}[/cyan] [dim](Context: {ctx_str})[/dim]")
 
     async def display_selection_list(self, title: str, items: List[Any]) -> Any:
         """Interactive selection list if requested by agent"""

@@ -514,21 +514,11 @@ class ProtocolAgent(AgentInterface):
                     if not user_input:
                         continue
 
-                    # Handle special commands
-                    if user_input.lower() in ["quit", "exit", "/quit", "/exit"]:
-                        await self.event_bus.emit(
-                            AgentEvents.INFO.value,
-                            {"message": "Goodbye!", "context": "shutdown"},
-                        )
-
                     # Use command dispatcher to handle input
                     result = await self.command_dispatcher.dispatch(user_input)
 
                     if result is False:  # Quit command
-                        await self.event_bus.emit(
-                            AgentEvents.INFO.value,
-                            {"message": "Goodbye!", "context": "shutdown"},
-                        )
+                        
                         break  # EXIT THE LOOP - don't continue running!
 
                     # Not a command, process as chat - but only if it wasn't handled
