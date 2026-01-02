@@ -518,7 +518,7 @@ class ProtocolAgent(AgentInterface):
                     result = await self.command_dispatcher.dispatch(user_input)
 
                     if result is False:  # Quit command
-                        
+
                         break  # EXIT THE LOOP - don't continue running!
 
                     # Not a command, process as chat - but only if it wasn't handled

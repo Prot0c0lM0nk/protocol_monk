@@ -10,7 +10,6 @@ Purpose: Professional "Standard Output" interface.
 """
 
 import asyncio
-import re
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
@@ -233,7 +232,7 @@ class PlainUI(UI):
 
     async def _on_stream_chunk(self, data: Dict[str, Any]):
         chunk = data.get("chunk", "")
-        
+
         # Append to buffer safely (asyncio is single-threaded)
         self._stream_line_buffer += chunk
 
@@ -247,7 +246,7 @@ class PlainUI(UI):
         if self._stream_line_buffer:
             await self._print_markdown_line(self._stream_line_buffer)
             self._stream_line_buffer = ""
-        
+
         # Print a final newline to separate from the next prompt
         self.console.print()
 
@@ -282,17 +281,17 @@ class PlainUI(UI):
                 # CODE MODE: Use Syntax to highlight, but print directly to avoid margins
                 # We use 'background_color="default"' to prevent "striping" artifacts
                 syntax = Syntax(
-                    line, 
-                    self._code_lang, 
+                    line,
+                    self._code_lang,
                     theme="ansi_dark",  # Uses terminal colors (safe)
                     word_wrap=False,
                     padding=0,
-                    background_color="default"
+                    background_color="default",
                 )
                 self.console.print(syntax)
             else:
                 # TEXT MODE: Render Markdown
-                # Note: Single lines of text will still have small margins, 
+                # Note: Single lines of text will still have small margins,
                 # but this is acceptable for prose.
                 md = Markdown(line)
                 self.console.print(md)
@@ -347,7 +346,7 @@ class PlainUI(UI):
                 # FIX: Use ANSI \x1b[2K to clear the WHOLE line properly, then \r
                 self.console.print("\x1b[2K\r", end="")
                 self._thinking = False
-                
+
                 # Print the MONK tag once at the start
                 self.console.print("[bold green][MONK][/bold green] ", end="")
 
@@ -357,9 +356,7 @@ class PlainUI(UI):
         async with self._lock:
             self._thinking = True
             # FIX: Changed magenta to green to match the response tag
-            self.console.print(
-                f"\n[bold green][MONK][/bold green] {message}", end="\r"
-            )
+            self.console.print(f"\n[bold green][MONK][/bold green] {message}", end="\r")
 
     async def stop_thinking(self):
         async with self._lock:
@@ -380,7 +377,9 @@ class PlainUI(UI):
                 # FIX: Changed fg='blue' to fg='ansibrightblack' to match the [dim] style
                 # of the other system logs.
                 clean_prompt = prompt.rstrip(" :>")
-                label = HTML(f"\n<style fg='ansibrightblack'>[SYS] {clean_prompt}</style> &gt; ")
+                label = HTML(
+                    f"\n<style fg='ansibrightblack'>[SYS] {clean_prompt}</style> &gt; "
+                )
 
             try:
                 with patch_stdout():
@@ -412,7 +411,9 @@ class PlainUI(UI):
 
             # 3. Render clean line
             # Format: "1. ModelName (Context: 128k)"
-            self.console.print(f"  {i}. [cyan]{name}[/cyan] [dim](Context: {ctx_str})[/dim]")
+            self.console.print(
+                f"  {i}. [cyan]{name}[/cyan] [dim](Context: {ctx_str})[/dim]"
+            )
 
     async def display_selection_list(self, title: str, items: List[Any]) -> Any:
         """Interactive selection list if requested by agent"""
