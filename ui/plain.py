@@ -233,36 +233,42 @@ class PlainUI(UI):
         await self._display_tool_result_markdown(tool_name, result)
 
     async def _on_stream_chunk(self, data: Dict[str, Any]):
-        # Check for thinking content
-        thinking_chunk = data.get("thinking")
-        answer_chunk = data.get("chunk", "")
+        # LOCK THE ENTIRE HANDLER to prevent buffer race conditions
+        async with self._lock:
+            # Check for thinking content
+            thinking_chunk = data.get("thinking")
+            answer_chunk = data.get("chunk", "")
 
-        if thinking_chunk:
-            self._in_thinking_block = True
-            self._stream_line_buffer += thinking_chunk
-        elif answer_chunk:
-            # If we were thinking, we are strictly NOT anymore
-            if self._in_thinking_block:
-                # Flush the buffer as thinking text first
-                if self._stream_line_buffer:
-                    await self._print_stream_line(self._stream_line_buffer, is_thinking=True)
-                    self._stream_line_buffer = ""
-                
-                # Print a visual separator or newline
-                self.console.print() 
-                self._in_thinking_block = False
-            
-            self._stream_line_buffer += answer_chunk
+            if thinking_chunk:
+                self._in_thinking_block = True
+                self._stream_line_buffer += thinking_chunk
+            elif answer_chunk:
+                # If we were thinking, we are strictly NOT anymore
+                if self._in_thinking_block:
+                    # Flush the buffer as thinking text first
+                    if self._stream_line_buffer:
+                        # Call internal render directly (we already hold the lock)
+                        self._render_line(self._stream_line_buffer, is_thinking=True)
+                        self._stream_line_buffer = ""
 
-        # Process complete lines
-        while "\n" in self._stream_line_buffer:
-            line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
-            # Pass the state to the printer
-            await self._print_stream_line(line, is_thinking=self._in_thinking_block)
+                    # Print a visual separator or newline
+                    self.console.print()
+                    self._in_thinking_block = False
+
+                self._stream_line_buffer += answer_chunk
+
+            # Process complete lines
+            while "\n" in self._stream_line_buffer:
+                line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
+                # Call internal render directly (we already hold the lock)
+                self._render_line(line, is_thinking=self._in_thinking_block)
+
     async def _on_response_complete(self, data: Dict[str, Any]):
         # Flush any remaining text in the buffer (e.g. text without final newline)
         if self._stream_line_buffer:
-            await self._print_stream_line(self._stream_line_buffer, is_thinking=self._in_thinking_block)
+            await self._print_stream_line(
+                self._stream_line_buffer, is_thinking=self._in_thinking_block
+            )
             self._stream_line_buffer = ""
 
         # Print a final newline to separate from the next prompt
@@ -271,55 +277,53 @@ class PlainUI(UI):
         # Print a final newline to separate from the next prompt
         self.console.print()
 
-    async def _print_stream_line(self, line: str, is_thinking: bool = False):
-        """Render a single line, handling code blocks and thinking state"""
-        async with self._lock:
-            # 1. Handle Thinking Cleanup (The old boolean spinner)
-            # If the spinner was running, clear it and print the [MONK] tag once.
-            if self._thinking:
-                self.console.print("\x1b[2K\r", end="")
-                self.console.print("[bold green][MONK][/bold green] ", end="")
-                self._thinking = False
+    def _render_line(self, line: str, is_thinking: bool = False):
+        """
+        Internal render logic. Assumes self._lock is ALREADY held.
+        """
+        # 1. Handle Thinking Cleanup (The old boolean spinner)
+        if self._thinking:
+            self.console.print("\x1b[2K\r", end="")
+            self.console.print("[bold green][MONK][/bold green] ", end="")
+            self._thinking = False
 
-            # 2. Thinking Block Rendering (Dimmed)
-            if is_thinking:
-                # Render raw text in dim italic, no markdown parsing
-                # This prevents 'rich' from breaking on partial reasoning streams
-                self.console.print(line, style="dim italic")
-                return
+        # 2. Thinking Block Rendering (Dimmed)
+        if is_thinking:
+            self.console.print(line, style="dim italic")
+            return
 
-            # 3. Code Block Toggles
-            if line.strip().startswith("```"):
-                if self._in_code_block:
-                    # Closing the block
-                    self._in_code_block = False
-                    self.console.print(line, style="dim")
-                else:
-                    # Opening the block
-                    self._in_code_block = True
-                    lang = line.strip().lstrip("`")
-                    self._code_lang = lang if lang else "text"
-                    self.console.print(line, style="dim")
-                return
-
-            # 4. Content Rendering
+        # 3. Code Block Toggles
+        if line.strip().startswith("```"):
             if self._in_code_block:
-                # Code Mode: Syntax Highlighting
-                syntax = Syntax(
-                    line,
-                    self._code_lang,
-                    theme="ansi_dark",
-                    word_wrap=False,
-                    padding=0,
-                    background_color="default"
-                )
-                self.console.print(syntax)
+                self._in_code_block = False
+                self.console.print(line, style="dim")
             else:
-                # Text Mode: Render Markdown
-                # Escape HTML-like tags to prevent Rich from interpreting them as styles
-                safe_line = line.replace("<", "\\<")
-                md = Markdown(safe_line)
-                self.console.print(md)
+                self._in_code_block = True
+                lang = line.strip().lstrip("`")
+                self._code_lang = lang if lang else "text"
+                self.console.print(line, style="dim")
+            return
+
+        # 4. Content Rendering
+        if self._in_code_block:
+            syntax = Syntax(
+                line,
+                self._code_lang,
+                theme="ansi_dark",
+                word_wrap=False,
+                padding=0,
+                background_color="default",
+            )
+            self.console.print(syntax)
+        else:
+            safe_line = line.replace("<", "\\<")
+            md = Markdown(safe_line)
+            self.console.print(md)
+
+    async def _print_stream_line(self, line: str, is_thinking: bool = False):
+        """Public wrapper that acquires the lock"""
+        async with self._lock:
+            self._render_line(line, is_thinking)
 
     async def _on_context_overflow(self, data: Dict[str, Any]):
         current = data.get("current_tokens", 0)
