@@ -18,8 +18,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.text import Text
-from rich.style import Style
+from rich.syntax import Syntax
 
 from ui.base import UI, ToolResult
 from agent.events import AgentEvents, get_event_bus
@@ -40,6 +39,10 @@ class PlainUI(UI):
 
         # NEW: Robust Line Buffer
         self._stream_line_buffer = ""
+
+        # NEW: Track code block state
+        self._in_code_block = False
+        self._code_lang = "text"
 
         # Traffic Controller State
         self.pending_confirmation: Optional[Dict[str, Any]] = None
@@ -255,19 +258,50 @@ class PlainUI(UI):
         self.console.print()
 
     async def _print_markdown_line(self, line: str):
-        """Render a single line of Markdown to the console"""
+        """Render a single line, handling code blocks with tighter spacing"""
         async with self._lock:
-            # Handle the "Thinking" state transition
+            # 1. Handle Thinking Cleanup
             if self._thinking:
-                # Clear the line and print the permanent [MONK] tag
                 self.console.print("\x1b[2K\r", end="")
                 self.console.print("[bold green][MONK][/bold green] ", end="")
                 self._thinking = False
-                
-            # Render the line as a Markdown block
-            # This preserves **bold** and `code` formatting
-            md = Markdown(line)
-            self.console.print(md)
+
+            # 2. Check for Code Block Toggles
+            if line.strip().startswith("```"):
+                if self._in_code_block:
+                    # Closing the block
+                    self._in_code_block = False
+                    # Print the closing fence dimly
+                    self.console.print(line, style="dim")
+                else:
+                    # Opening the block
+                    self._in_code_block = True
+                    # Extract language if present (e.g. ```python -> python)
+                    lang = line.strip().lstrip("`")
+                    self._code_lang = lang if lang else "text"
+                    # Print the opening fence dimly
+                    self.console.print(line, style="dim")
+                return
+
+            # 3. Render Content
+            if self._in_code_block:
+                # CODE MODE: Use Syntax to highlight, but print directly to avoid margins
+                # We use 'background_color="default"' to prevent "striping" artifacts
+                syntax = Syntax(
+                    line, 
+                    self._code_lang, 
+                    theme="ansi_dark",  # Uses terminal colors (safe)
+                    word_wrap=False,
+                    padding=0,
+                    background_color="default"
+                )
+                self.console.print(syntax)
+            else:
+                # TEXT MODE: Render Markdown
+                # Note: Single lines of text will still have small margins, 
+                # but this is acceptable for prose.
+                md = Markdown(line)
+                self.console.print(md)
 
     async def _on_context_overflow(self, data: Dict[str, Any]):
         current = data.get("current_tokens", 0)
