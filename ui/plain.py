@@ -120,38 +120,128 @@ class PlainUI(UI):
 
     # --- Tool Confirmation Logic ---
     async def _on_tool_confirmation_requested(self, data: Dict[str, Any]):
+        # NEW: Flush any pending text (like "I will now...") before showing the tool prompt
+        await self._flush_stream_buffer()
         """
-        Handle tool approval requests using a Flat Text Block.
-        Spawns background task for input to keep Event Bus free.
+        Handle tool approval requests using Exact Schema Keys.
         """
         tool_call = data.get("tool_call", {})
         tool_call_id = data.get("tool_call_id")
         tool_name = tool_call.get("action", "Unknown Tool")
         params = tool_call.get("parameters", {})
 
-        # Extract common parameters for cleaner display
-        path = params.get("path", params.get("filename", "N/A"))
-        command = params.get("command", params.get("operation", "execute"))
-
-        # Determine lines if available
-        lines = "N/A"
-        if "start_line" in params and "end_line" in params:
-            lines = f"{params['start_line']} - {params['end_line']}"
-        elif "line" in params:
-            lines = str(params["line"])
-
-        # Render the Flat Block
+        # 1. Render Header
         self.console.print()
-        self.console.print("[bold white][TOOL] PROPOSED ACTION[/bold white]")
-        self.console.print(f"Tool:      [cyan]{tool_name}[/cyan]")
-        self.console.print(f"Path:      [yellow]{path}[/yellow]")
-        self.console.print(f"Command:   [yellow]{command}[/yellow]")
-        if lines != "N/A":
-            self.console.print(f"Lines:     {lines}")
+        self.console.print(
+            f"[bold white][TOOL] PROPOSED ACTION: {tool_name}[/bold white]"
+        )
+
+        # 2. Context-Aware Rendering (Mapped to Schema)
+        if tool_name == "execute_command":
+            # Schema: command, description, timeout
+            cmd = params.get("command", "")
+            desc = params.get("description", "")
+
+            self.console.print(f"Command:   [bold yellow]{cmd}[/bold yellow]")
+            if desc:
+                self.console.print(f"Reason:    [dim]{desc}[/dim]")
+
+        elif tool_name == "read_file":
+            # Schema: filepath, line_start, line_end
+            path = params.get("filepath", "N/A")
+            start = params.get("line_start")
+            end = params.get("line_end")
+
+            self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
+            if start and end:
+                self.console.print(f"Lines:     {start} - {end}")
+            else:
+                self.console.print(f"Lines:     [dim]All[/dim]")
+
+        elif tool_name in ["create_file", "append_to_file"]:
+            # Schema: filepath, content, content_from_scratch
+            path = params.get("filepath", "N/A")
+            content = params.get("content", "")
+            # Check for scratch content usage
+            scratch_id = params.get("content_from_scratch") or params.get(
+                "content_from_memory"
+            )
+
+            self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
+            self.console.print(
+                f"Operation: [bold green]{tool_name.replace('_', ' ').title()}[/bold green]"
+            )
+
+            if scratch_id:
+                self.console.print(
+                    f"Source:    [yellow]Scratch Pad ({scratch_id})[/yellow]"
+                )
+            else:
+                self.console.print(f"Size:      {len(content)} characters")
+
+        elif tool_name == "replace_lines":
+            # Schema: filepath, line_start, line_end, new_content...
+            path = params.get("filepath", "N/A")
+            start = params.get("line_start", "?")
+            end = params.get("line_end", "?")
+            new_content = params.get("new_content", "")
+
+            self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
+            self.console.print(f"Target:    Lines {start} - {end}")
+
+            # Show preview
+            preview = (
+                (new_content[:75] + "...") if len(new_content) > 75 else new_content
+            )
+            self.console.print(f"Insert:    [green]{repr(preview)}[/green]")
+
+        elif tool_name == "delete_lines":
+            # Schema: filepath, line_start, line_end
+            path = params.get("filepath", "N/A")
+            start = params.get("line_start", "?")
+            end = params.get("line_end", "?")
+
+            self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
+            self.console.print(f"Delete:    [red]Lines {start} - {end}[/red]")
+
+        elif tool_name == "insert_in_file":
+            # Schema: filepath, after_line, content
+            path = params.get("filepath", "N/A")
+            after = params.get("after_line", "")
+
+            self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
+            self.console.print(f"After:     [dim]{repr(after)}[/dim]")
+
+        elif tool_name == "git_operation":
+            # Schema: operation, commit_message
+            op = params.get("operation", "unknown")
+            msg = params.get("commit_message", "")
+
+            self.console.print(f"Git Op:    [bold magenta]{op.upper()}[/bold magenta]")
+            if msg and op == "commit":
+                self.console.print(f"Message:   '{msg}'")
+
+        elif tool_name == "run_python":
+            # Schema: script_content, script_name
+            name = params.get("script_name", "temp.py")
+            content = params.get("script_content", "")
+
+            self.console.print(f"Script:    [cyan]{name}[/cyan]")
+            self.console.print(f"Size:      {len(content)} chars")
+
+        else:
+            # FALLBACK
+            for k, v in params.items():
+                if (
+                    k in ["content", "file_text", "script_content"]
+                    and len(str(v)) > 200
+                ):
+                    v = f"<{len(str(v))} chars hidden>"
+                self.console.print(f"{k}: {v}")
 
         self.console.print("-" * 50, style="dim")
 
-        # Spawn background task
+        # Spawn background task for user input
         asyncio.create_task(self._get_confirmation_input(tool_call_id, tool_name))
 
     async def _get_confirmation_input(self, tool_call_id: str, tool_name: str):
@@ -207,6 +297,9 @@ class PlainUI(UI):
         await self.stop_thinking()
 
     async def _on_tool_start(self, data: Dict[str, Any]):
+        # NEW: Flush any pending text before showing the execution log
+        await self._flush_stream_buffer()
+        
         if "tools" in data and isinstance(data["tools"], list):
             names = ", ".join(data["tools"])
             self.console.print(f"[dim][SYS] Executing: {names}...[/dim]")
@@ -319,6 +412,20 @@ class PlainUI(UI):
             safe_line = line.replace("<", "\\<")
             md = Markdown(safe_line)
             self.console.print(md)
+
+    async def _flush_stream_buffer(self):
+        """Force print any remaining text in the buffer."""
+        async with self._lock:
+            if self._stream_line_buffer:
+                # Use the internal render logic to print what's left
+                # We assume the Thinking state is persistent until flushed here
+                self._render_line(self._stream_line_buffer, is_thinking=self._in_thinking_block)
+                self._stream_line_buffer = ""
+                
+                # If we were thinking, close the block visually
+                if self._in_thinking_block:
+                    self.console.print()
+                    self._in_thinking_block = False
 
     async def _print_stream_line(self, line: str, is_thinking: bool = False):
         """Public wrapper that acquires the lock"""
