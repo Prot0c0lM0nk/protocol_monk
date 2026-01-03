@@ -141,6 +141,34 @@ class ProtocolAgent(AgentInterface):
             "auto_confirm_changed": AgentEvents.STATUS_CHANGED,
         }
 
+    async def execute_command(self, command: str, args: Dict[str, Any]) -> CommandResult:
+        """Execute a slash command via the command dispatcher."""
+        # Build the command string from command name and args
+        cmd_string = f"/{command}"
+        if args:
+            # Format args as space-separated key=value pairs
+            arg_parts = []
+            for key, value in args.items():
+                if isinstance(value, str) and " " in value:
+                    arg_parts.append(f'{key}="{value}"')
+                else:
+                    arg_parts.append(f"{key}={value}")
+            cmd_string += " " + " ".join(arg_parts)
+        
+        # Dispatch the command
+        result = await self.command_dispatcher.dispatch(cmd_string)
+        
+        # Convert result to CommandResult
+        success = result is not None
+        message = "Command executed successfully" if success else f"Unknown command: {command}"
+        return CommandResult(success=success, message=message)
+
+    async def execute_tool(self, tool_request: ToolExecutionRequest) -> ToolExecutionResult:
+        """Execute a single tool with user approval via the tool executor."""
+        # Use the tool executor to handle the tool request
+        result = await self.tool_executor.execute_tool(tool_request)
+        return result
+
         if event in event_mapping:
             agent_event = event_mapping[event]
             await self.event_bus.emit(agent_event.value, data)

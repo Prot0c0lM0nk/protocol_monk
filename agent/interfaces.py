@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Interfaces for Protocol Monk Agent-UI Separation
 Defines contracts between layers without implementation details
@@ -61,6 +62,11 @@ class AgentInterface(ABC):
         pass
 
     @abstractmethod
+    async def get_user_input(self, request: UserInputRequest) -> UserInputResponse:
+        """Get user input"""
+        pass
+
+    @abstractmethod
     async def execute_command(self, command: str, args: Dict[str, Any]) -> CommandResult:
         """Execute a slash command"""
         pass
@@ -109,11 +115,3 @@ class UserInputResponse:
     cancelled: bool = False
 
 
-
-class AgentInterface(ABC):
-    """Interface that UI layers can use to interact with agent"""
-
-    @abstractmethod
-    async def get_user_input(self, request: UserInputRequest) -> UserInputResponse:
-        """Get user input"""
-        pass
