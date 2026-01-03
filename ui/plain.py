@@ -46,12 +46,14 @@ class PlainUI(UI):
 
         # Traffic Controller State
         self.pending_confirmation: Optional[Dict[str, Any]] = None
+        
+        # Concurrency Flags
+        self._is_prompt_active = False
+        self._agent_is_busy = False 
 
         # NEW: Track thinking block state
         self._in_thinking_block = False
-        # Buffer for markdown processing
-        self._response_buffer = ""
-        self._in_markdown_block = False
+        self._has_printed_thinking_header = False  # Track if [MONK] header is visible
 
         # Initialize Rich Console (Force terminal for colors, but keep layout plain)
         self.console = Console(
@@ -120,8 +122,9 @@ class PlainUI(UI):
 
     # --- Tool Confirmation Logic ---
     async def _on_tool_confirmation_requested(self, data: Dict[str, Any]):
-        # NEW: Flush any pending text (like "I will now...") before showing the tool prompt
+        # Flush pending stream text
         await self._flush_stream_buffer()
+        
         """
         Handle tool approval requests using Exact Schema Keys.
         """
@@ -130,118 +133,92 @@ class PlainUI(UI):
         tool_name = tool_call.get("action", "Unknown Tool")
         params = tool_call.get("parameters", {})
 
-        # 1. Render Header
-        self.console.print()
-        self.console.print(
-            f"[bold white][TOOL] PROPOSED ACTION: {tool_name}[/bold white]"
-        )
-
-        # 2. Context-Aware Rendering (Mapped to Schema)
-        if tool_name == "execute_command":
-            # Schema: command, description, timeout
-            cmd = params.get("command", "")
-            desc = params.get("description", "")
-
-            self.console.print(f"Command:   [bold yellow]{cmd}[/bold yellow]")
-            if desc:
-                self.console.print(f"Reason:    [dim]{desc}[/dim]")
-
-        elif tool_name == "read_file":
-            # Schema: filepath, line_start, line_end
-            path = params.get("filepath", "N/A")
-            start = params.get("line_start")
-            end = params.get("line_end")
-
-            self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
-            if start and end:
-                self.console.print(f"Lines:     {start} - {end}")
-            else:
-                self.console.print(f"Lines:     [dim]All[/dim]")
-
-        elif tool_name in ["create_file", "append_to_file"]:
-            # Schema: filepath, content, content_from_scratch
-            path = params.get("filepath", "N/A")
-            content = params.get("content", "")
-            # Check for scratch content usage
-            scratch_id = params.get("content_from_scratch") or params.get(
-                "content_from_memory"
-            )
-
-            self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
+        # Use lock only for printing, release before input
+        async with self._lock:
+            # 1. Render Header
+            self.console.print()
             self.console.print(
-                f"Operation: [bold green]{tool_name.replace('_', ' ').title()}[/bold green]"
+                f"[bold white][TOOL] PROPOSED ACTION: {tool_name}[/bold white]"
             )
 
-            if scratch_id:
+            # 2. Context-Aware Rendering (Mapped to Schema)
+            if tool_name == "execute_command":
+                cmd = params.get("command", "")
+                desc = params.get("description", "")
+                self.console.print(f"Command:   [bold yellow]{cmd}[/bold yellow]")
+                if desc:
+                    self.console.print(f"Reason:    [dim]{desc}[/dim]")
+
+            elif tool_name == "read_file":
+                path = params.get("filepath", "N/A")
+                start = params.get("line_start")
+                end = params.get("line_end")
+                self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
+                if start and end:
+                    self.console.print(f"Lines:     {start} - {end}")
+                else:
+                    self.console.print(f"Lines:     [dim]All[/dim]")
+
+            elif tool_name in ["create_file", "append_to_file"]:
+                path = params.get("filepath", "N/A")
+                content = params.get("content", "")
+                scratch_id = params.get("content_from_scratch") or params.get("content_from_memory")
+                self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
                 self.console.print(
-                    f"Source:    [yellow]Scratch Pad ({scratch_id})[/yellow]"
+                    f"Operation: [bold green]{tool_name.replace('_', ' ').title()}[/bold green]"
                 )
+                if scratch_id:
+                    self.console.print(f"Source:    [yellow]Scratch Pad ({scratch_id})[/yellow]")
+                else:
+                    self.console.print(f"Size:      {len(content)} characters")
+
+            elif tool_name == "replace_lines":
+                path = params.get("filepath", "N/A")
+                start = params.get("line_start", "?")
+                end = params.get("line_end", "?")
+                new_content = params.get("new_content", "")
+                self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
+                self.console.print(f"Target:    Lines {start} - {end}")
+                preview = (new_content[:75] + "...") if len(new_content) > 75 else new_content
+                self.console.print(f"Insert:    [green]{repr(preview)}[/green]")
+
+            elif tool_name == "delete_lines":
+                path = params.get("filepath", "N/A")
+                start = params.get("line_start", "?")
+                end = params.get("line_end", "?")
+                self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
+                self.console.print(f"Delete:    [red]Lines {start} - {end}[/red]")
+
+            elif tool_name == "insert_in_file":
+                path = params.get("filepath", "N/A")
+                after = params.get("after_line", "")
+                self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
+                self.console.print(f"After:     [dim]{repr(after)}[/dim]")
+
+            elif tool_name == "git_operation":
+                op = params.get("operation", "unknown")
+                msg = params.get("commit_message", "")
+                self.console.print(f"Git Op:    [bold magenta]{op.upper()}[/bold magenta]")
+                if msg and op == "commit":
+                    self.console.print(f"Message:   '{msg}'")
+
+            elif tool_name == "run_python":
+                name = params.get("script_name", "temp.py")
+                content = params.get("script_content", "")
+                self.console.print(f"Script:    [cyan]{name}[/cyan]")
+                self.console.print(f"Size:      {len(content)} chars")
+
             else:
-                self.console.print(f"Size:      {len(content)} characters")
+                for k, v in params.items():
+                    if k in ["content", "file_text", "script_content"] and len(str(v)) > 200:
+                        v = f"<{len(str(v))} chars hidden>"
+                    self.console.print(f"{k}: {v}")
 
-        elif tool_name == "replace_lines":
-            # Schema: filepath, line_start, line_end, new_content...
-            path = params.get("filepath", "N/A")
-            start = params.get("line_start", "?")
-            end = params.get("line_end", "?")
-            new_content = params.get("new_content", "")
-
-            self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
-            self.console.print(f"Target:    Lines {start} - {end}")
-
-            # Show preview
-            preview = (
-                (new_content[:75] + "...") if len(new_content) > 75 else new_content
-            )
-            self.console.print(f"Insert:    [green]{repr(preview)}[/green]")
-
-        elif tool_name == "delete_lines":
-            # Schema: filepath, line_start, line_end
-            path = params.get("filepath", "N/A")
-            start = params.get("line_start", "?")
-            end = params.get("line_end", "?")
-
-            self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
-            self.console.print(f"Delete:    [red]Lines {start} - {end}[/red]")
-
-        elif tool_name == "insert_in_file":
-            # Schema: filepath, after_line, content
-            path = params.get("filepath", "N/A")
-            after = params.get("after_line", "")
-
-            self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
-            self.console.print(f"After:     [dim]{repr(after)}[/dim]")
-
-        elif tool_name == "git_operation":
-            # Schema: operation, commit_message
-            op = params.get("operation", "unknown")
-            msg = params.get("commit_message", "")
-
-            self.console.print(f"Git Op:    [bold magenta]{op.upper()}[/bold magenta]")
-            if msg and op == "commit":
-                self.console.print(f"Message:   '{msg}'")
-
-        elif tool_name == "run_python":
-            # Schema: script_content, script_name
-            name = params.get("script_name", "temp.py")
-            content = params.get("script_content", "")
-
-            self.console.print(f"Script:    [cyan]{name}[/cyan]")
-            self.console.print(f"Size:      {len(content)} chars")
-
-        else:
-            # FALLBACK
-            for k, v in params.items():
-                if (
-                    k in ["content", "file_text", "script_content"]
-                    and len(str(v)) > 200
-                ):
-                    v = f"<{len(str(v))} chars hidden>"
-                self.console.print(f"{k}: {v}")
-
-        self.console.print("-" * 50, style="dim")
+            self.console.print("-" * 50, style="dim")
 
         # Spawn background task for user input
+        # NOTE: We set pending_confirmation so run_async loop knows not to overlap prompts
+        self.pending_confirmation = {"tool_call_id": tool_call_id, "tool_name": tool_name}
         asyncio.create_task(self._get_confirmation_input(tool_call_id, tool_name))
 
     async def _get_confirmation_input(self, tool_call_id: str, tool_name: str):
@@ -252,18 +229,23 @@ class PlainUI(UI):
 
         try:
             # Using prompt_user for consistent styling
-            # The prompt_user method handles the [SYS] tag
+            # prompt_user releases lock while waiting, so events can still flow
             response = await self.prompt_user("Approve execution? (y/n)")
             approved = response.lower().startswith("y")
         except Exception as e:
-            self.console.print(f"[bold red][ERR] Input Error: {e}[/bold red]")
+            async with self._lock:
+                self.console.print(f"[bold red][ERR] Input Error: {e}[/bold red]")
             approved = False
 
         # Feedback
-        if approved:
-            self.console.print(f"[bold green]✓ Approved {tool_name}[/bold green]")
-        else:
-            self.console.print(f"[bold red]✗ Rejected {tool_name}[/bold red]")
+        async with self._lock:
+            if approved:
+                self.console.print(f"[bold green]✓ Approved {tool_name}[/bold green]")
+            else:
+                self.console.print(f"[bold red]✗ Rejected {tool_name}[/bold red]")
+
+        # Clear pending state
+        self.pending_confirmation = None
 
         # Send result
         await self._event_bus.emit(
@@ -273,21 +255,23 @@ class PlainUI(UI):
     # --- Event Handler Methods ---
     async def _on_agent_error(self, data: Dict[str, Any]):
         message = data.get("message", "Unknown error")
-        self.console.print(f"[bold red][ERR] {message}[/bold red]")
+        async with self._lock:
+            self.console.print(f"[bold red][ERR] {message}[/bold red]")
 
     async def _on_agent_warning(self, data: Dict[str, Any]):
         message = data.get("message", "Unknown warning")
-        self.console.print(f"[bold yellow][WARN] {message}[/bold yellow]")
+        async with self._lock:
+            self.console.print(f"[bold yellow][WARN] {message}[/bold yellow]")
 
     async def _on_agent_info(self, data: Dict[str, Any]):
         message = data.get("message", "Info message")
         payload = data.get("data")
 
-        if message.strip():
-            self.console.print(f"[bold blue][SYS] {message}[/bold blue]")
-
-        if payload and isinstance(payload, list):
-            self._display_info_list(payload)
+        async with self._lock:
+            if message.strip():
+                self.console.print(f"[bold blue][SYS] {message}[/bold blue]")
+            if payload and isinstance(payload, list):
+                self._display_info_list(payload)
 
     async def _on_thinking_started(self, data: Dict[str, Any]):
         message = data.get("message", "Thinking...")
@@ -297,28 +281,26 @@ class PlainUI(UI):
         await self.stop_thinking()
 
     async def _on_tool_start(self, data: Dict[str, Any]):
-        # NEW: Flush any pending text before showing the execution log
         await self._flush_stream_buffer()
-        
-        if "tools" in data and isinstance(data["tools"], list):
-            names = ", ".join(data["tools"])
-            self.console.print(f"[dim][SYS] Executing: {names}...[/dim]")
-        else:
-            tool_name = data.get("tool_name", "Unknown tool")
-            self.console.print(f"[dim][SYS] Executing: {tool_name}...[/dim]")
+        async with self._lock:
+            if "tools" in data and isinstance(data["tools"], list):
+                names = ", ".join(data["tools"])
+                self.console.print(f"[dim][SYS] Executing: {names}...[/dim]")
+            else:
+                tool_name = data.get("tool_name", "Unknown tool")
+                self.console.print(f"[dim][SYS] Executing: {tool_name}...[/dim]")
 
     async def _on_tool_progress(self, data: Dict[str, Any]):
-        # User Feedback: This is usually noise. Silenced.
         pass
 
     async def _on_tool_complete(self, data: Dict[str, Any]):
-        # Minimal noise on completion, specific results handled by _on_tool_result
         pass
 
     async def _on_tool_error(self, data: Dict[str, Any]):
         tool_name = data.get("tool_name", "Unknown tool")
         error = data.get("error", "Unknown error")
-        self.console.print(f"[bold red][TOOL] Error ({tool_name}): {error}[/bold red]")
+        async with self._lock:
+            self.console.print(f"[bold red][TOOL] Error ({tool_name}): {error}[/bold red]")
 
     async def _on_tool_result(self, data: Dict[str, Any]):
         result = data.get("result", "")
@@ -326,9 +308,7 @@ class PlainUI(UI):
         await self._display_tool_result_markdown(tool_name, result)
 
     async def _on_stream_chunk(self, data: Dict[str, Any]):
-        # LOCK THE ENTIRE HANDLER to prevent buffer race conditions
         async with self._lock:
-            # Check for thinking content
             thinking_chunk = data.get("thinking")
             answer_chunk = data.get("chunk", "")
 
@@ -338,50 +318,52 @@ class PlainUI(UI):
             elif answer_chunk:
                 # If we were thinking, we are strictly NOT anymore
                 if self._in_thinking_block:
-                    # Flush the buffer as thinking text first
                     if self._stream_line_buffer:
-                        # Call internal render directly (we already hold the lock)
                         self._render_line(self._stream_line_buffer, is_thinking=True)
                         self._stream_line_buffer = ""
-
-                    # Print a visual separator or newline
+                    
                     self.console.print()
                     self._in_thinking_block = False
+                    self._has_printed_thinking_header = False
 
                 self._stream_line_buffer += answer_chunk
 
             # Process complete lines
             while "\n" in self._stream_line_buffer:
                 line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
-                # Call internal render directly (we already hold the lock)
                 self._render_line(line, is_thinking=self._in_thinking_block)
 
     async def _on_response_complete(self, data: Dict[str, Any]):
-        # Flush any remaining text in the buffer (e.g. text without final newline)
         if self._stream_line_buffer:
             await self._print_stream_line(
                 self._stream_line_buffer, is_thinking=self._in_thinking_block
             )
             self._stream_line_buffer = ""
 
-        # Print a final newline to separate from the next prompt
-        self.console.print()
-
-        # Print a final newline to separate from the next prompt
-        self.console.print()
+        # Reset states
+        async with self._lock:
+            self.console.print()
+            self._in_thinking_block = False
+            self._has_printed_thinking_header = False
+            self._agent_is_busy = False # Response done, agent is idle
 
     def _render_line(self, line: str, is_thinking: bool = False):
         """
         Internal render logic. Assumes self._lock is ALREADY held.
         """
-        # 1. Handle Thinking Cleanup (The old boolean spinner)
+        # 1. Cleanup old spinner if active
         if self._thinking:
             self.console.print("\x1b[2K\r", end="")
-            self.console.print("[bold green][MONK][/bold green] ", end="")
             self._thinking = False
 
-        # 2. Thinking Block Rendering (Dimmed)
+        # 2. Thinking Block Rendering
         if is_thinking:
+            # Handle the Header for the very first line of thinking
+            if not self._has_printed_thinking_header:
+                self.console.print("[bold green][MONK][/bold green] ", end="")
+                self._has_printed_thinking_header = True
+            
+            # Print the line dimmed
             self.console.print(line, style="dim italic")
             return
 
@@ -417,15 +399,13 @@ class PlainUI(UI):
         """Force print any remaining text in the buffer."""
         async with self._lock:
             if self._stream_line_buffer:
-                # Use the internal render logic to print what's left
-                # We assume the Thinking state is persistent until flushed here
                 self._render_line(self._stream_line_buffer, is_thinking=self._in_thinking_block)
                 self._stream_line_buffer = ""
                 
-                # If we were thinking, close the block visually
                 if self._in_thinking_block:
                     self.console.print()
                     self._in_thinking_block = False
+                    self._has_printed_thinking_header = False
 
     async def _print_stream_line(self, line: str, is_thinking: bool = False):
         """Public wrapper that acquires the lock"""
@@ -435,19 +415,22 @@ class PlainUI(UI):
     async def _on_context_overflow(self, data: Dict[str, Any]):
         current = data.get("current_tokens", 0)
         max_t = data.get("max_tokens", 0)
-        self.console.print(
-            f"[bold yellow][WARN] Context: {current}/{max_t}[/bold yellow]"
-        )
+        async with self._lock:
+            self.console.print(
+                f"[bold yellow][WARN] Context: {current}/{max_t}[/bold yellow]"
+            )
 
     async def _on_model_switched(self, data: Dict[str, Any]):
-        self.console.print(
-            f"[bold blue][SYS] Model: {data.get('old_model')} → {data.get('new_model')}[/bold blue]"
-        )
+        async with self._lock:
+            self.console.print(
+                f"[bold blue][SYS] Model: {data.get('old_model')} → {data.get('new_model')}[/bold blue]"
+            )
 
     async def _on_provider_switched(self, data: Dict[str, Any]):
-        self.console.print(
-            f"[bold blue][SYS] Provider: {data.get('old_provider')} → {data.get('new_provider')}[/bold blue]"
-        )
+        async with self._lock:
+            self.console.print(
+                f"[bold blue][SYS] Provider: {data.get('old_provider')} → {data.get('new_provider')}[/bold blue]"
+            )
 
     async def _on_command_result(self, data: Dict[str, Any]):
         success = data.get("success", True)
@@ -469,21 +452,19 @@ class PlainUI(UI):
     async def _display_tool_result_markdown(self, tool_name: str, result: Any):
         """Display tool result as clean text"""
         content = str(result.output) if hasattr(result, "output") else str(result)
-
-        self.console.print(f"[bold white][TOOL] Result ({tool_name}):[/bold white]")
-        # Indent slightly for readability
-        for line in content.splitlines():
-            self.console.print(f"  {line}", style="dim")
+        
+        async with self._lock:
+            self.console.print(f"[bold white][TOOL] Result ({tool_name}):[/bold white]")
+            # Indent slightly for readability
+            for line in content.splitlines():
+                self.console.print(f"  {line}", style="dim")
 
     async def print_stream(self, text: str):
         """Stream text, handling the ephemeral thinking state"""
         async with self._lock:
             if self._thinking:
-                # FIX: Use ANSI \x1b[2K to clear the WHOLE line properly, then \r
                 self.console.print("\x1b[2K\r", end="")
                 self._thinking = False
-
-                # Print the MONK tag once at the start
                 self.console.print("[bold green][MONK][/bold green] ", end="")
 
             self.console.print(text, end="", highlight=False)
@@ -491,52 +472,67 @@ class PlainUI(UI):
     async def start_thinking(self, message: str = "Thinking..."):
         async with self._lock:
             self._thinking = True
-            # FIX: Changed magenta to green to match the response tag
+            # Print newline first to ensure clean start
             self.console.print(f"\n[bold green][MONK][/bold green] {message}", end="\r")
 
     async def stop_thinking(self):
         async with self._lock:
             if self._thinking:
-                # Clear the line
-                self.console.print("\r" + " " * 50 + "\r", end="")
+                self.console.print("\x1b[2K\r", end="")
                 self._thinking = False
 
     async def prompt_user(self, prompt: str) -> str:
         """Prompt user with standard output styling"""
+        # 1. Prepare Label (Needs Lock)
         async with self._lock:
             is_main_loop = prompt == "" or prompt.strip() == ">>>"
-
+            
             if is_main_loop:
-                # White (default) label for Main User Input
+                # If we are in "Main Loop" mode, but we have a pending confirmation,
+                # we should NOT show the prompt yet. Return empty to spin the loop.
+                if self.pending_confirmation is not None:
+                    return ""
+                
                 label = HTML("\nUSER &gt; ")
             else:
-                # FIX: Changed fg='blue' to fg='ansibrightblack' to match the [dim] style
-                # of the other system logs.
                 clean_prompt = prompt.rstrip(" :>")
                 label = HTML(
                     f"\n<style fg='ansibrightblack'>[SYS] {clean_prompt}</style> &gt; "
                 )
+            
+            # Mark prompt active so we don't double-render
+            if self._is_prompt_active:
+                 # Already prompting? This shouldn't happen with proper control flow, 
+                 # but if it does, fallback
+                 return ""
+            self._is_prompt_active = True
 
-            try:
-                with patch_stdout():
-                    return await self.session.prompt_async(label)
-            except (KeyboardInterrupt, EOFError):
+        # 2. Wait for Input (RELEASE LOCK)
+        # We release the lock here so background events (tool results, logs)
+        # can print to the console via patch_stdout while we wait for user.
+        try:
+            with patch_stdout():
+                return await self.session.prompt_async(label)
+        except (KeyboardInterrupt, EOFError):
+            async with self._lock:
                 self.console.print("\n[dim]Cancelled.[/dim]")
-                return ""
+            return ""
+        finally:
+            # Re-acquire lock to update state
+            async with self._lock:
+                self._is_prompt_active = False
 
     def _display_info_list(self, items: List[Any]):
         """Render a numbered list cleanly (Model + Context only)"""
+        # Assumes Lock is HELD
         for i, item in enumerate(items, 1):
-            # 1. Extract Name and Context safely (handle dict or object)
             if isinstance(item, dict):
                 name = item.get("name", "Unknown")
                 ctx = item.get("context_window", "N/A")
             else:
-                # Handle Pydantic models or regular objects
                 name = getattr(item, "name", str(item))
                 ctx = getattr(item, "context_window", "N/A")
 
-            # 2. Format Context Window for readability (e.g., 262144 -> 262k)
             try:
                 if isinstance(ctx, (int, float)) and ctx > 1000:
                     ctx_str = f"{int(ctx/1024)}k"
@@ -545,33 +541,29 @@ class PlainUI(UI):
             except (ValueError, TypeError):
                 ctx_str = str(ctx)
 
-            # 3. Render clean line
-            # Format: "1. ModelName (Context: 128k)"
             self.console.print(
                 f"  {i}. [cyan]{name}[/cyan] [dim](Context: {ctx_str})[/dim]"
             )
 
     async def display_selection_list(self, title: str, items: List[Any]) -> Any:
         """Interactive selection list if requested by agent"""
-        self.console.print(f"\n[bold blue][SYS] {title}[/bold blue]")
-        self._display_info_list(items)
+        async with self._lock:
+            self.console.print(f"\n[bold blue][SYS] {title}[/bold blue]")
+            self._display_info_list(items)
 
         while True:
-            # Local input loop for selection
-            self.console.print("[bold blue][SYS] Select #[/bold blue] > ", end="")
+            # Use prompt_user logic (handles locks)
+            choice = await self.prompt_user("Select #")
+            
             try:
-                with patch_stdout():
-                    choice = await self.session.prompt_async("")
-
                 index = int(choice) - 1
                 if 0 <= index < len(items):
                     return items[index]
             except ValueError:
                 pass
-            except (KeyboardInterrupt, EOFError):
-                return None
 
-            self.console.print("[red]Invalid selection[/red]")
+            async with self._lock:
+                self.console.print("[red]Invalid selection[/red]")
 
     # --- Boilerplate Implementations ---
     async def confirm_action(self, message: str) -> bool:
@@ -588,10 +580,12 @@ class PlainUI(UI):
         return await self.prompt_user("")
 
     async def print_error(self, message: str):
-        self.console.print(f"[bold red][ERR] {message}[/bold red]")
+        async with self._lock:
+            self.console.print(f"[bold red][ERR] {message}[/bold red]")
 
     async def print_info(self, message: str):
-        self.console.print(f"[bold blue][SYS] {message}[/bold blue]")
+        async with self._lock:
+            self.console.print(f"[bold blue][SYS] {message}[/bold blue]")
 
     async def run_async(self):
         """Main UI Loop"""
@@ -602,34 +596,31 @@ class PlainUI(UI):
 
         try:
             while True:
+                # If we are waiting for a confirmation (traffic control), 
+                # DON'T ask for main user input. Just sleep briefly.
+                if self.pending_confirmation:
+                    await asyncio.sleep(0.1)
+                    continue
+
                 user_input = await self.get_input()
 
                 if not user_input.strip():
-                    continue
-
-                if self.pending_confirmation:
-                    await self._handle_pending_confirmation(user_input)
                     continue
 
                 await self._event_bus.emit(
                     AgentEvents.COMMAND_RESULT.value,
                     {"input": user_input, "timestamp": datetime.now().isoformat()},
                 )
+                
+                # Assume agent is busy now
+                self._agent_is_busy = True
 
         except KeyboardInterrupt:
             self.console.print("\n[bold red]Shutting down...[/bold red]")
 
     async def _handle_pending_confirmation(self, user_input: str):
-        # Fallback if manual confirmation handling is needed outside the background task
-        # (Usually handled by _get_confirmation_input, but kept for safety)
-        data = self.pending_confirmation
-        tool_call_id = data["tool_call_id"]
-        approved = user_input.lower().startswith("y")
-
-        await self._event_bus.emit(
-            "ui.tool_confirmation", {"tool_call_id": tool_call_id, "approved": approved}
-        )
-        self.pending_confirmation = None
+        # Kept for backward compat, but pending_confirmation is handled via tasks now
+        pass
 
 
 def create_plain_ui() -> PlainUI:
