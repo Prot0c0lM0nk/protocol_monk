@@ -30,7 +30,7 @@ class PlainUI(UI):
         self._event_bus = get_event_bus()
         
         # State Machine
-        self._is_busy = True          
+        self._is_busy = False          
         self._state_change_event = asyncio.Event()
         
         # Pending Tool Confirmation
@@ -148,6 +148,8 @@ class PlainUI(UI):
         if user_ans is None: # Ctrl+C
             self.renderer.print_system("Cancelled.")
             self._pending_confirmation = None
+            # Set busy to False so UI returns to idle state
+            self._is_busy = False
             return
 
         approved = user_ans.lower().startswith('y')
@@ -166,7 +168,10 @@ class PlainUI(UI):
         )
         
         self._pending_confirmation = None
-
+        # Agent will now execute the tool, so set busy state
+        # The agent will emit STATUS_CHANGED or TOOL_EXECUTION_START which will also set busy
+        # But we set it here to be safe
+        self._is_busy = True
     # ============================================================
     # Event Handlers
     # ============================================================
@@ -179,9 +184,8 @@ class PlainUI(UI):
         elif status == "idle":
             if not self._pending_confirmation:
                 self._is_busy = False
-            # ALWAYS wake the loop on status change so we can re-evaluate priorities
-            self._state_change_event.set()
-
+        # ALWAYS wake the loop on status change so we can re-evaluate priorities
+        self._state_change_event.set()
     async def _on_tool_confirmation_requested(self, data: Dict[str, Any]):
         await self._flush_stream_buffer()
         tool_call = data.get("tool_call", {})
@@ -190,9 +194,11 @@ class PlainUI(UI):
             "tool_name": tool_call.get("action", "Unknown Tool"),
             "params": tool_call.get("parameters", {})
         }
-        # CRITICAL: Wake up the loop to cancel any active input prompt
+        # CRITICAL: Clear busy state so main loop can process confirmation
+        # Agent is waiting for user input, not actively processing
+        self._is_busy = False
+        # Wake up the loop to cancel any active input prompt
         self._state_change_event.set()
-
     async def _on_response_complete(self, data: Dict[str, Any]):
         if self._stream_line_buffer:
             await self._print_stream_line(
@@ -201,6 +207,10 @@ class PlainUI(UI):
             self._stream_line_buffer = ""
         self.renderer.console.print()
         self.renderer.reset_thinking_state()
+        
+        # Agent finished processing - clear busy state and wake up main loop
+        self._is_busy = False
+        self._state_change_event.set()
 
     async def _on_tool_start(self, data: Dict[str, Any]):
         self._is_busy = True
@@ -310,6 +320,18 @@ class PlainUI(UI):
     async def display_tool_result(self, result: ToolResult):
         self.renderer.render_tool_result(result.tool_name or "Tool", result)
     async def get_input(self) -> str:
+        """
+        Get user input for main interaction loop.
+        CRITICAL: Check for pending confirmations first!
+        """
+        # Priority 1: Handle pending tool confirmation
+        if self._pending_confirmation:
+            await self._handle_confirmation_prompt()
+            # After handling confirmation, we're busy (agent executing tool)
+            # Return empty to let agent continue, don't wait for more input
+            return ""
+        
+        # Priority 2: Normal user input
         res = await self.input.read_input(is_main_loop=True)
         return res if res is not None else ""
     async def confirm_action(self, message: str) -> bool:

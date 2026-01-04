@@ -51,6 +51,7 @@ class Application:
     def __init__(self):
         self.working_dir = None
         self.agent = None
+        self.ui_task = None
         self.running = False
 
     async def start(self):
@@ -88,9 +89,13 @@ class Application:
                 event_bus=None,  # Agent will create its own event bus
                 ui=ui_instance,
             )
-
+            
             # Initialize agent asynchronously
             await self.agent.async_initialize()
+
+            # Start UI event loop in background
+            # This handles tool confirmations and user input coordination
+            self.ui_task = asyncio.create_task(ui_instance.run_async())
 
             # Start the main loop
             self.running = True
@@ -107,6 +112,14 @@ class Application:
     async def stop(self):
         """Stop the application gracefully."""
         self.running = False
+
+        # Cancel UI task if running
+        if self.ui_task and not self.ui_task.done():
+            self.ui_task.cancel()
+            try:
+                await self.ui_task
+            except asyncio.CancelledError:
+                pass
 
         if self.agent:
             try:
