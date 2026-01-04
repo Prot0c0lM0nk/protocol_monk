@@ -87,50 +87,13 @@ class PlainUI(UI):
                     continue
 
                 # ------------------------------------------------
-                # 3. IDLE: Wait for User Input OR New Event
+                # 3. IDLE: Wait for state change events
                 # ------------------------------------------------
-                # Create the input task
-                input_task = asyncio.create_task(
-                    self.input.read_input(is_main_loop=True)
-                )
-                
-                # Wait for EITHER the user to type OR a state change (like a tool arriving)
-                done, pending = await asyncio.wait(
-                    [input_task, self._state_change_event.wait()],
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-
-                # CASE A: A State Change Happened (e.g. Tool Request arrived)
-                if self._state_change_event.is_set():
-                    # Cancel the input prompt because we have higher priority work
-                    input_task.cancel()
-                    try:
-                        await input_task
-                    except asyncio.CancelledError:
-                        pass # Clean exit
-                    
-                    self._state_change_event.clear()
-                    # Loop back to top to handle the new event (e.g., _pending_confirmation)
-                    continue
-
-                # CASE B: User Input Received
-                if input_task in done:
-                    user_input = input_task.result()
-                    
-                    # Handle Exit
-                    if user_input is None:
-                        self.renderer.print_system("Shutting down...")
-                        break
-                    
-                    if not user_input.strip():
-                        continue
-
-                    # Lock immediately
-                    self._is_busy = True
-                    await self._event_bus.emit(
-                        AgentEvents.COMMAND_RESULT.value,
-                        {"input": user_input, "timestamp": datetime.now().isoformat()},
-                    )
+                # NOTE: We do NOT wait for input here!
+                # The agent calls ui.get_input() when it needs user input.
+                # We only wait for events like tool confirmations.
+                await self._state_change_event.wait()
+                self._state_change_event.clear()
 
         except Exception as e:
             self.renderer.print_error(f"Fatal UI Error: {e}")
