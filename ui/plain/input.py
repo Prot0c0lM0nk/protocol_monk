@@ -2,11 +2,11 @@
 ui/plain/input.py - Input Abstraction Layer
 """
 
+import asyncio
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.formatted_text import HTML
 from typing import Optional
-
 
 class InputManager:
     """
@@ -34,7 +34,8 @@ class InputManager:
 
         # 2. Mark prompt active
         if self._is_prompt_active:
-            return ""
+            # Prompt already active - return None to signal cancellation
+            return None
         self._is_prompt_active = True
 
         # 3. Wait for Input
@@ -43,8 +44,8 @@ class InputManager:
                 return await self.session.prompt_async(label)
         except (KeyboardInterrupt, EOFError):
             return None  # Signal to the controller that we want to quit
+        except asyncio.CancelledError:
+            # Task was cancelled (e.g., by timeout)
+            return None
         finally:
             self._is_prompt_active = False
-
-    def is_prompt_active(self) -> bool:
-        return self._is_prompt_active
