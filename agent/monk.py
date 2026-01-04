@@ -48,7 +48,6 @@ class ProtocolAgent(AgentInterface):
         event_bus: Optional[EventBus] = None,
         ui=None,
     ):
-        # 1. IMMEDIATE ASSIGNMENTS
         self.working_dir = Path(working_dir).resolve()
         self.current_model = model_name
         self.current_provider = provider
@@ -57,15 +56,12 @@ class ProtocolAgent(AgentInterface):
         self.logger = logging.getLogger(__name__)
         self.enhanced_logger = EnhancedLogger(self.working_dir)
 
-        # 2. MODEL METADATA LOOKUP
-        # Use the fixed provider propagation logic from the plan
         self.model_manager = RuntimeModelManager(provider=provider)
         model_info = self.model_manager.get_available_models().get(model_name)
         model_context_window = (
             model_info.context_window if model_info else settings.model.context_window
         )
 
-        # 3. COMPONENT INSTANTIATION (Now safe to use self.working_dir)
         self.context_manager = ContextManager(
             max_tokens=model_context_window,
             working_dir=self.working_dir,
@@ -75,25 +71,19 @@ class ProtocolAgent(AgentInterface):
         self.proper_tool_caller = (
             ProperToolCalling(tool_registry) if tool_registry else None
         )
-
-        # Wiring
         if tool_registry:
             tool_registry.context_manager = self.context_manager
 
-        # 4. REMAINING INITIALIZATION
         self.scratch_manager = ScratchManager(self.working_dir)
+        self.model_client = ModelClient(model_name=model_name, provider=provider)
 
-        try:
-            self.model_client = ModelClient(model_name=model_name, provider=provider)
-        except ModelConfigurationError as e:
-            self.logger.error(f"Failed to initialize model client: {e.message}")
-            raise
-
+        # NEW: PASS UI TO EXECUTOR
         self.tool_executor = ToolExecutor(
             tool_registry=tool_registry,
             working_dir=self.working_dir,
             auto_confirm=False,
-            event_bus=self.event_bus,  # Pass event bus instead of ui_callback
+            event_bus=self.event_bus,
+            ui=self.ui,
         )
 
         self.taor_loop = TAORLoop(self)
@@ -141,7 +131,9 @@ class ProtocolAgent(AgentInterface):
             "auto_confirm_changed": AgentEvents.STATUS_CHANGED,
         }
 
-    async def execute_command(self, command: str, args: Dict[str, Any]) -> CommandResult:
+    async def execute_command(
+        self, command: str, args: Dict[str, Any]
+    ) -> CommandResult:
         """Execute a slash command via the command dispatcher."""
         # Build the command string from command name and args
         cmd_string = f"/{command}"
@@ -154,16 +146,22 @@ class ProtocolAgent(AgentInterface):
                 else:
                     arg_parts.append(f"{key}={value}")
             cmd_string += " " + " ".join(arg_parts)
-        
+
         # Dispatch the command
         result = await self.command_dispatcher.dispatch(cmd_string)
-        
+
         # Convert result to CommandResult
         success = result is not None
-        message = "Command executed successfully" if success else f"Unknown command: {command}"
+        message = (
+            "Command executed successfully"
+            if success
+            else f"Unknown command: {command}"
+        )
         return CommandResult(success=success, message=message)
 
-    async def execute_tool(self, tool_request: ToolExecutionRequest) -> ToolExecutionResult:
+    async def execute_tool(
+        self, tool_request: ToolExecutionRequest
+    ) -> ToolExecutionResult:
         """Execute a single tool with user approval via the tool executor."""
         # Use the tool executor to handle the tool request
         result = await self.tool_executor.execute_tool(tool_request)
@@ -261,8 +259,7 @@ class ProtocolAgent(AgentInterface):
                 # NEW: Handle Thinking Packets First
                 if isinstance(chunk, dict) and chunk.get("type") == "thinking":
                     await self.event_bus.emit(
-                        AgentEvents.STREAM_CHUNK.value, 
-                        {"thinking": chunk["content"]}
+                        AgentEvents.STREAM_CHUNK.value, {"thinking": chunk["content"]}
                     )
                     continue
 
@@ -541,26 +538,22 @@ class ProtocolAgent(AgentInterface):
 
             while True:
                 try:
-                    # Use new interface method for user input
-                    response = await self.get_user_input(UserInputRequest())
-                    user_input = response.text
-                    if response.cancelled:
-                        continue
-                    if not user_input:
+                    # --- CHANGED: Direct Blocking UI Call (No Loops) ---
+                    # We wait here forever until the user types something.
+                    text = await self.ui.get_input()
+
+                    if not text:
                         continue
 
                     # Use command dispatcher to handle input
-                    result = await self.command_dispatcher.dispatch(user_input)
+                    result = await self.command_dispatcher.dispatch(text)
 
                     if result is False:  # Quit command
-
-                        break  # EXIT THE LOOP - don't continue running!
+                        break  # EXIT THE LOOP
 
                     # Not a command, process as chat - but only if it wasn't handled
-                    if (
-                        result is None
-                    ):  # Only process as chat if command dispatcher didn't handle it
-                        success = await self.process_request(user_input)
+                    if result is None:
+                        success = await self.process_request(text)
 
                 except KeyboardInterrupt:
                     await self.event_bus.emit(
@@ -583,8 +576,8 @@ class ProtocolAgent(AgentInterface):
         self, tool_request: ToolExecutionRequest
     ) -> bool:
         """Request tool execution confirmation through event system."""
-        # For now, emit the event and provide a default response
-        # In the future, this will wait for UI response via event bus
+        # This is kept for compatibility with _handle_agent_event,
+        # though ToolExecutor now mostly handles this directly.
         await self.event_bus.emit(
             AgentEvents.TOOL_EXECUTION_START.value,
             {
@@ -594,13 +587,11 @@ class ProtocolAgent(AgentInterface):
                 "requires_confirmation": True,
             },
         )
-        # Default to true for now - we'll implement proper confirmation later
         return True
 
     async def get_user_input(self, request: UserInputRequest) -> UserInputResponse:
         """Get user input - temporary implementation for backward compatibility"""
         # For now, delegate to UI for input
-        # In the future, this will be handled by event system
         if not hasattr(self, "ui") or self.ui is None:
             from ui.plain import PlainUI
 

@@ -1,7 +1,10 @@
-# ui/base.py
+"""
+ui/base.py
+"""
+
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Dict, Union, Any, Optional, List
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 
@@ -19,7 +22,24 @@ class UI(ABC):
     def __init__(self):
         self._lock = asyncio.Lock()
 
-    # --- The Agent calls these ---
+    # --- BLOCKING INTERACTION METHODS (The Fix) ---
+    @abstractmethod
+    async def get_input(self) -> str:
+        """
+        Get user input for the main loop.
+        BLOCKS until user provides input.
+        """
+        pass
+
+    @abstractmethod
+    async def confirm_tool_execution(self, tool_call_data: Dict[str, Any]) -> bool:
+        """
+        Ask user to confirm a tool execution.
+        BLOCKS until user approves (True) or denies (False).
+        """
+        pass
+
+    # --- Output Methods ---
     @abstractmethod
     async def print_stream(self, text: str):
         pass
@@ -40,33 +60,21 @@ class UI(ABC):
     async def stop_thinking(self):
         pass
 
-    @abstractmethod
-    async def prompt_user(self, prompt: str) -> str:
-        pass
-
-    @abstractmethod
-    async def display_selection_list(self, title: str, items: List[Any]):
-        """
-        Display a selectable list of items (models, providers, files).
-        For TUI: Shows a popup modal.
-        For CLI: Prints a numbered list.
-        """
-        pass
-
-    # --- Stubs for compatibility (we will fill these later) ---
+    # --- Compat Stubs ---
     async def close(self):
         pass
 
-    async def display_startup_banner(self, greeting: str):
-        pass
-
-    async def confirm_tool_call(self, tool_call: Dict, auto_confirm: bool = False):
-        return True
-
-    async def display_tool_call(self, tool_call: Dict, auto_confirm: bool = False):
-        pass
-
     async def display_tool_result(self, result: ToolResult, tool_name: str):
+        pass
+
+    async def prompt_user(self, prompt: str) -> str:
+        return await self.get_input()
+
+    # These can be implemented by subclasses or left as pass
+    async def display_selection_list(self, title: str, items: List[Any]):
+        pass
+
+    async def display_startup_banner(self, greeting: str):
         pass
 
     async def display_execution_start(self, count: int):
@@ -81,13 +89,7 @@ class UI(ABC):
     async def print_warning(self, message: str):
         pass
 
-    async def print_error_stderr(self, message: str):
-        pass
-
     async def set_auto_confirm(self, value: bool):
-        pass
-
-    async def display_startup_frame(self, frame: str):
         pass
 
     async def display_model_list(self, models, current):
@@ -96,10 +98,8 @@ class UI(ABC):
     async def display_switch_report(self, report, current, target):
         pass
 
-    async def get_input(self) -> str:
-        """Get user input for main interaction loop."""
-        return await self.prompt_user(">")
+    async def display_provider_switched(self, provider: str):
+        pass
 
     async def shutdown(self):
-        """Graceful shutdown."""
-        await self.close()
+        pass
