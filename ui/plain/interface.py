@@ -6,12 +6,12 @@ import asyncio
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
-from ui.base import UI, ToolResult
+from ui.base import UI
 from agent.events import AgentEvents, get_event_bus
+from tools.base import ToolResult
 
 from .renderer import PlainRenderer
 from .input import InputManager
-
 
 class PlainUI(UI):
     """
@@ -225,8 +225,19 @@ class PlainUI(UI):
         tool_name = data.get("tool_name", "Unknown tool")
         result = data.get("result", "")
         
-        # Create ToolResult object if raw data
-        tr = result if isinstance(result, ToolResult) else ToolResult(True, str(result), tool_name)
+        # Extract output from ToolResult object (tools.base.ToolResult)
+        if hasattr(result, 'output'):
+            # It's a tools.base.ToolResult object
+            output = result.output
+        elif isinstance(result, dict) and 'output' in result:
+            # It's a dict with output field
+            output = result['output']
+        else:
+            # Fallback: convert to string
+            output = str(result)
+        
+        # Create UI ToolResult for rendering
+        tr = ToolResult(True, output, tool_name)
         self.renderer.render_tool_result(tool_name, tr)
 
     async def _on_stream_chunk(self, data: Dict[str, Any]):
