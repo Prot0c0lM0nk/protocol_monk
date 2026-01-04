@@ -89,7 +89,7 @@ class Application:
                 event_bus=None,  # Agent will create its own event bus
                 ui=ui_instance,
             )
-            
+
             # Initialize agent asynchronously
             await self.agent.async_initialize()
 
@@ -141,12 +141,11 @@ def signal_handler(app, signum, frame):
 
 
 async def main():
-    """Main entry point - ultra lightweight starter."""
+    """Main entry point."""
     app = Application()
 
-    # Setup signal handlers
-    signal.signal(signal.SIGINT, lambda s, f: signal_handler(app, s, f))
-    signal.signal(signal.SIGTERM, lambda s, f: signal_handler(app, s, f))
+    # Handle SIGTERM (Kill signal) gracefully
+    signal.signal(signal.SIGTERM, lambda s, f: asyncio.create_task(app.stop()))
 
     # Start the application
     await app.start()

@@ -88,6 +88,7 @@ class PlainUI(UI):
         thinking_chunk = data.get("thinking")
         answer_chunk = data.get("chunk", "")
 
+        # 1. Handle Thinking (Keep strict buffering for clean dimming)
         if thinking_chunk:
             self._in_thinking_block = True
             self._stream_line_buffer += thinking_chunk
@@ -96,7 +97,9 @@ class PlainUI(UI):
                 self.renderer.render_line(line, is_thinking=True)
             return
 
+        # 2. Handle Answer (Hybrid)
         if answer_chunk:
+            # If we were previously thinking, flush that state first
             if self._in_thinking_block:
                 if self._stream_line_buffer:
                     self.renderer.render_line(
@@ -107,6 +110,7 @@ class PlainUI(UI):
                 self._in_thinking_block = False
 
             # Heuristic: If we see code fences, switch to buffering
+            # (Use renderer state if available, or track locally)
             if "```" in answer_chunk or self.renderer._in_code_block:
                 self._stream_line_buffer += answer_chunk
                 while "\n" in self._stream_line_buffer:
@@ -115,10 +119,12 @@ class PlainUI(UI):
                     )
                     self.renderer.render_line(line, is_thinking=False)
             else:
-                # Fast Path: Print text instantly
+                # FAST PATH: Print text instantly!
+                # If we have a leftover buffer from a previous partial line, print it first
                 if self._stream_line_buffer:
                     self.renderer.print_stream(self._stream_line_buffer)
                     self._stream_line_buffer = ""
+
                 self.renderer.print_stream(answer_chunk)
 
     async def _on_response_complete(self, data: Dict[str, Any]):
