@@ -211,13 +211,15 @@ class PlainRenderer:
         """Render tool result output with indentation"""
         content = str(result.output) if hasattr(result, "output") else str(result)
         
+        # Debug: Log what we're rendering
+        print(f"\n[DEBUG RENDER] Rendering tool result: {tool_name}")
+        print(f"[DEBUG RENDER] Content length: {len(content)}")
+        print(f"[DEBUG RENDER] Content preview: {content[:300]}")
+        
         self.console.print(f"[bold white][TOOL] Result ({tool_name}):[/bold white]")
         # Indent slightly for readability
         for line in content.splitlines():
             self.console.print(f"  {line}", style="dim")
-
-    def render_info_list(self, items: list):
-        """Render a numbered list cleanly (for models, providers, etc.)"""
         for i, item in enumerate(items, 1):
             if isinstance(item, dict):
                 name = item.get("name", "Unknown")

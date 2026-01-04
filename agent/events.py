@@ -75,6 +75,11 @@ class EventBus:
 
     async def emit(self, event_type: str, data: Dict[str, Any]) -> None:
         """Emit an event to all subscribers"""
+        # Debug: Log all events
+        if 'TOOL' in event_type:
+            print(f"\n[DEBUG EVENT BUS] Emitting: {event_type}")
+            print(f"[DEBUG EVENT BUS] Data keys: {data.keys()}")
+        
         async with self._lock:
             if event_type in self._listeners:
                 # Create event object
@@ -99,7 +104,6 @@ class EventBus:
                 # Wait for all async callbacks to complete
                 if tasks:
                     await asyncio.gather(*tasks, return_exceptions=True)
-
     async def emit_batch(self, events: List[tuple]) -> None:
         """Emit multiple events atomically"""
         async with self._lock:
