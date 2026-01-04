@@ -79,25 +79,36 @@ class PlainUI(UI):
                     continue
 
                 # ------------------------------------------------
-                # 2. STATE: Wait if Busy
+                # 2. STATE: Wait if Busy (with timeout for safety)
                 # ------------------------------------------------
                 if self._is_busy:
-                    await self._state_change_event.wait()
+                    try:
+                        # Wait with timeout to prevent permanent lockup
+                        await asyncio.wait_for(self._state_change_event.wait(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        # Timeout - force reset to prevent lockup
+                        self._is_busy = False
+                        self.renderer.print_warning("UI: Timeout waiting for agent, forcing reset")
                     self._state_change_event.clear()
                     continue
 
                 # ------------------------------------------------
-                # 3. IDLE: Wait for state change events
+                # 3. IDLE: Wait for state change events (with timeout)
                 # ------------------------------------------------
                 # NOTE: We do NOT wait for input here!
                 # The agent calls ui.get_input() when it needs user input.
                 # We only wait for events like tool confirmations.
-                await self._state_change_event.wait()
+                try:
+                    await asyncio.wait_for(self._state_change_event.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    # Timeout - just continue the loop
+                    pass
                 self._state_change_event.clear()
 
+        except KeyboardInterrupt:
+            self.renderer.print_system("Shutting down...")
         except Exception as e:
             self.renderer.print_error(f"Fatal UI Error: {e}")
-
     async def _handle_confirmation_prompt(self):
         """Helper to manage the confirmation interaction"""
         tool_data = self._pending_confirmation
@@ -307,24 +318,40 @@ class PlainUI(UI):
             # After handling confirmation, we're busy (agent executing tool)
             # Return empty to let agent continue, don't wait for more input
             return ""
-        
-        # Priority 2: Normal user input
-        res = await self.input.read_input(is_main_loop=True)
-        return res if res is not None else ""
     async def confirm_action(self, message: str) -> bool:
-        response = await self.input.read_input(f"{message} (y/n)")
-        return response.lower().startswith("y") if response else False
-
-    # --- Helpers ---
-    async def _flush_stream_buffer(self):
-        async with self._lock:
-            if self._stream_line_buffer:
-                self.renderer.render_line(self._stream_line_buffer, is_thinking=self._in_thinking_block)
-                self._stream_line_buffer = ""
-                if self._in_thinking_block:
-                    self.renderer.console.print()
-                    self._in_thinking_block = False
-
+        """Confirm action with yes/no prompt (with timeout)"""
+        try:
+            response = await asyncio.wait_for(
+                self.input.read_input(f"{message} (y/n)"),
+                timeout=30.0
+            )
+            return response.lower().startswith("y") if response else False
+        except asyncio.TimeoutError:
+            self.renderer.print_warning("Confirmation timeout - defaulting to no")
+            return False
+    async def get_input(self) -> str:
+        """
+        Get user input for main interaction loop.
+        CRITICAL: Check for pending confirmations first!
+        """
+        # Priority 1: Handle pending tool confirmation
+        if self._pending_confirmation:
+            await self._handle_confirmation_prompt()
+            # After handling confirmation, we're busy (agent executing tool)
+            # Return empty to let agent continue, don't wait for more input
+            return ""
+        
+        # Priority 2: Normal user input (with timeout to prevent lockup)
+        try:
+            res = await asyncio.wait_for(
+                self.input.read_input(is_main_loop=True),
+                timeout=30.0  # 30 second timeout
+            )
+            return res if res is not None else ""
+        except asyncio.TimeoutError:
+            # Timeout - return empty to let agent continue
+            self.renderer.print_warning("Input timeout - returning to agent")
+            return ""
     async def _print_stream_line(self, line: str, is_thinking: bool = False):
         async with self._lock:
             self.renderer.render_line(line, is_thinking)
