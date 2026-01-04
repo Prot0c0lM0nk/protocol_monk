@@ -220,25 +220,6 @@ class PlainRenderer:
         # Indent slightly for readability
         for line in content.splitlines():
             self.console.print(f"  {line}", style="dim")
-        for i, item in enumerate(items, 1):
-            if isinstance(item, dict):
-                name = item.get("name", "Unknown")
-                ctx = item.get("context_window", "N/A")
-            else:
-                name = getattr(item, "name", str(item))
-                ctx = getattr(item, "context_window", "N/A")
-
-            try:
-                if isinstance(ctx, (int, float)) and ctx > 1000:
-                    ctx_str = f"{int(ctx/1024)}k"
-                else:
-                    ctx_str = str(ctx)
-            except (ValueError, TypeError):
-                ctx_str = str(ctx)
-
-            self.console.print(
-                f"  {i}. [cyan]{name}[/cyan] [dim](Context: {ctx_str})[/dim]"
-            )
 
     def print_startup_banner(self):
         """Print the initial startup banner"""
