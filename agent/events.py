@@ -75,11 +75,6 @@ class EventBus:
 
     async def emit(self, event_type: str, data: Dict[str, Any]) -> None:
         """Emit an event to all subscribers"""
-        # Debug: Log all events
-        if 'TOOL' in event_type:
-            print(f"\n[DEBUG EVENT BUS] Emitting: {event_type}")
-            print(f"[DEBUG EVENT BUS] Data keys: {data.keys()}")
-        
         async with self._lock:
             if event_type in self._listeners:
                 # Create event object

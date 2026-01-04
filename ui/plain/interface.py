@@ -222,28 +222,12 @@ class PlainUI(UI):
         self.renderer.print_error(f"Tool Error ({data.get('tool_name')}): {data.get('error')}")
 
     async def _on_tool_result(self, data: Dict[str, Any]):
-        try:
-            print(f"\n[DEBUG] _on_tool_result CALLED!")
-            print(f"[DEBUG] Data keys: {data.keys()}")
-            print(f"[DEBUG] Full data: {data}")
-            
-            tool_name = data.get("tool_name", "Unknown tool")
-            result = data.get("result", "")
-            
-            # Debug: Log what we received
-            print(f"\n[DEBUG] Tool result received: {tool_name}")
-            print(f"[DEBUG] Result type: {type(result)}")
-            print(f"[DEBUG] Result content: {str(result)[:200]}")
-            
-            # Create ToolResult object if raw data
-            tr = result if isinstance(result, ToolResult) else ToolResult(True, str(result), tool_name)
-            self.renderer.render_tool_result(tool_name, tr)
-        except Exception as e:
-            print(f"[DEBUG] ERROR in _on_tool_result: {e}")
-            import traceback
-            print(f"[DEBUG] ERROR in _on_tool_result: {e}")
-            import traceback
-            traceback.print_exc()
+        tool_name = data.get("tool_name", "Unknown tool")
+        result = data.get("result", "")
+        
+        # Create ToolResult object if raw data
+        tr = result if isinstance(result, ToolResult) else ToolResult(True, str(result), tool_name)
+        self.renderer.render_tool_result(tool_name, tr)
 
     async def _on_stream_chunk(self, data: Dict[str, Any]):
         thinking_chunk = data.get("thinking")
