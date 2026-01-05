@@ -10,7 +10,7 @@ from rich.table import Table
 from rich.text import Text
 from typing import Any, List
 
-from ..styles import console
+from ..rich.styles import console
 
 
 def render_model_table(models: List[Any], current_model: str) -> None:

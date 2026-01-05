@@ -11,7 +11,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
-from ui.styles import console
+from ui.rich.styles import console
 
 
 def render_tool_call_pretty(action: str, params: dict):

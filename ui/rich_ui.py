@@ -26,7 +26,7 @@ from .renderers.tools import render_tool_call_pretty, render_tool_result
 # ADD: Import the think tag cleanser
 
 # ADD: Import the new factory function
-from .styles import console, create_monk_panel
+from .rich.styles import console, create_monk_panel
 
 
 class RichUI(UI):
@@ -321,7 +321,7 @@ class RichUI(UI):
         await self._end_streaming()
         self._stop_thinking()
         from rich.text import Text
-        from ui.styles import create_task_completion_panel
+        from ui.rich.styles import create_task_completion_panel
 
         content = Text(summary if summary else "Mission Complete.", style="monk.text")
         panel = create_task_completion_panel(content)

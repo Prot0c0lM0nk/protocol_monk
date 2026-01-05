@@ -5,7 +5,7 @@ Message Renderer - Orthodox Matrix Theme
 import re
 from rich.markdown import Markdown
 
-from ui.styles import console, create_monk_panel
+from ui.rich.styles import console, create_monk_panel
 
 
 def render_user_message(text: str):

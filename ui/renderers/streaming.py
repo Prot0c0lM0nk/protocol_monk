@@ -6,7 +6,7 @@ Contains pure rendering functions for streaming UI components.
 from rich.markdown import Markdown
 from rich.text import Text
 
-from ..styles import create_monk_panel
+from ..rich.styles import create_monk_panel
 
 
 def generate_stream_panel(content_str: str):
