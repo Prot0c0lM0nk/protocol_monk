@@ -285,3 +285,28 @@ class ContextManager:
             self.logger.info(
                 f"Kept {len(kept_pairs)} messages, maintaining conversation coherence"
             )
+
+    async def update_max_tokens(self, new_max_tokens: int):
+        """
+        Update the maximum token limit for the context.
+
+        This method is called when switching to a model with a different context window.
+        It updates both the TokenAccountant and ContextPruner to use the new limit.
+
+        Args:
+            new_max_tokens: New maximum token limit
+        """
+        async with self._lock:
+            self.accountant.max_tokens = new_max_tokens
+            self.pruner.max_tokens = new_max_tokens
+            self.logger.info(f"Context window updated to {new_max_tokens:,} tokens")
+
+            # If current usage exceeds new limit, trigger pruning
+            if self.accountant.total_tokens > new_max_tokens:
+                self.logger.warning(
+                    f"Current token usage ({self.accountant.total_tokens:,}) exceeds "
+                    f"new limit ({new_max_tokens:,}), triggering prune..."
+                )
+                self.conversation = self.pruner.prune(
+                    self.conversation, self.accountant
+                )

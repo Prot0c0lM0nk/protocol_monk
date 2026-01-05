@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict
 
@@ -13,6 +14,7 @@ class ModelConfigLoader:
     ):
         self.model_map_file = Path(model_map_file)
         self.model_options_file = Path(model_options_file)
+        self.logger = logging.getLogger(__name__)
 
     def load_model_map(self) -> Dict[str, ModelInfo]:
         """
@@ -37,7 +39,7 @@ class ModelConfigLoader:
                     )
                 return model_info_dict
         except Exception as e:
-            print(f"Error loading model map: {e}")
+            self.logger.error(f"Error loading model map: {e}")
             return {}
 
     def load_options(self) -> Dict[str, Any]:
@@ -51,7 +53,7 @@ class ModelConfigLoader:
             with open(self.model_options_file, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            print(f"Error loading model options: {e}")
+            self.logger.error(f"Error loading model options: {e}")
             return {}
 
     def get_model_limit(self, model_name: str) -> int:

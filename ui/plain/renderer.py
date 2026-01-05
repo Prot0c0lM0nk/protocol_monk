@@ -227,3 +227,36 @@ class PlainRenderer:
         """Reset thinking block state after response complete"""
         self._in_thinking_block = False
         self._has_printed_thinking_header = False
+
+    def render_selection_list(self, title: str, items: list):
+        """
+        Render a selection list with numbered items.
+        
+        Args:
+            title: Title for the list
+            items: List of items to display (can be strings or objects with __str__)
+        """
+        self.console.print()
+        self.console.print(f"[bold cyan]{title}[/bold cyan]")
+        self.console.print("=" * len(title), style="dim")
+        
+        for idx, item in enumerate(items, 1):
+            # Handle both string items and objects
+            if hasattr(item, 'name'):
+                # ModelInfo objects have name attribute
+                name = getattr(item, 'name', str(item))
+                context_window = getattr(item, 'context_window', None)
+                provider = getattr(item, 'provider', None)
+                
+                if context_window and provider:
+                    self.console.print(
+                        f"  [bold white]{idx}.[/bold white] [cyan]{name}[/cyan] "
+                        f"[dim]({provider}, {context_window:,} tokens)[/dim]"
+                    )
+                else:
+                    self.console.print(f"  [bold white]{idx}.[/bold white] [cyan]{name}[/cyan]")
+            else:
+                # Simple string items
+                self.console.print(f"  [bold white]{idx}.[/bold white] [cyan]{str(item)}[/cyan]")
+        
+        self.console.print()

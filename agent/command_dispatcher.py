@@ -148,7 +148,7 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
             )
 
     async def _handle_model_switch(self):
-        """Switch models using the UI list display."""
+        """Switch models using the UI list display with context window check."""
         available = self.agent.model_manager.get_available_models()
 
         # 1. Send the data payload so PlainUI renders the blue list
@@ -169,15 +169,77 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
         # 3. Resolve selection
         selected_model = self._resolve_selection(choice, list(available.keys()))
 
-        if selected_model:
-            await self.agent.set_model(selected_model)
-            await self.event_bus.emit(
-                AgentEvents.INFO.value, {"message": f"✔️ Switched to {selected_model}"}
-            )
-        else:
+        if not selected_model:
             await self.event_bus.emit(
                 AgentEvents.ERROR.value, {"message": "Invalid model selection"}
             )
+            return
+
+        # 4. CONTEXT WINDOW CHECK: Assess if switch is safe
+        model_info = available.get(selected_model)
+        if model_info:
+            # Get current context usage
+            stats = await self.agent.context_manager.get_stats()
+            current_usage = stats.get("total_tokens", 0)
+            target_limit = model_info.context_window
+
+            # Use the model selector to assess the switch
+            report = self.agent.model_manager.assess_switch(
+                current_usage, selected_model
+            )
+
+            if not report.safe:
+                # Context is too large - show warning and options
+                await self.event_bus.emit(
+                    AgentEvents.WARNING.value,
+                    {"message": f"⚠️ {report.message}"},
+                )
+                await self.event_bus.emit(
+                    AgentEvents.INFO.value,
+                    {
+                        "message": (
+                            f"Current usage: {current_usage:,} tokens\n"
+                            f"Target limit: {target_limit:,} tokens\n"
+                            f"Recommendation: {report.recommendation}"
+                        )
+                    },
+                )
+
+                # Offer options
+                await self.event_bus.emit(
+                    AgentEvents.INFO.value,
+                    {
+                        "message": (
+                            "Options:\n"
+                            "  1. Continue anyway (will auto-prune context)\n"
+                            "  2. Cancel switch\n"
+                            "  3. Clear all context (dangerous)"
+                        )
+                    },
+                )
+
+                action = await self._prompt_user("Choose action (1-3)")
+                if action == "2":
+                    await self.event_bus.emit(
+                        AgentEvents.INFO.value, {"message": "Model switch cancelled"}
+                    )
+                    return
+                elif action == "3":
+                    await self.agent.context_manager.clear()
+                    await self.event_bus.emit(
+                        AgentEvents.INFO.value, {"message": "Context cleared"}
+                    )
+                # Option 1 (continue) will proceed with auto-pruning in set_model
+
+        # 5. Perform the switch
+        await self.agent.set_model(selected_model)
+        await self.event_bus.emit(
+            AgentEvents.MODEL_SWITCHED.value,
+            {"old_model": self.agent.current_model, "new_model": selected_model},
+        )
+        await self.event_bus.emit(
+            AgentEvents.INFO.value, {"message": f"✔️ Switched to {selected_model}"}
+        )
 
     async def _handle_provider_switch(self):
         """Switch providers and immediately trigger model selection."""
@@ -203,23 +265,32 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
         selected = self._resolve_selection(choice, providers)
 
         if selected:
-            # Update the agent's state
-            self.agent.current_provider = selected
-            self.agent.model_manager.provider = selected
+            # Capture the old provider before switching
+            old_provider = self.agent.current_provider
 
+            # Switch the model manager to the new provider
+            # This reloads the model map for the selected provider
+            self.agent.model_manager.switch_provider(selected)
+
+            # Update the agent's current provider state
+            self.agent.current_provider = selected
+
+            # Emit provider switched event
             await self.event_bus.emit(
-                AgentEvents.INFO.value,
-                {"message": f"Switched provider to {selected}"},
+                AgentEvents.PROVIDER_SWITCHED.value,
+                {
+                    "old_provider": old_provider,
+                    "new_provider": selected,
+                },
             )
 
-            # 4. CHAINING: Automatically trigger model switch for the new provider
+            # CHAINING: Automatically trigger model switch for the new provider
             # This ensures the user isn't stuck with an invalid model
             await self.event_bus.emit(
                 AgentEvents.INFO.value,
                 {"message": f"Please select a {selected} model:"},
             )
             await self._handle_model_switch()
-
         else:
             await self.event_bus.emit(
                 AgentEvents.ERROR.value, {"message": "Invalid provider selection"}

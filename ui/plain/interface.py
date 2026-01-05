@@ -146,7 +146,13 @@ class PlainUI(UI):
 
     async def _on_agent_info(self, data: Dict[str, Any]):
         msg = data.get("message", "")
-        if msg.strip():
+        context = data.get("context", "")
+        items = data.get("data", [])
+
+        # Check if this is a selection list (model_selection or provider_selection context)
+        if context in ["model_selection", "provider_selection"] and items:
+            self.renderer.render_selection_list(msg, items)
+        elif msg.strip():
             self.renderer.print_system(msg)
 
     async def _on_thinking_started(self, data: Dict[str, Any]):

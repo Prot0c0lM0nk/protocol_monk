@@ -439,12 +439,11 @@ class ProtocolAgent(AgentInterface):
         model_info = model_manager.get_available_models().get(model_name)
 
         if model_info:
-            self.context_manager.accountant.max_tokens = model_info.context_window
-            self.context_manager.pruner.max_tokens = model_info.context_window
+            # Update context window using the new update_max_tokens method
+            await self.context_manager.update_max_tokens(model_info.context_window)
             self.logger.info(
                 f"Updated context window to {model_info.context_window:,} tokens for model {model_name}"
             )
-        else:
             self.logger.warning(
                 f"Model '{model_name}' not found in {self.current_provider} model map. "
                 "Context window limits not updated."
