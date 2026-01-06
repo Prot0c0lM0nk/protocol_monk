@@ -162,6 +162,7 @@ class OpenRouterModelClient(BaseModelClient):
         try:
             async with session.post(self.chat_url, json=payload) as response:
                 self.logger.info("Response status: %d", response.status)
+                self.logger.info("Response headers: %s", dict(response.headers))
                 await self._check_error_status(response)
 
                 if stream:
@@ -169,6 +170,7 @@ class OpenRouterModelClient(BaseModelClient):
                     # Direct streaming without buffering
                     async for chunk in self._process_stream_response(response):
                         yield chunk
+                
                 else:
                     data = await response.json()
                     content = self._extract_full_content(data)
