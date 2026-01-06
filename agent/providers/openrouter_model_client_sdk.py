@@ -43,6 +43,10 @@ class OpenRouterModelClient(BaseModelClient):
         if provider_config is None:
             provider_config = {
                 "timeout": 420,
+                "max_retries": 3,
+                "retry_delay": 1.0,
+            }
+
         super().__init__(model_name, provider_config)
 
         # Get OpenRouter API key from settings (it's in environment.openrouter_api_key)
@@ -52,10 +56,6 @@ class OpenRouterModelClient(BaseModelClient):
                 "OpenRouter API key not found in settings. Set OPENROUTER_API_KEY environment variable.",
                 provider_name="openrouter",
             )
-                "OpenRouter API key not found in settings",
-                provider_name="openrouter",
-            )
-
         # Initialize the OpenAI client with OpenRouter's base URL
         self.client = AsyncOpenAI(
             api_key=self.api_key,
