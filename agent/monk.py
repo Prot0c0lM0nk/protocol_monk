@@ -256,14 +256,14 @@ class ProtocolAgent(AgentInterface):
             async for chunk in self.model_client.get_response_async(
                 context, stream=True, tools=tools
             ):
-                # NEW: Handle Thinking Packets First
+                # Handle Thinking Packets First
                 if isinstance(chunk, dict) and chunk.get("type") == "thinking":
                     await self.event_bus.emit(
                         AgentEvents.STREAM_CHUNK.value, {"thinking": chunk["content"]}
                     )
                     continue
 
-                # Handle both text and dict responses (EXISTING)
+                # Handle both text and dict responses
                 if isinstance(chunk, str):
                     full_response += chunk
                     await self.event_bus.emit(
@@ -273,35 +273,37 @@ class ProtocolAgent(AgentInterface):
                     # Don't overwrite accumulated text - store dict separately
                     # This handles tool calls without losing text content
                     full_response = chunk  # Tool calls replace text (OpenAI behavior)
-                # 1. Normalize Extraction of Tool Calls
-                tool_calls = []
-                if isinstance(full_response, list):
-                    tool_calls = full_response
-                elif isinstance(full_response, dict):
-                    # Check OpenAI/OpenRouter format: choices[0].message.tool_calls
-                    if "choices" in full_response and full_response["choices"]:
-                        message = full_response["choices"][0].get("message", {})
-                        if "tool_calls" in message:
-                            tool_calls = message["tool_calls"]
-                    # Check Ollama format: message.tool_calls
-                    elif (
-                        "message" in full_response
-                        and "tool_calls" in full_response["message"]
-                    ):
-                        tool_calls = full_response["message"]["tool_calls"]
-                    # Check top-level (fallback)
-                    elif "tool_calls" in full_response:
-                        tool_calls = full_response["tool_calls"]
 
-                # 2. Add to Context if Tools Found
-                if tool_calls:
-                    await self.context_manager.add_tool_call_message(tool_calls)
-                    return full_response
+            # Process after ALL chunks received
+            # 1. Normalize Extraction of Tool Calls
+            tool_calls = []
+            if isinstance(full_response, list):
+                tool_calls = full_response
+            elif isinstance(full_response, dict):
+                # Check OpenAI/OpenRouter format: choices[0].message.tool_calls
+                if "choices" in full_response and full_response["choices"]:
+                    message = full_response["choices"][0].get("message", {})
+                    if "tool_calls" in message:
+                        tool_calls = message["tool_calls"]
+                # Check Ollama format: message.tool_calls
+                elif (
+                    "message" in full_response
+                    and "tool_calls" in full_response["message"]
+                ):
+                    tool_calls = full_response["message"]["tool_calls"]
+                # Check top-level (fallback)
+                elif "tool_calls" in full_response:
+                    tool_calls = full_response["tool_calls"]
 
-                # 3. Otherwise, handle as Text
-                if isinstance(full_response, str):
-                    await self.context_manager.add_assistant_message(full_response)
-                    return full_response
+            # 2. Add to Context if Tools Found
+            if tool_calls:
+                await self.context_manager.add_tool_call_message(tool_calls)
+                return full_response
+
+            # 3. Otherwise, handle as Text
+            if isinstance(full_response, str):
+                await self.context_manager.add_assistant_message(full_response)
+                return full_response
 
             return full_response
 
