@@ -43,16 +43,15 @@ class OpenRouterModelClient(BaseModelClient):
         if provider_config is None:
             provider_config = {
                 "timeout": 420,
-                "max_retries": 3,
-                "retry_delay": 1.0,
-            }
-
         super().__init__(model_name, provider_config)
 
-        # Get OpenRouter API key from settings
-        self.api_key = settings.api.openrouter_api_key
+        # Get OpenRouter API key from settings (it's in environment.openrouter_api_key)
+        self.api_key = settings.environment.openrouter_api_key
         if not self.api_key:
             raise ProviderAuthenticationError(
+                "OpenRouter API key not found in settings. Set OPENROUTER_API_KEY environment variable.",
+                provider_name="openrouter",
+            )
                 "OpenRouter API key not found in settings",
                 provider_name="openrouter",
             )

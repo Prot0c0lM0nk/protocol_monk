@@ -25,10 +25,10 @@ async def test_ollama():
     print("="*60)
 
     try:
-        client = OllamaModelClientSDK("qwen3:4b")
+        # Use a cloud model to avoid downloading local models
+        client = OllamaModelClientSDK("qwen3:4b-instruct-cloud")
 
         messages = [{"role": "user", "content": "Hello, can you count to 3?"}]
-
         print("\nSending request to Ollama...")
         print(f"Model: {client.model_name}")
         print(f"Message: {messages[0]['content']}\n")
@@ -86,7 +86,6 @@ async def test_openrouter():
         import traceback
         traceback.print_exc()
         return False
-
 
 async def main():
     """Run all tests."""
