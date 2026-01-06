@@ -270,9 +270,9 @@ class ProtocolAgent(AgentInterface):
                         AgentEvents.STREAM_CHUNK.value, {"chunk": chunk}
                     )
                 elif isinstance(chunk, (dict, list)):
-                    full_response = chunk
-            # Processing after stream ends
-            if full_response:
+                    # Don't overwrite accumulated text - store dict separately
+                    # This handles tool calls without losing text content
+                    full_response = chunk  # Tool calls replace text (OpenAI behavior)
                 # 1. Normalize Extraction of Tool Calls
                 tool_calls = []
                 if isinstance(full_response, list):
