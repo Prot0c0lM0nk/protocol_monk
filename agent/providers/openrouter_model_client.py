@@ -259,70 +259,74 @@ class OpenRouterModelClient(BaseModelClient):
         self.logger.info("Starting OpenRouter stream processing")
 
         chunk_count = 0
-        async for line in response.content:
-            if not line:
-                continue
-            line_str = line.decode("utf-8").strip()
-            self.logger.debug("Raw line: %s", line_str[:100] if len(line_str) > 100 else line_str)
+        try:
+            async for line in response.content:
+                if not line:
+                    continue
+                line_str = line.decode("utf-8").strip()
+                self.logger.debug("Raw line: %s", line_str[:100] if len(line_str) > 100 else line_str)
 
-            # Server-Sent Events format: "data: {json}"
-            if line_str.startswith("data: "):
-                json_str = line_str[6:]  # Remove "data: " prefix
+                # Server-Sent Events format: "data: {json}"
+                if line_str.startswith("data: "):
+                    json_str = line_str[6:]  # Remove "data: " prefix
 
-                if json_str == "[DONE]":
-                    self.logger.info("Received [DONE] signal")
-                    break
+                    if json_str == "[DONE]":
+                        self.logger.info("Received [DONE] signal")
+                        break
 
-                try:
-                    chunk_data = json.loads(json_str)
-                    chunk_count += 1
-                    self.logger.info("Chunk #%d: %s", chunk_count, str(chunk_data)[:200])
+                    try:
+                        chunk_data = json.loads(json_str)
+                        chunk_count += 1
+                        self.logger.info("Chunk #%d: %s", chunk_count, str(chunk_data)[:200])
 
-                    # Process SSE events - each is complete JSON
-                    if "choices" in chunk_data and chunk_data["choices"]:
-                        choice = chunk_data["choices"][0]
+                        # Process SSE events - each is complete JSON
+                        if "choices" in chunk_data and chunk_data["choices"]:
+                            choice = chunk_data["choices"][0]
 
-                        # STREAMING FORMAT: Use 'delta' field (not 'message')
-                        # 'message' is only in the final chunk
-                        delta = choice.get("delta", {})
+                            # STREAMING FORMAT: Use 'delta' field (not 'message')
+                            # 'message' is only in the final chunk
+                            delta = choice.get("delta", {})
 
-                        self.logger.info("Delta in chunk: %s", str(delta)[:200])
+                            self.logger.info("Delta in chunk: %s", str(delta)[:200])
 
-                        # Check for tool calls FIRST (OpenAI streaming format)
-                        if "tool_calls" in delta and delta["tool_calls"]:
-                            self.logger.info("Yielding tool_calls chunk")
-                            yield chunk_data  # Return complete response with tool calls
-                        # Check for text content (only if no tool calls)
-                        elif "content" in delta and delta["content"]:
-                            content = delta["content"]
-                            self.logger.info("Yielding content chunk: %s", content[:50] if len(content) > 50 else content)
-                            yield content
-                            self._log_debug_info(content)
-                        elif "content" in delta and not delta["content"]:
-                            # Empty content chunk - OpenRouter sends these sometimes
-                            self.logger.debug("Empty content chunk in delta (normal)")
-                        else:
-                            # Check for 'message' (final chunk format)
-                            message = choice.get("message", {})
-                            if "tool_calls" in message and message["tool_calls"]:
-                                self.logger.info("Yielding tool_calls from final chunk")
-                                yield chunk_data
-                            elif "content" in message and message["content"]:
-                                content = message["content"]
-                                self.logger.info("Yielding content from final chunk: %s", content[:50] if len(content) > 50 else content)
+                            # Check for tool calls FIRST (OpenAI streaming format)
+                            if "tool_calls" in delta and delta["tool_calls"]:
+                                self.logger.info("Yielding tool_calls chunk")
+                                yield chunk_data  # Return complete response with tool calls
+                            # Check for text content (only if no tool calls)
+                            elif "content" in delta and delta["content"]:
+                                content = delta["content"]
+                                self.logger.info("Yielding content chunk: %s", content[:50] if len(content) > 50 else content)
                                 yield content
                                 self._log_debug_info(content)
+                            elif "content" in delta and not delta["content"]:
+                                # Empty content chunk - OpenRouter sends these sometimes
+                                self.logger.debug("Empty content chunk in delta (normal)")
                             else:
-                                # Debug: Log when we don't yield anything
-                                self.logger.debug("No content or tool_calls in chunk - delta keys: %s, message keys: %s", list(delta.keys()), list(message.keys()))
-                    else:
-                        self.logger.warning("No 'choices' in chunk_data - keys: %s", list(chunk_data.keys()))
-                except json.JSONDecodeError as e:
-                    self.logger.warning("Invalid JSON chunk: %s - %s", json_str, e)
-                    continue
-
-        self.logger.info("Stream processing complete. Total chunks: %d", chunk_count)
-        self._log_complete_response()
+                                # Check for 'message' (final chunk format)
+                                message = choice.get("message", {})
+                                if "tool_calls" in message and message["tool_calls"]:
+                                    self.logger.info("Yielding tool_calls from final chunk")
+                                    yield chunk_data
+                                elif "content" in message and message["content"]:
+                                    content = message["content"]
+                                    self.logger.info("Yielding content from final chunk: %s", content[:50] if len(content) > 50 else content)
+                                    yield content
+                                    self._log_debug_info(content)
+                                else:
+                                    # Debug: Log when we don't yield anything
+                                    self.logger.debug("No content or tool_calls in chunk - delta keys: %s, message keys: %s", list(delta.keys()), list(message.keys()))
+                        else:
+                            self.logger.warning("No 'choices' in chunk_data - keys: %s", list(chunk_data.keys()))
+                    except json.JSONDecodeError as e:
+                        self.logger.warning("Invalid JSON chunk: %s - %s", json_str, e)
+                        continue
+        except Exception as e:
+            self.logger.error("Stream processing error: %s", e)
+            raise
+        finally:
+            self.logger.info("Stream processing complete. Total chunks: %d", chunk_count)
+            self._log_complete_response()
 
     def _initialize_stream_state(self) -> None:
         """
