@@ -259,23 +259,23 @@ class OpenRouterModelClient(BaseModelClient):
         """
         self._initialize_stream_state()
         self.logger.info("Starting OpenRouter stream processing")
-
-        chunk_count = 0
         chunk_count = 0
         try:
+            line_number = 0
             async for line in response.content:
+                line_number += 1
                 if not line:
-                    self.logger.debug("Empty line received")
+                    self.logger.debug("Empty line received at line %d", line_number)
                     continue
                 line_str = line.decode("utf-8").strip()
-                self.logger.debug("Raw line: %s", line_str[:100] if len(line_str) > 100 else line_str)
+                self.logger.debug("Raw line #%d: %s", line_number, line_str[:100] if len(line_str) > 100 else line_str)
 
                 # Server-Sent Events format: "data: {json}"
                 if line_str.startswith("data: "):
                     json_str = line_str[6:]  # Remove "data: " prefix
 
                     if json_str == "[DONE]":
-                        self.logger.info("Received [DONE] signal")
+                        self.logger.info("Received [DONE] signal at line %d", line_number)
                         break
 
                     try:
@@ -326,16 +326,18 @@ class OpenRouterModelClient(BaseModelClient):
                         self.logger.warning("Invalid JSON chunk: %s - %s", json_str, e)
                         continue
                 else:
-                    self.logger.debug("Non-data line: %s", line_str[:50])
+                    self.logger.debug("Non-data line #%d: %s", line_number, line_str[:50])
             else:
                 # Loop completed without break - stream ended without [DONE]
-                self.logger.warning("Stream ended without receiving [DONE] signal")
+                self.logger.warning("Stream ended at line %d without receiving [DONE] signal", line_number)
         except Exception as e:
-            self.logger.error("Stream processing error: %s", e, exc_info=True)
+            self.logger.error("Stream processing error at line %d: %s", line_number, e, exc_info=True)
             raise
         finally:
-            self.logger.info("Stream processing complete. Total chunks: %d", chunk_count)
+            self.logger.info("Stream processing complete. Total lines: %d, Total chunks: %d", line_number, chunk_count)
+            self.logger.info("Stream processing complete. Total lines: %d, Total chunks: %d", line_number, chunk_count)
             self._log_complete_response()
+
     def _initialize_stream_state(self) -> None:
         """
         Initialize debug logging state for stream processing.
@@ -364,8 +366,23 @@ class OpenRouterModelClient(BaseModelClient):
             self.logger.debug(
                 "Received complete response (%d chunks): %s",
                 self._chunk_count,
-                full_response,
+                full_response[:500],
             )
+
+    def _extract_full_content(self, response_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract full content from non-streaming response.
+
+        Args:
+            response_data: Response data from API
+
+        Returns:
+            Optional[str]: Extracted content or None
+        """
+        if "choices" in response_data and response_data["choices"]:
+            message = response_data["choices"][0].get("message", {})
+            return message.get("content")
+        return None
 
     def _prepare_payload(
         self,
@@ -411,39 +428,6 @@ class OpenRouterModelClient(BaseModelClient):
         except (KeyError, TypeError, IndexError) as e:
             self.logger.warning("Error extracting content: %s", e)
         return None
-
-    def _extract_chunk_content(self, chunk_data: Dict[str, Any]) -> Optional[str]:
-        """
-        Extract content from streaming chunk.
-
-        Args:
-            chunk_data: Streaming chunk data dictionary
-
-        Returns:
-            Optional[str]: Extracted content or None if error
-        """
-        try:
-            # OpenRouter streaming format
-            if "choices" in chunk_data and chunk_data["choices"]:
-                delta = chunk_data["choices"][0].get("delta", {})
-                return delta.get("content", "")
-            return None
-        except (KeyError, TypeError, IndexError) as e:
-            self.logger.warning("Error extracting chunk content: %s", e)
-        return None
-
-    def _extract_full_content(self, response_data: Dict[str, Any]) -> Optional[str]:
-        """
-        Extract content from non-streaming response.
-
-        Args:
-            response_data: Complete response data dictionary
-
-        Returns:
-            Optional[str]: Extracted content or None if error
-        """
-        return self._extract_content(response_data)
-
     def supports_tools(self) -> bool:
         """
         Return True if provider supports tool/function calling.
