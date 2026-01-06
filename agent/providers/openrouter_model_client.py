@@ -259,9 +259,11 @@ class OpenRouterModelClient(BaseModelClient):
         self.logger.info("Starting OpenRouter stream processing")
 
         chunk_count = 0
+        chunk_count = 0
         try:
             async for line in response.content:
                 if not line:
+                    self.logger.debug("Empty line received")
                     continue
                 line_str = line.decode("utf-8").strip()
                 self.logger.debug("Raw line: %s", line_str[:100] if len(line_str) > 100 else line_str)
@@ -321,13 +323,17 @@ class OpenRouterModelClient(BaseModelClient):
                     except json.JSONDecodeError as e:
                         self.logger.warning("Invalid JSON chunk: %s - %s", json_str, e)
                         continue
+                else:
+                    self.logger.debug("Non-data line: %s", line_str[:50])
+            else:
+                # Loop completed without break - stream ended without [DONE]
+                self.logger.warning("Stream ended without receiving [DONE] signal")
         except Exception as e:
-            self.logger.error("Stream processing error: %s", e)
+            self.logger.error("Stream processing error: %s", e, exc_info=True)
             raise
         finally:
             self.logger.info("Stream processing complete. Total chunks: %d", chunk_count)
             self._log_complete_response()
-
     def _initialize_stream_state(self) -> None:
         """
         Initialize debug logging state for stream processing.
