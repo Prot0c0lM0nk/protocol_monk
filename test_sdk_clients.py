@@ -26,7 +26,7 @@ async def test_ollama():
 
     try:
         # Use a cloud model to avoid downloading local models
-        client = OllamaModelClientSDK("qwen3:4b-instruct-cloud")
+        client = OllamaModelClientSDK("ministral-3:8b-cloud")
 
         messages = [{"role": "user", "content": "Hello, can you count to 3?"}]
         print("\nSending request to Ollama...")
@@ -60,7 +60,7 @@ async def test_openrouter():
     print("="*60)
 
     try:
-        client = OpenRouterModelClient("openai/gpt-4o-mini")
+        client = OpenRouterModelClient("mistralai/ministral-14b-2512")
 
         messages = [{"role": "user", "content": "Hello, can you count to 3?"}]
 
