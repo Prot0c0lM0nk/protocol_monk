@@ -298,6 +298,9 @@ class OpenRouterModelClient(BaseModelClient):
                             self.logger.info("Yielding content chunk: %s", content[:50] if len(content) > 50 else content)
                             yield content
                             self._log_debug_info(content)
+                        elif "content" in delta and not delta["content"]:
+                            # Empty content chunk - OpenRouter sends these sometimes
+                            self.logger.debug("Empty content chunk in delta (normal)")
                         else:
                             # Check for 'message' (final chunk format)
                             message = choice.get("message", {})
@@ -311,7 +314,7 @@ class OpenRouterModelClient(BaseModelClient):
                                 self._log_debug_info(content)
                             else:
                                 # Debug: Log when we don't yield anything
-                                self.logger.warning("No content or tool_calls in chunk - delta keys: %s, message keys: %s", list(delta.keys()), list(message.keys()))
+                                self.logger.debug("No content or tool_calls in chunk - delta keys: %s, message keys: %s", list(delta.keys()), list(message.keys()))
                     else:
                         self.logger.warning("No 'choices' in chunk_data - keys: %s", list(chunk_data.keys()))
                 except json.JSONDecodeError as e:
