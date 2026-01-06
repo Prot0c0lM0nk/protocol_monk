@@ -272,6 +272,10 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
             # This reloads the model map for the selected provider
             self.agent.model_manager.switch_provider(selected)
 
+            # CRITICAL: Also switch the model client's provider
+            # This ensures the actual HTTP client uses the correct provider
+            self.agent.model_client.switch_provider(selected)
+
             # Update the agent's current provider state
             self.agent.current_provider = selected
 
@@ -295,7 +299,6 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
             await self.event_bus.emit(
                 AgentEvents.ERROR.value, {"message": "Invalid provider selection"}
             )
-
     # --- Helpers ---
 
     async def _prompt_user(self, prompt_text: str) -> str:

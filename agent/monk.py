@@ -278,15 +278,20 @@ class ProtocolAgent(AgentInterface):
                 if isinstance(full_response, list):
                     tool_calls = full_response
                 elif isinstance(full_response, dict):
-                    # Check top-level (OpenAI style)
-                    if "tool_calls" in full_response:
-                        tool_calls = full_response["tool_calls"]
-                    # Check nested in message (Ollama style)
+                    # Check OpenAI/OpenRouter format: choices[0].message.tool_calls
+                    if "choices" in full_response and full_response["choices"]:
+                        message = full_response["choices"][0].get("message", {})
+                        if "tool_calls" in message:
+                            tool_calls = message["tool_calls"]
+                    # Check Ollama format: message.tool_calls
                     elif (
                         "message" in full_response
                         and "tool_calls" in full_response["message"]
                     ):
                         tool_calls = full_response["message"]["tool_calls"]
+                    # Check top-level (fallback)
+                    elif "tool_calls" in full_response:
+                        tool_calls = full_response["tool_calls"]
 
                 # 2. Add to Context if Tools Found
                 if tool_calls:

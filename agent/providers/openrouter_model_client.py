@@ -274,14 +274,14 @@ class OpenRouterModelClient(BaseModelClient):
                         choice = chunk_data["choices"][0]
                         message = choice.get("message", {})
 
-                        # Check for text content
-                        if "content" in message and message["content"]:
+                        # Check for tool calls FIRST (OpenAI format)
+                        # This is critical - tool_calls can appear with or without content
+                        if "tool_calls" in message and message["tool_calls"]:
+                            yield chunk_data  # Return complete response with tool calls
+                        # Check for text content (only if no tool calls)
+                        elif "content" in message and message["content"]:
                             yield message["content"]
                             self._log_debug_info(message["content"])
-
-                        # Check for tool calls (OpenAI format)
-                        elif "tool_calls" in message and message["tool_calls"]:
-                            yield chunk_data  # Return complete response
                 except json.JSONDecodeError as e:
                     self.logger.warning("Invalid JSON chunk: %s - %s", json_str, e)
                     continue
