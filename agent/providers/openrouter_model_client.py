@@ -281,24 +281,37 @@ class OpenRouterModelClient(BaseModelClient):
                     # Process SSE events - each is complete JSON
                     if "choices" in chunk_data and chunk_data["choices"]:
                         choice = chunk_data["choices"][0]
-                        message = choice.get("message", {})
 
-                        self.logger.info("Message in chunk: %s", str(message)[:200])
+                        # STREAMING FORMAT: Use 'delta' field (not 'message')
+                        # 'message' is only in the final chunk
+                        delta = choice.get("delta", {})
 
-                        # Check for tool calls FIRST (OpenAI format)
-                        # This is critical - tool_calls can appear with or without content
-                        if "tool_calls" in message and message["tool_calls"]:
+                        self.logger.info("Delta in chunk: %s", str(delta)[:200])
+
+                        # Check for tool calls FIRST (OpenAI streaming format)
+                        if "tool_calls" in delta and delta["tool_calls"]:
                             self.logger.info("Yielding tool_calls chunk")
                             yield chunk_data  # Return complete response with tool calls
                         # Check for text content (only if no tool calls)
-                        elif "content" in message and message["content"]:
-                            content = message["content"]
+                        elif "content" in delta and delta["content"]:
+                            content = delta["content"]
                             self.logger.info("Yielding content chunk: %s", content[:50] if len(content) > 50 else content)
                             yield content
                             self._log_debug_info(content)
                         else:
-                            # Debug: Log when we don't yield anything
-                            self.logger.warning("No content or tool_calls in chunk - keys: %s", list(message.keys()))
+                            # Check for 'message' (final chunk format)
+                            message = choice.get("message", {})
+                            if "tool_calls" in message and message["tool_calls"]:
+                                self.logger.info("Yielding tool_calls from final chunk")
+                                yield chunk_data
+                            elif "content" in message and message["content"]:
+                                content = message["content"]
+                                self.logger.info("Yielding content from final chunk: %s", content[:50] if len(content) > 50 else content)
+                                yield content
+                                self._log_debug_info(content)
+                            else:
+                                # Debug: Log when we don't yield anything
+                                self.logger.warning("No content or tool_calls in chunk - delta keys: %s, message keys: %s", list(delta.keys()), list(message.keys()))
                     else:
                         self.logger.warning("No 'choices' in chunk_data - keys: %s", list(chunk_data.keys()))
                 except json.JSONDecodeError as e:
@@ -307,6 +320,7 @@ class OpenRouterModelClient(BaseModelClient):
 
         self.logger.info("Stream processing complete. Total chunks: %d", chunk_count)
         self._log_complete_response()
+
     def _initialize_stream_state(self) -> None:
         """
         Initialize debug logging state for stream processing.
