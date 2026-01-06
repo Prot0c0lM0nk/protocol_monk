@@ -156,11 +156,16 @@ class OpenRouterModelClient(BaseModelClient):
         session = await self._get_session()
         payload = self._prepare_payload(conversation_context, stream)
 
+        self.logger.info("Making OpenRouter request to %s", self.chat_url)
+        self.logger.info("Payload: %s", json.dumps(payload, indent=2))
+
         try:
             async with session.post(self.chat_url, json=payload) as response:
+                self.logger.info("Response status: %d", response.status)
                 await self._check_error_status(response)
 
                 if stream:
+                    self.logger.info("Starting stream processing")
                     # Direct streaming without buffering
                     async for chunk in self._process_stream_response(response):
                         yield chunk
@@ -177,7 +182,6 @@ class OpenRouterModelClient(BaseModelClient):
                                 "model": self.model_name,
                             },
                         )
-
         except asyncio.TimeoutError as exc:
             raise ModelTimeoutError(
                 message="Model request timed out",
@@ -252,42 +256,57 @@ class OpenRouterModelClient(BaseModelClient):
             str: Content chunks from the response
         """
         self._initialize_stream_state()
+        self.logger.info("Starting OpenRouter stream processing")
 
+        chunk_count = 0
         async for line in response.content:
             if not line:
                 continue
-
             line_str = line.decode("utf-8").strip()
+            self.logger.debug("Raw line: %s", line_str[:100] if len(line_str) > 100 else line_str)
 
             # Server-Sent Events format: "data: {json}"
             if line_str.startswith("data: "):
                 json_str = line_str[6:]  # Remove "data: " prefix
 
                 if json_str == "[DONE]":
+                    self.logger.info("Received [DONE] signal")
                     break
 
                 try:
                     chunk_data = json.loads(json_str)
+                    chunk_count += 1
+                    self.logger.info("Chunk #%d: %s", chunk_count, str(chunk_data)[:200])
 
                     # Process SSE events - each is complete JSON
                     if "choices" in chunk_data and chunk_data["choices"]:
                         choice = chunk_data["choices"][0]
                         message = choice.get("message", {})
 
+                        self.logger.info("Message in chunk: %s", str(message)[:200])
+
                         # Check for tool calls FIRST (OpenAI format)
                         # This is critical - tool_calls can appear with or without content
                         if "tool_calls" in message and message["tool_calls"]:
+                            self.logger.info("Yielding tool_calls chunk")
                             yield chunk_data  # Return complete response with tool calls
                         # Check for text content (only if no tool calls)
                         elif "content" in message and message["content"]:
-                            yield message["content"]
-                            self._log_debug_info(message["content"])
+                            content = message["content"]
+                            self.logger.info("Yielding content chunk: %s", content[:50] if len(content) > 50 else content)
+                            yield content
+                            self._log_debug_info(content)
+                        else:
+                            # Debug: Log when we don't yield anything
+                            self.logger.warning("No content or tool_calls in chunk - keys: %s", list(message.keys()))
+                    else:
+                        self.logger.warning("No 'choices' in chunk_data - keys: %s", list(chunk_data.keys()))
                 except json.JSONDecodeError as e:
                     self.logger.warning("Invalid JSON chunk: %s - %s", json_str, e)
                     continue
 
+        self.logger.info("Stream processing complete. Total chunks: %d", chunk_count)
         self._log_complete_response()
-
     def _initialize_stream_state(self) -> None:
         """
         Initialize debug logging state for stream processing.
