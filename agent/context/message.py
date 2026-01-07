@@ -40,6 +40,7 @@ class Message:
 
         # Handle Tool Calls (Assistant)
         if self.role == "assistant" and self.tool_calls:
+            # Keep tool_calls as-is - Ollama SDK expects arguments as dict
             msg["tool_calls"] = self.tool_calls
 
         # Handle Tool Results (Tool)

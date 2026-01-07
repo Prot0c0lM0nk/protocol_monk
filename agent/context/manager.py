@@ -105,22 +105,24 @@ class ContextManager:
         async with self._lock:
             # 1. Run Decay Tick
             await self.tracker.tick(self.conversation)
-
             # 2. Convert Ollama ToolCall objects to dict format if needed
             converted_tool_calls = []
             for tc in tool_calls:
                 if hasattr(tc, "function"):
                     # Ollama ToolCall object
                     func = tc.function
+                    # Ensure arguments is a dict (not JSON string)
+                    arguments = func.arguments
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except json.JSONDecodeError:
+                            pass  # Keep as-is if not valid JSON
                     converted_tool_calls.append(
                         {
                             "function": {
                                 "name": func.name,
-                                "arguments": (
-                                    json.dumps(func.arguments)
-                                    if isinstance(func.arguments, dict)
-                                    else func.arguments
-                                ),
+                                "arguments": arguments,  # Keep as dict
                             }
                         }
                     )
