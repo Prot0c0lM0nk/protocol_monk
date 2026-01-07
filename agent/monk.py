@@ -246,7 +246,8 @@ class ProtocolAgent(AgentInterface):
         Stream the model response and handle errors with fallback logic.
         """
         await self.event_bus.emit(AgentEvents.THINKING_STARTED.value, {})
-        full_response = ""
+        accumulated_text = ""
+        tool_calls_accumulator = None
         try:
             # Get tool schemas if available
             tools = None
@@ -265,47 +266,108 @@ class ProtocolAgent(AgentInterface):
 
                 # Handle both text and dict responses
                 if isinstance(chunk, str):
-                    full_response += chunk
+                    accumulated_text += chunk
                     await self.event_bus.emit(
                         AgentEvents.STREAM_CHUNK.value, {"chunk": chunk}
                     )
-                elif isinstance(chunk, (dict, list)):
-                    # Don't overwrite accumulated text - store dict separately
-                    # This handles tool calls without losing text content
-                    full_response = chunk  # Tool calls replace text (OpenAI behavior)
+                elif isinstance(chunk, dict):
+                    # Check for tool calls and accumulate separately
+                    if "tool_calls" in chunk:
+                        self.logger.info(f"Received tool call chunk (dict): {chunk}")
+                        tool_calls_accumulator = chunk
+                    else:
+                        self.logger.debug(
+                            f"Received dict chunk (not tool call): {chunk}"
+                        )
+                        accumulated_text = str(chunk)
+                elif isinstance(chunk, list):
+                    # Handle list responses (tool calls in list format)
+                    self.logger.info(f"Received list tool call chunk: {chunk}")
+                    tool_calls_accumulator = chunk
+                elif hasattr(chunk, "message"):
+                    # Handle Ollama response objects
+                    self.logger.info(
+                        f"Received Ollama response object with message: {chunk.message}"
+                    )
+                    if (
+                        hasattr(chunk.message, "tool_calls")
+                        and chunk.message.tool_calls
+                    ):
+                        self.logger.info(
+                            f"Ollama response has tool_calls: {chunk.message.tool_calls}"
+                        )
+                        tool_calls_accumulator = chunk
+                    elif hasattr(chunk.message, "content") and chunk.message.content:
+                        self.logger.debug(
+                            f"Ollama response has content: {chunk.message.content}"
+                        )
+                        accumulated_text += chunk.message.content
+                    else:
+                        self.logger.warning(
+                            f"Ollama response has no tool_calls or content"
+                        )
+                else:
+                    self.logger.warning(
+                        f"Received unknown chunk type: {type(chunk)}, content: {chunk}"
+                    )
+            # Return tool calls if present, otherwise text
+            if tool_calls_accumulator:
+                self.logger.info(
+                    f"Processing tool calls accumulator: {tool_calls_accumulator}"
+                )
+                # Normalize tool calls from different formats
+                tool_calls = []
+                if isinstance(tool_calls_accumulator, list):
+                    tool_calls = tool_calls_accumulator
+                elif isinstance(tool_calls_accumulator, dict):
+                    # Check OpenAI/OpenRouter format: choices[0].message.tool_calls
+                    if (
+                        "choices" in tool_calls_accumulator
+                        and tool_calls_accumulator["choices"]
+                    ):
+                        message = tool_calls_accumulator["choices"][0].get(
+                            "message", {}
+                        )
+                        if "tool_calls" in message:
+                            tool_calls = message["tool_calls"]
+                    # Check Ollama format: message.tool_calls
+                    elif (
+                        "message" in tool_calls_accumulator
+                        and "tool_calls" in tool_calls_accumulator["message"]
+                    ):
+                        tool_calls = tool_calls_accumulator["message"]["tool_calls"]
+                    # Check top-level (fallback)
+                    elif "tool_calls" in tool_calls_accumulator:
+                        tool_calls = tool_calls_accumulator["tool_calls"]
+                elif hasattr(tool_calls_accumulator, "message"):
+                    # Handle Ollama response objects
+                    if hasattr(tool_calls_accumulator.message, "tool_calls"):
+                        tool_calls = tool_calls_accumulator.message.tool_calls
+                        self.logger.info(
+                            f"Extracted tool calls from Ollama object: {tool_calls}"
+                        )
 
-            # Process after ALL chunks received
-            # 1. Normalize Extraction of Tool Calls
-            tool_calls = []
-            if isinstance(full_response, list):
-                tool_calls = full_response
-            elif isinstance(full_response, dict):
-                # Check OpenAI/OpenRouter format: choices[0].message.tool_calls
-                if "choices" in full_response and full_response["choices"]:
-                    message = full_response["choices"][0].get("message", {})
-                    if "tool_calls" in message:
-                        tool_calls = message["tool_calls"]
-                # Check Ollama format: message.tool_calls
-                elif (
-                    "message" in full_response
-                    and "tool_calls" in full_response["message"]
-                ):
-                    tool_calls = full_response["message"]["tool_calls"]
-                # Check top-level (fallback)
-                elif "tool_calls" in full_response:
-                    tool_calls = full_response["tool_calls"]
+                self.logger.info(f"Extracted tool_calls: {tool_calls}")
+                # Add to context and return
+                if tool_calls:
+                    await self.context_manager.add_tool_call_message(tool_calls)
+                    self.logger.info(f"Returning tool calls to TAOR loop")
+                    return tool_calls_accumulator
+                else:
+                    self.logger.warning(
+                        f"tool_calls_accumulator present but no tool_calls extracted"
+                    )
 
-            # 2. Add to Context if Tools Found
-            if tool_calls:
-                await self.context_manager.add_tool_call_message(tool_calls)
-                return full_response
+            # Handle as text response
+            if accumulated_text:
+                self.logger.info(
+                    f"No tool calls found, returning text response ({len(accumulated_text)} chars)"
+                )
+                await self.context_manager.add_assistant_message(accumulated_text)
+                return accumulated_text
 
-            # 3. Otherwise, handle as Text
-            if isinstance(full_response, str):
-                await self.context_manager.add_assistant_message(full_response)
-                return full_response
-
-            return full_response
+            self.logger.warning("No accumulated_text and no tool_calls_accumulator")
+            return accumulated_text
 
         except ModelRateLimitError as e:
             e.log_error()
@@ -341,8 +403,34 @@ class ProtocolAgent(AgentInterface):
         """
         actions = []
 
+        # CASE 0: Response is an Ollama ChatResponse object
+        if hasattr(response_data, "message"):
+            self.logger.info(f"Parsing Ollama ChatResponse object")
+            if (
+                hasattr(response_data.message, "tool_calls")
+                and response_data.message.tool_calls
+            ):
+                for tool_call in response_data.message.tool_calls:
+                    self.logger.info(f"Parsing Ollama tool_call: {tool_call}")
+                    func = tool_call.function
+                    actions.append(
+                        {
+                            "action": func.name,
+                            "parameters": (
+                                json.loads(func.arguments)
+                                if isinstance(func.arguments, str)
+                                else func.arguments
+                            ),
+                        }
+                    )
+                self.logger.info(
+                    f"Extracted {len(actions)} actions from Ollama response"
+                )
+                return actions, len(actions) > 0
+
         # CASE 1: Response is already a Dictionary (Structured API Call)
         if isinstance(response_data, dict):
+            self.logger.info(f"Parsing dict response")
             # 1. Try your primary utility
             tool_calls = self.proper_tool_caller.extract_tool_calls(response_data)
             for tool_call in tool_calls:
@@ -378,7 +466,7 @@ class ProtocolAgent(AgentInterface):
 
         # CASE 2: Response is a String (Text-based or "Ghost" Tool)
         # [Keep your existing regex/text parsing logic here if you still want a fallback]
-
+        self.logger.info(f"Response is string, no tool calls extracted")
         return [], False
 
     async def _record_results(self, summary: ExecutionSummary) -> bool:

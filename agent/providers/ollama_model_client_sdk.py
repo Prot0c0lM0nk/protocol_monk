@@ -131,8 +131,7 @@ class OllamaModelClientSDK(BaseModelClient):
 
                 # Run the synchronous Ollama chat in executor
                 stream_response = await loop.run_in_executor(
-                    None,
-                    lambda: ollama.chat(**request_params)
+                    None, lambda: ollama.chat(**request_params)
                 )
 
                 # Process the synchronous stream
@@ -146,18 +145,20 @@ class OllamaModelClientSDK(BaseModelClient):
 
                     # Check for text content
                     if "content" in message and message["content"]:
+                        self.logger.debug(
+                            f"Yielding content chunk: {message['content'][:100]}"
+                        )
                         yield message["content"]
 
                     # Check for tool calls (Ollama format)
-                    elif "tool_calls" in message and message["tool_calls"]:
+                    if "tool_calls" in message and message["tool_calls"]:
+                        self.logger.info(f"Yielding tool call chunk: {chunk}")
                         yield chunk  # Return complete response with tool calls
-
             else:
                 # Non-streaming response
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
-                    None,
-                    lambda: ollama.chat(**request_params)
+                    None, lambda: ollama.chat(**request_params)
                 )
 
                 # Extract content

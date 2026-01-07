@@ -5,6 +5,7 @@ Context Manager
 Manages conversation history using Native Tool Calling standards.
 """
 
+import json
 import asyncio
 import logging
 from pathlib import Path
@@ -99,17 +100,46 @@ class ContextManager:
     async def add_tool_call_message(self, tool_calls: List[Dict]):
         """
         Add an Assistant message containing tool calls.
+        Handles both dict format and Ollama ToolCall objects.
         """
         async with self._lock:
             # 1. Run Decay Tick
             await self.tracker.tick(self.conversation)
 
+            # 2. Convert Ollama ToolCall objects to dict format if needed
+            converted_tool_calls = []
+            for tc in tool_calls:
+                if hasattr(tc, "function"):
+                    # Ollama ToolCall object
+                    func = tc.function
+                    converted_tool_calls.append(
+                        {
+                            "function": {
+                                "name": func.name,
+                                "arguments": (
+                                    json.dumps(func.arguments)
+                                    if isinstance(func.arguments, dict)
+                                    else func.arguments
+                                ),
+                            }
+                        }
+                    )
+                elif isinstance(tc, dict):
+                    # Already in dict format
+                    converted_tool_calls.append(tc)
+                else:
+                    # Unknown format, try to convert
+                    converted_tool_calls.append({"function": tc})
+
             msg = Message(
-                role="assistant", content=None, tool_calls=tool_calls, importance=5
+                role="assistant",
+                content=None,
+                tool_calls=converted_tool_calls,
+                importance=5,
             )
             self.conversation.append(msg)
             # Estimate tokens roughly
-            self.accountant.add(100 * len(tool_calls))
+            self.accountant.add(100 * len(converted_tool_calls))
 
     async def add_tool_result_message(
         self,
