@@ -34,9 +34,6 @@ class Message:
         # Handle Content
         if self.content is not None:
             msg["content"] = self.content
-        elif self.role == "assistant" and self.tool_calls:
-            # Assistant with tools often has empty/null content
-            msg["content"] = ""
 
         # Handle Tool Calls (Assistant)
         if self.role == "assistant" and self.tool_calls:

@@ -274,7 +274,37 @@ class ProtocolAgent(AgentInterface):
                     # Check for tool calls and accumulate separately
                     if "tool_calls" in chunk:
                         self.logger.info(f"Received tool call chunk (dict): {chunk}")
-                        tool_calls_accumulator = chunk
+                        # Merge tool call chunks instead of overwriting
+                        if tool_calls_accumulator is None:
+                            tool_calls_accumulator = {"tool_calls": []}
+                        
+                        if "tool_calls" not in tool_calls_accumulator:
+                            tool_calls_accumulator["tool_calls"] = []
+                        
+                        # Merge each tool call by index
+                        for i, new_tc in enumerate(chunk["tool_calls"]):
+                            if i < len(tool_calls_accumulator["tool_calls"]):
+                                # Merge with existing tool call
+                                existing_tc = tool_calls_accumulator["tool_calls"][i]
+                                if new_tc.get("id"):
+                                    existing_tc["id"] = new_tc["id"]
+                                if new_tc.get("type"):
+                                    existing_tc["type"] = new_tc["type"]
+                                if new_tc.get("function"):
+                                    if "function" not in existing_tc:
+                                        existing_tc["function"] = {}
+                                    if new_tc["function"].get("name"):
+                                        existing_tc["function"]["name"] = new_tc["function"]["name"]
+                                    if new_tc["function"].get("arguments"):
+                                        # Append arguments (streaming format)
+                                        existing_args = existing_tc["function"].get("arguments", "")
+                                        new_args = new_tc["function"]["arguments"]
+                                        existing_tc["function"]["arguments"] = existing_args + new_args
+                            else:
+                                # Add new tool call
+                                tool_calls_accumulator["tool_calls"].append(new_tc)
+                        
+                        self.logger.info(f"Merged tool_calls_accumulator: {tool_calls_accumulator}")
                     else:
                         self.logger.debug(
                             f"Received dict chunk (not tool call): {chunk}"
@@ -285,7 +315,6 @@ class ProtocolAgent(AgentInterface):
                     self.logger.info(f"Received list tool call chunk: {chunk}")
                     tool_calls_accumulator = chunk
                 elif hasattr(chunk, "message"):
-                    # Handle Ollama response objects
                     self.logger.info(
                         f"Received Ollama response object with message: {chunk.message}"
                     )

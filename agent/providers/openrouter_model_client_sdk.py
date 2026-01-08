@@ -112,6 +112,11 @@ class OpenRouterModelClient(BaseModelClient):
             if tools:
                 request_params["tools"] = tools
 
+            # DEBUG: Log the actual messages being sent
+            self.logger.info(f"DEBUG: Sending {len(messages)} messages to OpenRouter:")
+            for i, msg in enumerate(messages):
+                self.logger.info(f"  messages[{i}]: role={msg.get('role')}, content={repr(msg.get('content'))}, tool_calls={'yes' if msg.get('tool_calls') else 'no'}")
+
             self.logger.info(
                 "Making OpenRouter request to model: %s (stream=%s)",
                 self.model_name,
@@ -173,12 +178,20 @@ class OpenRouterModelClient(BaseModelClient):
                 details={"provider": "openrouter", "model": self.model_name},
             ) from exc
         except Exception as e:
+            # DEBUG: Log the full error details
+            self.logger.error(f"DEBUG: OpenRouter error type: {type(e).__name__}")
+            self.logger.error(f"DEBUG: OpenRouter error message: {str(e)}")
+            
             # Check for authentication errors
             if "authentication" in str(e).lower() or "unauthorized" in str(e).lower():
                 raise ProviderAuthenticationError(
                     f"OpenRouter authentication failed: {str(e)}",
                     provider_name="openrouter",
                 ) from e
+
+            # Check for content errors
+            if "messages" in str(e).lower() and "content" in str(e).lower():
+                self.logger.error(f"DEBUG: Content format error detected. Full error: {str(e)}")
 
             # Generic error
             raise ModelError(
