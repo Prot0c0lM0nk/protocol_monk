@@ -1,198 +1,140 @@
 /* ui/textual/styles/orthodox.tcss */
 
+/* --- GLOBAL THEME VARIABLES (Matched to Rich Palette) --- */
+$monk-text: #87ff00;      /* chartreuse1 */
+$monk-border: #875fd7;    /* medium_purple3 */
+$holy-gold: #ffaa44;      /* candle_gold */
+$tech-cyan: #00d7ff;      /* electric_cyan */
+$success: #44ff44;        /* bright_green */
+$error: #d70000;          /* red3 */
+$surface: #111111;        /* deep_black */
+$overlay: #1e1e1e;
+
 Screen {
-    layout: vertical;
-    background: #0f0f0f;
-    color: #00ff41;
+    background: $surface;
+    color: $monk-text;
 }
 
-/* Match the class name ChatScreen */
-ChatScreen {
-    layout: vertical;
-    height: 1fr;
-    background: #0f0f0f;
-}
-
-ChatDisplay {
-    height: 1fr;
-    border: solid #00ff41;
-    background: #0f0f0f;
-    padding: 1;
-    overflow-y: scroll;
-}
-
-ChatInput {
-    dock: bottom;
-    height: auto;   /* Allow it to grow if needed, or set fixed height like 5 */
-    min_height: 5;
-    background: #1a1a1a;
-    border-top: solid #00ff41;
-}
-
-#input_container {
-    height: 100%;
-    align: center middle;
-}
-
-/* The Editor Area */
-ChatInput TextArea {
-    width: 1fr;
-    height: 100%;
-    border: none;
-    background: #1a1a1a;
-    color: #00ff41; /* Monk Green Text */
-}
-
-/* The Send Button */
-ChatInput Button {
-    width: 10;
-    height: 100%;
-    background: #004411;
-    color: #00ff41;
-    border: none;
-    min-width: 8;
-}
-
-ChatInput Button:hover {
-    background: #00ff41;
-    color: #0f0f0f;
-}
-
-/* --- MESSAGE BUBBLES --- */
-
-/* Base class for all messages */
-ChatMessage {
-    padding: 1;
-    margin: 1 0;
-    background: #1a1a1a;
-    border: none;
-    height: auto;
-}
-
-/* Specific styling for User */
-.user-msg {
-    border-left: tall #ffaa44; /* Orthodox Gold */
-    color: #ffaa44;
-}
-
-/* Specific styling for Agent */
-.agent-msg {
-    border-left: tall #00ff41; /* Monk Green */
-    color: #eeeeee; /* White text for better readability */
-}
-
-/* Code blocks inside Markdown */
-ChatMessage > CodeBlock {
-    background: #0f0f0f;
-    border: solid #00d7ff;
-    padding: 1;
-}
-
-/* --- TOOL CONFIRM MODAL --- */
-#modal_dialog {
-    width: 70;
-    height: auto;
-    max_height: 80%;
-    background: #1a1a1a;
-    border: tall #ffaa44; /* Orthodox Gold */
-    padding: 1;
-    align: center middle; 
-    /* "align" handles content inside; margins handle the modal itself if needed */
-}
-
-#title {
-    width: 100%;
-    text-align: center;
-    background: #ffaa44;
-    color: #0f0f0f;
-    text-style: bold;
-    margin-bottom: 1;
-}
-
-#tool_details {
-    height: auto;
-    max_height: 20;
-    margin-bottom: 1;
-    background: #0f0f0f;
-    border: solid #00d7ff; /* Tech Cyan */
-    padding: 1;
-    overflow-y: scroll;
-}
-
-/* Modification Area */
-#modification_area {
-    height: auto;
-    margin-bottom: 1;
-}
-
-.instruction {
-    color: #ffaa44;
-    margin-bottom: 1;
-}
-
-#suggestion_input {
-    height: 8;
-    background: #0f0f0f;
-    border: solid #ffaa44;
-    color: white;
-}
-
-/* Buttons */
-.button_grid {
-    layout: grid;
-    grid-size: 3;
-    grid-gutter: 1;
-    height: 3;
-    margin-top: 1;
-}
-
-#mod_buttons {
-    height: 3;
-    align: center middle;
-    margin-top: 1;
-}
-
-#mod_buttons Button {
-    margin: 0 1;
-}
-
-/* --- SELECTION MODAL --- */
-#selection_list {
-    height: auto;
-    max_height: 15;
-    border: solid #00d7ff; /* Tech Cyan */
-    margin-bottom: 1;
-    background: #0f0f0f;
-    color: #00ff41;
-}
-
-.selection_buttons {
-    layout: grid;
-    grid-size: 2;
-    grid-gutter: 1;
-    height: 3;
-}
-
-/* Utilities */
-.hidden {
-    display: none;
-}
-
+/* --- HEADER / FOOTER --- */
 Header {
+    background: $surface;
+    color: $holy-gold;
     dock: top;
-    background: #00ff41;
-    color: #0f0f0f;
-    text-style: bold;
+    height: 1;
+    border-bottom: solid $monk-border;
 }
 
 Footer {
+    background: $surface;
+    color: $tech-cyan;
     dock: bottom;
-    background: #1a1a1a;
-    color: #ffaa44;
+    height: 1;
+    border-top: solid $monk-border;
 }
 
-/* --- TEXT STYLES --- */
-.user-msg { color: #ffaa44; text-style: bold; }
-.agent-msg { color: #00ff41; }
-.tool-output { color: #00d7ff; }
-.error-msg { color: #ff4444; }
+/* --- CHAT DISPLAY --- */
+ChatDisplay {
+    height: 1fr;
+    overflow-y: scroll;
+    scrollbar-color: $monk-border;
+    padding: 1;
+}
+
+/* --- CHAT INPUT --- */
+ChatInput {
+    dock: bottom;
+    height: auto;
+    min-height: 3;
+    border: solid $monk-border;
+    background: $surface;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+Input {
+    border: none;
+    background: $surface;
+    color: $monk-text;
+}
+
+Input:focus {
+    border: none;
+    color: #ffffff; 
+}
+
+/* --- TOOL OUTPUT WIDGETS --- */
+ToolOutputWidget {
+    background: $overlay;
+    border-left: thick $tech-cyan;
+    padding: 1;
+    margin: 1 0;
+    height: auto;
+}
+
+.tool-success {
+    border-left: thick $success;
+}
+
+.tool-error {
+    border-left: thick $error;
+}
+
+/* --- MARKDOWN --- */
+Markdown {
+    padding: 0 1;
+    background: $surface;
+}
+
+MarkdownH1 {
+    color: $monk-border;
+    text-style: bold;
+    border-bottom: solid $monk-border;
+}
+
+MarkdownCode {
+    background: #000000;
+    color: $monk-text;
+    padding: 1;
+}
+
+/* --- MODALS --- */
+ToolConfirmModal {
+    align: center middle;
+}
+
+#dialog {
+    padding: 1 2;
+    width: 60%;
+    height: auto;
+    border: thick $monk-border;
+    background: $surface;
+}
+
+#question {
+    text-align: center;
+    color: $holy-gold;
+    padding-bottom: 1;
+}
+
+.buttons {
+    align: center middle;
+    height: auto;
+}
+
+Button {
+    min-width: 12;
+    margin: 0 1;
+    background: $overlay;
+    color: $monk-text;
+    border: none;
+}
+
+Button.success {
+    background: $monk-text;
+    color: black;
+}
+
+Button.error {
+    background: $error;
+    color: white;
+}

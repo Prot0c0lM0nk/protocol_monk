@@ -6,7 +6,7 @@ from textual import work
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from ui.textual.client import TextualUI
+from ui.textual.interface import TextualUI
 from ui.base import UI
 from ui.textual.app import ProtocolMonkApp
 
