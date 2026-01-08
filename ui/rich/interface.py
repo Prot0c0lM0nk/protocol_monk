@@ -88,3 +88,7 @@ class RichUI(UI):
     async def print_info(self, msg: str): self.renderer.print_system(msg)
     async def start_thinking(self): self.renderer.start_thinking()
     async def stop_thinking(self): self.renderer.stop_thinking()
+    # --- REQUIRED BY BASE ---
+    async def run_async(self):
+        # Keep task alive if needed, but agent drives loop
+        await asyncio.Event().wait()

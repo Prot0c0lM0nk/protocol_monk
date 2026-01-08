@@ -5,9 +5,10 @@ Application Starter for Protocol Monk
 
 Ultra-lightweight starter that:
 1. Bootstraps minimal configuration
-2. Creates the application instance
-3. Starts the event loop
-4. Handles graceful shutdown
+2. Selects UI mode (--rich flag)
+3. Creates the application instance
+4. Starts the event loop
+5. Handles graceful shutdown
 
 This should be the ONLY thing main.py does.
 """
@@ -50,6 +51,7 @@ class Application:
 
     def __init__(self):
         self.working_dir = None
+        self.ui_mode = None
         self.agent = None
         self.ui_task = None
         self.running = False
@@ -57,19 +59,25 @@ class Application:
     async def start(self):
         """Start the application."""
         try:
-            # Bootstrap minimal configuration
-            self.working_dir = bootstrap_application()
+            # Bootstrap minimal configuration and UI mode
+            self.working_dir, self.ui_mode = bootstrap_application()
 
             # Setup logging
             setup_logging()
 
+            # Create the appropriate UI instance based on mode
+            if self.ui_mode == "rich":
+                from ui.rich import create_rich_ui
+                ui_instance = create_rich_ui()
+                print(f"[Protocol Monk] Starting with Rich UI...")
+            else:
+                from ui.plain import create_plain_ui
+                ui_instance = create_plain_ui()
+                print(f"[Protocol Monk] Starting with Plain UI...")
+
             # Create and start the agent
             from agent.monk import ProtocolAgent
             from tools.registry import ToolRegistry
-            from ui.plain import create_plain_ui
-
-            # Create the UI instance
-            ui_instance = create_plain_ui()
 
             tool_registry = ToolRegistry(
                 working_dir=self.working_dir,
