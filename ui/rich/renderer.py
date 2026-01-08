@@ -11,6 +11,7 @@ from rich.text import Text
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
+from rich.console import Group  # <--- ADDED THIS IMPORT
 from rich import box
 
 from ui.base import ToolResult
@@ -125,8 +126,9 @@ class RichRenderer:
             items.append(Panel(code, border_style="dim"))
             items.append(Text(""))
 
+        # FIXED: Wrap *items in Group()
         panel = Panel(
-            *items,
+            Group(*items),
             title="[tech.cyan]🛠 Sacred Action[/]",
             border_style="tech.cyan",
             box=box.ROUNDED
