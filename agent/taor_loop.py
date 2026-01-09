@@ -136,7 +136,11 @@ class TAORLoop:
             return False
 
         # 2. PARSE (Extract Intent)
+        self.agent.logger.info(
+            f"TAOR loop received response type: {type(response)}, content: {str(response)[:200]}"
+        )
         actions, _ = self.agent._parse_response(response)
+        self.agent.logger.info(f"TAOR loop parsed actions: {actions}")
 
         # Debug: Check what parsing returned
 

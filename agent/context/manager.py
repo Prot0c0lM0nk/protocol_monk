@@ -5,6 +5,7 @@ Context Manager
 Manages conversation history using Native Tool Calling standards.
 """
 
+import json
 import asyncio
 import logging
 from pathlib import Path
@@ -74,8 +75,10 @@ class ContextManager:
             # 2. Basic pruning check
             temp_tokens = self.accountant.estimate(content or "")
             if not self.accountant.check_budget(temp_tokens):
-                self.conversation = self.pruner.prune(self.conversation, self.accountant)
-            
+                self.conversation = self.pruner.prune(
+                    self.conversation, self.accountant
+                )
+
             # 3. Create and add
             imp = importance if importance is not None else (4 if role == "user" else 3)
             msg = Message(role=role, content=content, importance=imp)
@@ -97,27 +100,55 @@ class ContextManager:
     async def add_tool_call_message(self, tool_calls: List[Dict]):
         """
         Add an Assistant message containing tool calls.
+        Handles both dict format and Ollama ToolCall objects.
         """
         async with self._lock:
             # 1. Run Decay Tick
             await self.tracker.tick(self.conversation)
+            # 2. Convert Ollama ToolCall objects to dict format if needed
+            converted_tool_calls = []
+            for tc in tool_calls:
+                if hasattr(tc, "function"):
+                    # Ollama ToolCall object
+                    func = tc.function
+                    # Ensure arguments is a dict (not JSON string)
+                    arguments = func.arguments
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except json.JSONDecodeError:
+                            pass  # Keep as-is if not valid JSON
+                    converted_tool_calls.append(
+                        {
+                            "function": {
+                                "name": func.name,
+                                "arguments": arguments,  # Keep as dict
+                            }
+                        }
+                    )
+                elif isinstance(tc, dict):
+                    # Already in dict format
+                    converted_tool_calls.append(tc)
+                else:
+                    # Unknown format, try to convert
+                    converted_tool_calls.append({"function": tc})
 
             msg = Message(
                 role="assistant",
                 content=None,
-                tool_calls=tool_calls,
-                importance=5 
+                tool_calls=converted_tool_calls,
+                importance=5,
             )
             self.conversation.append(msg)
             # Estimate tokens roughly
-            self.accountant.add(100 * len(tool_calls)) 
+            self.accountant.add(100 * len(converted_tool_calls))
 
     async def add_tool_result_message(
-        self, 
-        tool_name: str, 
-        tool_call_id: Optional[str], 
+        self,
+        tool_name: str,
+        tool_call_id: Optional[str],
         content: str,
-        file_path: Optional[str] = None
+        file_path: Optional[str] = None,
     ):
         """
         Add a Tool Result message.
@@ -131,7 +162,9 @@ class ContextManager:
             if file_path:
                 # We start the countdown for ANY previous copies of this file
                 # Default 20 messages = approx 5 turns
-                await self.tracker.trigger_decay(file_path, self.conversation, grace_period_msgs=20)
+                await self.tracker.trigger_decay(
+                    file_path, self.conversation, grace_period_msgs=20
+                )
                 metadata = {"file_read": file_path}
             else:
                 metadata = {}
@@ -143,10 +176,10 @@ class ContextManager:
                 name=tool_name,
                 tool_call_id=tool_call_id,
                 importance=5,
-                metadata=metadata
+                metadata=metadata,
             )
             self.conversation.append(msg)
-            
+
             # 4. Update Tokens
             self.accountant.add(self.accountant.estimate(content))
 
@@ -169,11 +202,11 @@ class ContextManager:
         async with self._lock:
             # Start with System Message
             context = [{"role": "system", "content": self.system_message}]
-            
+
             # Append History (using to_dict to strip internal fields)
             for msg in self.conversation:
                 context.append(msg.to_dict())
-                
+
             return context
 
     async def clear(self):
@@ -189,14 +222,14 @@ class ContextManager:
         Required by status display.
         """
         return self.accountant.max_tokens
-            
+
     async def get_stats(self) -> Dict:
         """Returns current usage statistics."""
         async with self._lock:
             stats = self.accountant.get_stats()
             stats["total_messages"] = len(self.conversation)
             return stats
-        
+
     def get_total_tokens(self) -> int:
         """
         Get the current total token count.
@@ -213,15 +246,15 @@ class ContextManager:
         """
         async with self._lock:
             self.logger.info("Clearing old messages due to context overflow")
-            
+
             # Keep at least the system message and recent context
             if len(self.conversation) <= 2:
                 # Not enough messages to safely clear
                 return
-            
+
             # Strategy: Keep system message + complete conversation pairs
             # This maintains context while preserving turn order
-            
+
             # Always keep system message if present (it should be first)
             system_msg = None
             if self.conversation and self.conversation[0].role == "system":
@@ -229,28 +262,30 @@ class ContextManager:
                 conversation_start = 1
             else:
                 conversation_start = 0
-            
+
             # Get the conversation messages (excluding system)
             conv_messages = self.conversation[conversation_start:]
-            
+
             # Find complete pairs from the end
             # We want to keep the most recent complete pairs
             kept_pairs = []
-            
+
             # Work backwards from the end to find complete pairs
             i = len(conv_messages) - 1
             while i >= 1:
                 # Check if we have a user-assistant pair
-                if (conv_messages[i].role == "assistant" and 
-                    conv_messages[i-1].role == "user"):
+                if (
+                    conv_messages[i].role == "assistant"
+                    and conv_messages[i - 1].role == "user"
+                ):
                     # Found a complete pair, keep it
-                    kept_pairs.insert(0, conv_messages[i-1])  # user message
-                    kept_pairs.insert(1, conv_messages[i])    # assistant message
+                    kept_pairs.insert(0, conv_messages[i - 1])  # user message
+                    kept_pairs.insert(1, conv_messages[i])  # assistant message
                     i -= 2
                 else:
                     # Incomplete or single message, break
                     break
-            
+
             # If we have no complete pairs, keep the most recent messages
             # but try to maintain some balance
             if not kept_pairs:
@@ -266,15 +301,44 @@ class ContextManager:
                 else:
                     # Only one message, keep it
                     kept_pairs = [conv_messages[-1]]
-            
+
             # Rebuild conversation
             self.conversation = []
             if system_msg:
                 self.conversation.append(system_msg)
             self.conversation.extend(kept_pairs)
-            
+
             # Recalculate tokens
             self.accountant.recalculate(self.system_message, self.conversation)
-            
-            self.logger.info(f"Cleared old messages. New count: {len(self.conversation)}")
-            self.logger.info(f"Kept {len(kept_pairs)} messages, maintaining conversation coherence")
+
+            self.logger.info(
+                f"Cleared old messages. New count: {len(self.conversation)}"
+            )
+            self.logger.info(
+                f"Kept {len(kept_pairs)} messages, maintaining conversation coherence"
+            )
+
+    async def update_max_tokens(self, new_max_tokens: int):
+        """
+        Update the maximum token limit for the context.
+
+        This method is called when switching to a model with a different context window.
+        It updates both the TokenAccountant and ContextPruner to use the new limit.
+
+        Args:
+            new_max_tokens: New maximum token limit
+        """
+        async with self._lock:
+            self.accountant.max_tokens = new_max_tokens
+            self.pruner.max_tokens = new_max_tokens
+            self.logger.info(f"Context window updated to {new_max_tokens:,} tokens")
+
+            # If current usage exceeds new limit, trigger pruning
+            if self.accountant.total_tokens > new_max_tokens:
+                self.logger.warning(
+                    f"Current token usage ({self.accountant.total_tokens:,}) exceeds "
+                    f"new limit ({new_max_tokens:,}), triggering prune..."
+                )
+                self.conversation = self.pruner.prune(
+                    self.conversation, self.accountant
+                )

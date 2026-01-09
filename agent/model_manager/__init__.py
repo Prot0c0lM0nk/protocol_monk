@@ -128,3 +128,34 @@ class RuntimeModelManager:
             return "openrouter"
         else:
             return "ollama"
+
+    def switch_provider(self, new_provider: str) -> None:
+        """
+        Switch to a different provider and reload the model map.
+
+        This method is called when the user switches providers via the /provider command.
+        It reloads the model map for the new provider so that get_available_models()
+        returns the correct list of models for the selected provider.
+
+        Args:
+            new_provider: The new provider name ("ollama" or "openrouter")
+        """
+        if new_provider not in ["ollama", "openrouter"]:
+            raise ValueError(
+                f"Unknown provider: {new_provider}. Available: ollama, openrouter"
+            )
+
+        self.logger.info(
+            f"Switching model manager from {self.provider} to {new_provider}"
+        )
+        self.provider = new_provider
+
+        # Reload the model map for the new provider
+        self.loader = self._create_loader_for_provider(new_provider)
+        self.model_map = self.loader.load_model_map()
+        self.selector = ModelSelector(self.model_map)
+
+        self.logger.info(
+            f"Model manager switched to {new_provider}. "
+            f"Loaded {len(self.model_map)} models from model map."
+        )

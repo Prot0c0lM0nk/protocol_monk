@@ -18,8 +18,8 @@ from textual.widgets import Static, Markdown
 
 from agent.base_model_client import BaseModelClient
 from agent.provider_registry import ProviderRegistry
-from agent.providers.ollama_model_client import OllamaModelClient
-from agent.providers.openrouter_model_client import OpenRouterModelClient
+from agent.providers.ollama_model_client_sdk import OllamaModelClientSDK
+from agent.providers.openrouter_model_client_sdk import OpenRouterModelClient
 from config.static import settings
 from exceptions import (
     EmptyResponseError,
@@ -100,14 +100,13 @@ class ModelClient:
             BaseModelClient: Provider client instance
         """
         if provider == "ollama":
-            return OllamaModelClient(model_name)
+            return OllamaModelClientSDK(model_name)
         elif provider == "openrouter":
             return OpenRouterModelClient(model_name)
         else:
             raise ValueError(
                 f"Unknown provider: {provider}. Available: ollama, openrouter"
             )
-
     def switch_provider(self, provider: str) -> None:
         """
         Switch to a different provider (user-controlled).
@@ -182,12 +181,13 @@ class ModelClient:
         # Close the old client's session before creating a new one
         # This prevents "Unclosed client session" warnings
         if self._client:
-            if hasattr(self._client, 'sync_close'):
+            if hasattr(self._client, "sync_close"):
                 self._client.sync_close()
-            elif hasattr(self._client, 'close'):
+            elif hasattr(self._client, "close"):
                 # Fallback: try to close if possible, but don't fail if we can't
                 try:
                     import asyncio
+
                     loop = asyncio.get_event_loop()
                     if loop.is_running():
                         asyncio.create_task(self._client.close())

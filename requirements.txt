@@ -5,10 +5,12 @@
 rich>=13.0.0              # Beautiful terminal output, progress indicators
 prompt-toolkit>=3.0.0     # Enhanced CLI with history and completion
 
+# HTTP Client
+aiohttp>=3.9.0            # Async HTTP client (for Ollama)
 
 # Tokenization (for context management)
 tiktoken>=0.5.0           # OpenAI's tokenizer (works with most models)
 
-# Optional: Document Analysis Tools
-# youtube-transcript-api>=0.6.0    # YouTube transcript extraction
-# beautifulsoup4>=4.12.0           # HTML parsing for web scraping
+# AI Provider SDKs
+openai>=1.12.0            # Official OpenAI SDK (for OpenRouter)
+ollama>=0.3.0            # Official Ollama SDK
