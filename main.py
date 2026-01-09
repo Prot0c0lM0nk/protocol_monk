@@ -21,7 +21,6 @@ def setup_logging():
     if settings.debug.debug_execution_logging:
         log_path = Path(settings.debug.debug_log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        # ... (logging setup matches your existing code)
         file_handler = logging.FileHandler(str(log_path), mode="w")
         formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -69,8 +68,7 @@ class Application:
                 ui_instance = TextualUI(self.tui_app)
 
             elif self.ui_mode == "rich":
-                print(f"[Protocol Monk] Starting with Rich UI...")
-                # Assuming you have a factory or class
+                # Note: We removed the raw print here so the banner is cleaner
                 try:
                     from ui.rich import RichUI
 
@@ -80,6 +78,11 @@ class Application:
                     from ui.rich import create_rich_ui
 
                     ui_instance = create_rich_ui()
+
+                # === [THE TRIGGER] ===
+                # This activates your new renderer logic
+                await ui_instance.display_startup_banner("Protocol Monk Online")
+                # =====================
 
             else:
                 print(f"[Protocol Monk] Starting with Plain UI...")
