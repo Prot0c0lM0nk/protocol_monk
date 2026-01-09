@@ -24,7 +24,10 @@ class RichRenderer:
     def __init__(self):
         self._live_display = None
         self._thinking_status = None
-        self._accumulated_text = ""
+
+        # Split Buffers for "Inner Voice" vs "Outer Voice"
+        self._reasoning_text = ""
+        self._response_text = ""
 
     # --- COMMANDS & STATUS ---
     def render_command_result(self, success: bool, message: str):
@@ -53,18 +56,17 @@ class RichRenderer:
         else:
             # Simple line output
             console.print(f"[tech.cyan]⚡ {message}[/]")
-        console.print()  # Spacer
+        console.print()
 
     def render_selection_list(self, title: str, items: list):
-        """Render a themed selection table."""
+        """Render a themed selection table (1-based)."""
         self.end_streaming()
 
         t = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
         t.add_column("ID", style="tech.cyan", justify="right")
         t.add_column("Option", style="monk.text")
 
-        for idx, item in enumerate(items):
-            # Handle object vs string
+        for idx, item in enumerate(items, 1):
             if hasattr(item, "name"):
                 name = getattr(item, "name", str(item))
                 extra = ""
@@ -81,7 +83,6 @@ class RichRenderer:
 
     # --- BANNER ---
     def render_banner(self, greeting: str):
-        """Render the Orthodox Matrix ASCII Header."""
         self.end_streaming()
         ascii_art = """
  ███╗   ███╗ ██████╗ ███╗   ██╗██╗  ██╗
@@ -110,7 +111,9 @@ class RichRenderer:
         if self._live_display:
             return
 
-        self._accumulated_text = ""
+        self._reasoning_text = ""
+        self._response_text = ""
+
         self._live_display = Live(
             create_monk_panel("", title="✠ Monk"),
             console=console,
@@ -120,23 +123,46 @@ class RichRenderer:
         )
         self._live_display.start()
 
-    def update_streaming(self, chunk: str):
-        if not chunk and not self._accumulated_text:
-            return  # Don't start the Live display for empty signals
-        """Add text to the buffer and update the live panel."""
+    def update_streaming(self, chunk: str, is_thinking: bool = False):
+        """Add text to the correct buffer and update the live panel."""
         if not self._live_display:
+            # Don't start live display for empty signals
+            if not chunk and not self._reasoning_text and not self._response_text:
+                return
             self.start_streaming()
 
-        self._accumulated_text += chunk
-        clean_text = self._clean_think_tags(self._accumulated_text)
+        # 1. Route Chunk to Correct Buffer
+        if is_thinking:
+            self._reasoning_text += chunk
+        else:
+            self._response_text += chunk
 
-        if clean_text.strip():
-            if any(c in clean_text for c in ["`", "#", "*", "_"]):
-                content = Markdown(clean_text)
+        # 2. Prepare Display Components
+        renderables = []
+
+        # Clean tags from both buffers
+        clean_reasoning = self._clean_think_tags(self._reasoning_text)
+        clean_response = self._clean_think_tags(self._response_text)
+
+        # A. Inner Voice (Reasoning) -> Text Component (Forced Style)
+        if clean_reasoning.strip():
+            # We force "dim italic" here, bypassing Markdown completely
+            renderables.append(Text(clean_reasoning, style="dim italic"))
+            # Add a spacer if we also have a response coming
+            if clean_response.strip():
+                renderables.append(Text(""))
+
+        # B. Outer Voice (Response) -> Markdown Component (Rich Syntax)
+        if clean_response.strip():
+            # If it looks like Markdown, render as Markdown
+            if any(c in clean_response for c in ["`", "#", "*", "_", ">"]):
+                renderables.append(Markdown(clean_response))
             else:
-                content = Text(clean_text, style="monk.text")
+                renderables.append(Text(clean_response, style="monk.text"))
 
-            self._live_display.update(create_monk_panel(content))
+        # 3. Update Live Panel
+        if renderables:
+            self._live_display.update(create_monk_panel(Group(*renderables)))
 
     def end_streaming(self):
         """Finalize the live display."""
@@ -148,7 +174,7 @@ class RichRenderer:
             self._live_display = None
             console.print()
 
-    # --- THINKING ---
+    # --- THINKING SPINNER ---
     def start_thinking(self, message: str = "Contemplating..."):
         self.end_streaming()
         if not self._thinking_status:
@@ -226,7 +252,13 @@ class RichRenderer:
 
     # --- HELPERS ---
     def _clean_think_tags(self, text: str) -> str:
-        return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+        """
+        Clean up raw XML tags if they leak into the stream.
+        We preserve the content but remove the <think> wrapper.
+        """
+        text = re.sub(r"<think>", "", text)
+        text = re.sub(r"</think>", "\n\n", text)
+        return text
 
     def print_error(self, msg):
         console.print(f"[error]Error: {msg}[/]")

@@ -41,7 +41,7 @@ class RichUI(UI):
         self._event_bus.subscribe(AgentEvents.WARNING.value, self._on_warning)
         self._event_bus.subscribe(AgentEvents.INFO.value, self._on_info)
 
-        # Slash Commands (FIX FOR /help, /status)
+        # Slash Commands
         self._event_bus.subscribe(
             AgentEvents.COMMAND_RESULT.value, self._on_command_result
         )
@@ -59,8 +59,16 @@ class RichUI(UI):
 
     # --- EVENT HANDLERS ---
     async def _on_stream_chunk(self, data: Dict[str, Any]):
+        # Handle Reasoning (Thinking)
+        thinking = data.get("thinking")
+        if thinking:
+            self.renderer.update_streaming(thinking, is_thinking=True)
+            return
+
+        # Handle Standard Content
         chunk = data.get("chunk", "")
-        self.renderer.update_streaming(chunk)
+        if chunk:
+            self.renderer.update_streaming(chunk, is_thinking=False)
 
     async def _on_response_complete(self, data: Dict[str, Any]):
         self.renderer.end_streaming()
@@ -74,7 +82,6 @@ class RichUI(UI):
     async def _on_tool_result(self, data: Dict[str, Any]):
         res = data.get("result")
         name = data.get("tool_name", "Unknown")
-        # Ensure we have a ToolResult object
         if not hasattr(res, "success"):
             from ui.base import ToolResult
 
@@ -88,19 +95,16 @@ class RichUI(UI):
         self.renderer.print_system(f"[warning]Warning:[/] {data.get('message', '')}")
 
     async def _on_info(self, data: Dict[str, Any]):
-        """Handle generic info and SELECTION LISTS (Fix for /model)."""
         msg = data.get("message", "")
         context = data.get("context", "")
         items = data.get("data", [])
 
-        # Detect Selection Contexts
         if context in ["model_selection", "provider_selection"] and items:
-            self.renderer.render_selection_list(msg, items)
+            await self.display_selection_list(msg, items)
         elif msg.strip():
             self.renderer.print_system(msg)
 
     async def _on_command_result(self, data: Dict[str, Any]):
-        """Handle output from slash commands."""
         success = data.get("success", True)
         message = data.get("message", "")
         if message:
@@ -115,15 +119,14 @@ class RichUI(UI):
     async def _on_provider_switched(self, data: Dict[str, Any]):
         self.renderer.print_system(f"Provider Switched: {data.get('new_provider')}")
 
-    # --- BLOCKING INTERFACE (Called by Agent) ---
+    # --- BLOCKING INTERFACE ---
 
     async def get_input(self) -> str:
-        """Main Loop Input."""
         self.renderer.end_streaming()
+        # We assume the user sees the list above and just types the number here
         return await self.input.get_input("User Input")
 
     async def confirm_tool_execution(self, tool_data: Dict[str, Any]) -> bool:
-        """Permission Gate."""
         tool_name = tool_data.get("tool_name", "Unknown")
         params = tool_data.get("parameters", {})
 
@@ -133,11 +136,12 @@ class RichUI(UI):
             "[monk.text]Execute this action?[/]", default=False, console=console
         )
 
-    # --- STUBS ---
+    # --- VISUALS ---
     async def display_startup_banner(self, greeting: str):
         self.renderer.render_banner(greeting)
 
     async def display_selection_list(self, title: str, items: List[Any]):
+        """Just render the list. Input is handled by main loop."""
         self.renderer.render_selection_list(title, items)
 
     async def display_tool_result(self, result: ToolResult, tool_name: str):
@@ -148,7 +152,7 @@ class RichUI(UI):
         self.renderer.stop_thinking()
         console.show_cursor(True)
 
-    # --- REQUIRED BASE METHODS ---
+    # --- REQUIRED STUBS ---
     async def print_stream(self, text: str):
         self.renderer.update_streaming(text)
 
