@@ -1,0 +1,149 @@
+/* GLOBAL THEME VARIABLES */
+$bg-color: #0F172A;        /* Deep dark blue/slate background */
+$surface-color: #1E293B;   /* Slightly lighter for panels */
+$primary-color: #3B82F6;   /* Bright Blue for user/accents */
+$secondary-color: #10B981; /* Emerald Green for agent/success */
+$error-color: #EF4444;     /* Red for errors/reject */
+$warning-color: #F59E0B;   /* Amber for warnings */
+$text-color: #F8FAFC;      /* Off-white text */
+$dim-text: #94A3B8;        /* Slate text for metadata */
+
+Screen {
+    background: $bg-color;
+    color: $text-color;
+}
+
+/* --- HEADER --- */
+Header {
+    dock: top;
+    height: 1;
+    background: $surface-color;
+    color: $text-color;
+}
+
+/* --- CHAT AREA --- */
+#chat-container {
+    width: 100%;
+    height: 1fr;
+    padding: 1 2;
+    overflow-y: auto;
+}
+
+/* Message Bubbles */
+.message {
+    padding: 1 2;
+    margin-bottom: 1;
+    width: auto;
+    max-width: 85%;
+}
+
+.user-message {
+    background: $primary-color 15%; /* 15% opacity */
+    border-left: wide $primary-color;
+    dock: right;
+    text-align: right;
+    border-top: tall $primary-color;
+    border-bottom: tall $primary-color;
+    border-right: tall $primary-color;
+}
+
+.agent-message {
+    background: $secondary-color 15%;
+    border-left: wide $secondary-color;
+    dock: left;
+    text-align: left;
+}
+
+.system-message {
+    background: $surface-color;
+    border-left: wide $dim-text;
+    color: $dim-text;
+    width: 100%;
+    text-align: center;
+    text-style: italic;
+}
+
+/* Tool Execution Blocks inside Chat */
+.tool-result {
+    background: #000000 30%;
+    border: solid $dim-text;
+    padding: 1;
+    margin: 1 4;
+    height: auto;
+}
+
+/* --- INPUT AREA --- */
+InputArea {
+    dock: bottom;
+    height: auto;
+    min-height: 3;
+    padding: 0 1 1 1;
+    background: $bg-color;
+}
+
+Input {
+    dock: bottom;
+    width: 100%;
+    height: 3;
+    border: solid $primary-color;
+    background: $surface-color;
+    color: $text-color;
+}
+
+Input:focus {
+    border: double $primary-color;
+}
+
+/* --- MODAL DIALOGS --- */
+ToolConfirmationScreen {
+    align: center middle;
+    background: $bg-color 80%; /* Dim background behind modal */
+}
+
+#confirmation-dialog {
+    width: 60;
+    height: auto;
+    background: $surface-color;
+    border: heavy $warning-color;
+    padding: 2;
+}
+
+#confirmation-title {
+    text-align: center;
+    text-style: bold;
+    color: $warning-color;
+    margin-bottom: 1;
+}
+
+#confirmation-buttons {
+    layout: horizontal;
+    align: center middle;
+    height: 3;
+    margin-top: 1;
+}
+
+Button {
+    margin: 0 2;
+}
+
+#approve-btn {
+    background: $secondary-color;
+    color: black;
+}
+
+#reject-btn {
+    background: $error-color;
+    color: white;
+}
+
+/* --- UTILITIES --- */
+.thinking {
+    color: $secondary-color;
+    text-style: italic;
+    padding-left: 2;
+}
+
+.code-block {
+    background: #000000;
+    padding: 1;
+}
