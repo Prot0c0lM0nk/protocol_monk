@@ -16,6 +16,7 @@ from ui.textual.messages import (
     ToolResultMsg,
     AgentLogMsg,
     StatusUpdateMsg,
+    ThinkingStatusMsg,
 )
 
 
@@ -51,7 +52,6 @@ class ChatScreen(Screen):
             self.app.handle_user_input(text)
 
             # 4. Create a placeholder AgentMessage for the response
-            # We mount it now so stream chunks have a target
             self.current_agent_message = AgentMessage("")
             self.query_one("#chat-area").mount(self.current_agent_message)
 
@@ -61,9 +61,21 @@ class ChatScreen(Screen):
     @on(StreamChunkMsg)
     def on_stream_chunk(self, message: StreamChunkMsg) -> None:
         """Receive a stream chunk from the agent."""
-        if hasattr(self, "current_agent_message"):
-            self.current_agent_message.update_chunk(message.chunk)
-            self.query_one("#chat-area").scroll_end(animate=False)
+        # FIX: Robustness check - create message if missing (e.g. startup/unprompted msg)
+        if not hasattr(self, "current_agent_message"):
+            self.current_agent_message = AgentMessage("")
+            self.query_one("#chat-area").mount(self.current_agent_message)
+
+        self.current_agent_message.update_chunk(message.chunk)
+        self.query_one("#chat-area").scroll_end(animate=False)
+
+    @on(ThinkingStatusMsg)
+    def on_thinking_status(self, message: ThinkingStatusMsg) -> None:
+        """Handle thinking state updates."""
+        # Optional: Add a visual indicator in the header or chat
+        # For now, we can just notify or modify the header status
+        if message.is_thinking:
+            self.notify("Monk is thinking...", severity="information", timeout=2)
 
     @on(ToolResultMsg)
     def on_tool_result(self, message: ToolResultMsg) -> None:
@@ -72,7 +84,7 @@ class ChatScreen(Screen):
         result_widget = ToolResultMessage(message.tool_name, str(message.result))
         self.query_one("#chat-area").mount(result_widget)
 
-        # Prepare a NEW AgentMessage for any subsequent text (like "I have finished...")
+        # Prepare a NEW AgentMessage for any subsequent text
         self.current_agent_message = AgentMessage("")
         self.query_one("#chat-area").mount(self.current_agent_message)
 
