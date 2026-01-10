@@ -66,7 +66,8 @@ class Application:
                 self.tui_app = ProtocolMonkApp()
                 # Instantiate Bridge (The Controller)
                 ui_instance = TextualUI(self.tui_app)
-
+                # Connect the controller to the app
+                self.tui_app.controller = ui_instance
             elif self.ui_mode == "rich":
                 # Note: We removed the raw print here so the banner is cleaner
                 try:
