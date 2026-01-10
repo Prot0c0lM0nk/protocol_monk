@@ -20,9 +20,9 @@ from agent.providers.openrouter_model_client_sdk import OpenRouterModelClient
 
 async def test_ollama():
     """Test Ollama SDK client."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Testing Ollama SDK Client")
-    print("="*60)
+    print("=" * 60)
 
     try:
         # Use a cloud model to avoid downloading local models
@@ -49,15 +49,16 @@ async def test_ollama():
     except Exception as e:
         print(f"\n✗ Ollama test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
 
 async def test_openrouter():
     """Test OpenRouter SDK client."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Testing OpenRouter SDK Client")
-    print("="*60)
+    print("=" * 60)
 
     try:
         client = OpenRouterModelClient("mistralai/ministral-14b-2512")
@@ -84,14 +85,16 @@ async def test_openrouter():
     except Exception as e:
         print(f"\n✗ OpenRouter test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
+
 async def main():
     """Run all tests."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("SDK Provider Client Test Suite")
-    print("="*60)
+    print("=" * 60)
 
     # Test Ollama
     ollama_passed = await test_ollama()
@@ -100,12 +103,12 @@ async def main():
     openrouter_passed = await test_openrouter()
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Test Summary")
-    print("="*60)
+    print("=" * 60)
     print(f"Ollama:      {'✓ PASSED' if ollama_passed else '✗ FAILED'}")
     print(f"OpenRouter:  {'✓ PASSED' if openrouter_passed else '✗ FAILED'}")
-    print("="*60)
+    print("=" * 60)
 
     if ollama_passed and openrouter_passed:
         print("\n✓ All tests passed! SDK migration is working correctly.")

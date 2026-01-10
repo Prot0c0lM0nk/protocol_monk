@@ -99,6 +99,7 @@ class EventBus:
                 # Wait for all async callbacks to complete
                 if tasks:
                     await asyncio.gather(*tasks, return_exceptions=True)
+
     async def emit_batch(self, events: List[tuple]) -> None:
         """Emit multiple events atomically"""
         async with self._lock:

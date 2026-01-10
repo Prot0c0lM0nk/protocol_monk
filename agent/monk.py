@@ -277,10 +277,10 @@ class ProtocolAgent(AgentInterface):
                         # Merge tool call chunks instead of overwriting
                         if tool_calls_accumulator is None:
                             tool_calls_accumulator = {"tool_calls": []}
-                        
+
                         if "tool_calls" not in tool_calls_accumulator:
                             tool_calls_accumulator["tool_calls"] = []
-                        
+
                         # Merge each tool call by index
                         for i, new_tc in enumerate(chunk["tool_calls"]):
                             if i < len(tool_calls_accumulator["tool_calls"]):
@@ -294,17 +294,25 @@ class ProtocolAgent(AgentInterface):
                                     if "function" not in existing_tc:
                                         existing_tc["function"] = {}
                                     if new_tc["function"].get("name"):
-                                        existing_tc["function"]["name"] = new_tc["function"]["name"]
+                                        existing_tc["function"]["name"] = new_tc[
+                                            "function"
+                                        ]["name"]
                                     if new_tc["function"].get("arguments"):
                                         # Append arguments (streaming format)
-                                        existing_args = existing_tc["function"].get("arguments", "")
+                                        existing_args = existing_tc["function"].get(
+                                            "arguments", ""
+                                        )
                                         new_args = new_tc["function"]["arguments"]
-                                        existing_tc["function"]["arguments"] = existing_args + new_args
+                                        existing_tc["function"]["arguments"] = (
+                                            existing_args + new_args
+                                        )
                             else:
                                 # Add new tool call
                                 tool_calls_accumulator["tool_calls"].append(new_tc)
-                        
-                        self.logger.info(f"Merged tool_calls_accumulator: {tool_calls_accumulator}")
+
+                        self.logger.info(
+                            f"Merged tool_calls_accumulator: {tool_calls_accumulator}"
+                        )
                     else:
                         self.logger.debug(
                             f"Received dict chunk (not tool call): {chunk}"
@@ -442,10 +450,10 @@ class ProtocolAgent(AgentInterface):
                 for tool_call in response_data.message.tool_calls:
                     self.logger.info(f"Parsing Ollama tool_call: {tool_call}")
                     func = tool_call.function
-                    
+
                     # Extract ID if present (safe access)
                     call_id = getattr(tool_call, "id", None)
-                    
+
                     actions.append(
                         {
                             "action": func.name,
@@ -473,7 +481,7 @@ class ProtocolAgent(AgentInterface):
                         "action": tool_call.action,
                         "parameters": tool_call.parameters,
                         "reasoning": getattr(tool_call, "reasoning", None),
-                        "id": getattr(tool_call, "id", None), # <--- CRITICAL FIX
+                        "id": getattr(tool_call, "id", None),  # <--- CRITICAL FIX
                     }
                 )
 
@@ -491,7 +499,7 @@ class ProtocolAgent(AgentInterface):
                                     if isinstance(func.get("arguments"), str)
                                     else func.get("arguments")
                                 ),
-                                "id": tc.get("id"), # <--- CRITICAL FIX
+                                "id": tc.get("id"),  # <--- CRITICAL FIX
                             }
                         )
                 # Check for direct action/parameters (Custom/Ollama style)

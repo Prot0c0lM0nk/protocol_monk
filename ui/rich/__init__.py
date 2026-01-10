@@ -9,6 +9,7 @@ Rich-themed UI with enhanced visual styling:
 
 from .interface import RichUI
 
+
 def create_rich_ui() -> RichUI:
     """Factory function to create RichUI instance"""
     return RichUI()

@@ -8,6 +8,7 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.formatted_text import HTML
 from typing import Optional
 
+
 class InputManager:
     """
     Manages all user input operations using prompt_toolkit.
@@ -18,7 +19,9 @@ class InputManager:
         self.session = PromptSession()
         self._is_prompt_active: bool = False
 
-    async def read_input(self, prompt_text: str = "", is_main_loop: bool = False) -> Optional[str]:
+    async def read_input(
+        self, prompt_text: str = "", is_main_loop: bool = False
+    ) -> Optional[str]:
         """
         Read user input with proper stdout patching.
         Returns None on KeyboardInterrupt/EOF to signal exit.

@@ -208,35 +208,35 @@ class TAORLoop:
         try:
             # tool_executor expects a list
             summary = await self.agent.tool_executor.execute_tool_calls([action])
-            
+
         except UserCancellationError:
             await self.agent.ui.print_warning("⛔ Task Aborted.")
-            
+
             # --- SCRUBBING FIX ---
             # Remove the Assistant's message that proposed this tool.
             # This prevents a broken chain (Assistant -> User) which causes 400 Errors.
             # The context effectively rewinds to before the tool was suggested.
             await self.agent.context_manager.remove_last_message()
-            
+
             return False
 
         except ToolInputValidationError as e:
             await self.agent.ui.print_warning(f"⚠️  Invalid tool format: {e.message}")
-            
+
             # --- CHAIN REPAIR FIX ---
             # Instead of adding a System message (which breaks the chain),
             # we must treat this as a failed Tool Result.
             from agent.tool_executor import ExecutionSummary
             from agent.interfaces import ToolResult
-            
+
             # Create a synthetic failed result
             failure_result = ToolResult(
                 success=False,
                 tool_name=action.get("action", "unknown"),
                 tool_call_id=action.get("id"),
-                output=f"Validation Error: {e.message}"
+                output=f"Validation Error: {e.message}",
             )
-            
+
             summary = ExecutionSummary(results=[failure_result])
             # Proceed to record results normally below...
 

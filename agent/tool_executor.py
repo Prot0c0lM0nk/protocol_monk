@@ -110,14 +110,14 @@ class ToolExecutor:
     def _normalize_tool_call(self, tool_call: Dict) -> Dict:
         """Normalize tool call formats from different providers."""
         normalized = {}
-        
+
         # CASE 1: Custom/Ollama format: {"action": "...", "parameters": "..."}
         if "action" in tool_call and "parameters" in tool_call:
             normalized = {
                 "action": tool_call["action"],
                 "parameters": tool_call["parameters"],
             }
-        
+
         # CASE 2: OpenAI/OpenRouter format: {"function": {"name": "...", "arguments": "..."}}
         elif "function" in tool_call:
             func = tool_call["function"]
@@ -125,7 +125,7 @@ class ToolExecutor:
                 "action": func.get("name"),
                 "parameters": func.get("arguments"),
             }
-        
+
         # CASE 3: Direct format: {"name": "...", "arguments": "..."}
         elif "name" in tool_call and "arguments" in tool_call:
             normalized = {

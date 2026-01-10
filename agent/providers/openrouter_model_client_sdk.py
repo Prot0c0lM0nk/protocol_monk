@@ -81,7 +81,7 @@ class OpenRouterModelClient(BaseModelClient):
     ) -> AsyncGenerator[Union[str, Dict], None]:
         """
         Get response from OpenRouter using the official SDK.
-        
+
         Note: This version assumes the conversation_context is strictly valid
         (Assistant Tool Calls MUST be followed by Tool Results).
         """
@@ -104,7 +104,9 @@ class OpenRouterModelClient(BaseModelClient):
             # DEBUG: Log the actual messages being sent
             self.logger.debug(f"DEBUG: Sending {len(messages)} messages to OpenRouter:")
             for i, msg in enumerate(messages):
-                self.logger.debug(f"  messages[{i}]: role={msg.get('role')}, content={repr(msg.get('content'))}, tool_calls={'yes' if msg.get('tool_calls') else 'no'}")
+                self.logger.debug(
+                    f"  messages[{i}]: role={msg.get('role')}, content={repr(msg.get('content'))}, tool_calls={'yes' if msg.get('tool_calls') else 'no'}"
+                )
 
             self.logger.info(
                 "Making OpenRouter request to model: %s (stream=%s)",
@@ -118,18 +120,20 @@ class OpenRouterModelClient(BaseModelClient):
                 stream_response = await self.client.chat.completions.create(
                     **request_params
                 )
-                
+
                 self.logger.debug(f"Stream started for model: {self.model_name}")
 
                 async for chunk in stream_response:
                     # Parse the Delta
                     if not chunk.choices:
                         continue
-                        
+
                     delta = chunk.choices[0].delta
-                    
+
                     # DEBUG: Log the raw chunk structure for visibility
-                    self.logger.debug(f"Chunk ID: {chunk.id} | Content: {repr(delta.content)} | ToolCalls: {len(delta.tool_calls) if delta.tool_calls else 0}")
+                    self.logger.debug(
+                        f"Chunk ID: {chunk.id} | Content: {repr(delta.content)} | ToolCalls: {len(delta.tool_calls) if delta.tool_calls else 0}"
+                    )
 
                     # 1. Check for content (INDEPENDENT CHECK)
                     if delta.content:
@@ -146,47 +150,49 @@ class OpenRouterModelClient(BaseModelClient):
                                 "index": tc.index,
                                 "id": tc.id,
                                 "type": "function",
-                                "function": {}
+                                "function": {},
                             }
-                            
+
                             # Handle function fields if present
                             if tc.function:
                                 if tc.function.name:
                                     tc_data["function"]["name"] = tc.function.name
                                 if tc.function.arguments:
-                                    tc_data["function"]["arguments"] = tc.function.arguments
-                            
+                                    tc_data["function"][
+                                        "arguments"
+                                    ] = tc.function.arguments
+
                             tool_calls.append(tc_data)
-                        
+
                         self.logger.debug(f"Yielding tool_calls: {tool_calls}")
                         yield {"tool_calls": tool_calls}
 
             else:
                 # Non-streaming response
-                response = await self.client.chat.completions.create(
-                    **request_params
-                )
+                response = await self.client.chat.completions.create(**request_params)
 
                 # Extract content
                 content = response.choices[0].message.content
                 if content:
                     yield content
-                
+
                 # Extract tool calls (non-streaming)
                 message = response.choices[0].message
                 if message.tool_calls:
                     tool_calls = []
                     for tc in message.tool_calls:
-                        tool_calls.append({
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments
+                        tool_calls.append(
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments,
+                                },
                             }
-                        })
+                        )
                     yield {"tool_calls": tool_calls}
-                    
+
                 if not content and not message.tool_calls:
                     raise EmptyResponseError(
                         message="Model returned an empty response",
@@ -203,7 +209,7 @@ class OpenRouterModelClient(BaseModelClient):
             # DEBUG: Log the full error details
             self.logger.error(f"DEBUG: OpenRouter error type: {type(e).__name__}")
             self.logger.error(f"DEBUG: OpenRouter error message: {str(e)}")
-            
+
             # Check for authentication errors
             if "authentication" in str(e).lower() or "unauthorized" in str(e).lower():
                 raise ProviderAuthenticationError(
@@ -213,7 +219,9 @@ class OpenRouterModelClient(BaseModelClient):
 
             # Check for content errors
             if "messages" in str(e).lower() and "content" in str(e).lower():
-                self.logger.error(f"DEBUG: Content format error detected. Full error: {str(e)}")
+                self.logger.error(
+                    f"DEBUG: Content format error detected. Full error: {str(e)}"
+                )
 
             # Generic error
             raise ModelError(

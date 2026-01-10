@@ -107,6 +107,7 @@ class ModelClient:
             raise ValueError(
                 f"Unknown provider: {provider}. Available: ollama, openrouter"
             )
+
     def switch_provider(self, provider: str) -> None:
         """
         Switch to a different provider (user-controlled).

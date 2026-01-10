@@ -194,10 +194,10 @@ class ContextManager:
                 return
 
             msg = self.conversation.pop()
-            
+
             # Trigger full recalculation to ensure token count is accurate
             self.accountant.recalculate(self.system_message, self.conversation)
-            
+
             self.logger.info(f"Context Scrub: Removed last message (role={msg.role})")
 
     async def _tick(self):

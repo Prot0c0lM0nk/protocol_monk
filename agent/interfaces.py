@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 """
 Interfaces for Protocol Monk Agent-UI Separation
 Defines contracts between layers without implementation details
@@ -13,6 +14,7 @@ from dataclasses import dataclass
 @dataclass
 class CommandResult:
     """Result of executing a command"""
+
     success: bool
     message: str
     data: Optional[Dict[str, Any]] = None
@@ -21,6 +23,7 @@ class CommandResult:
 @dataclass
 class AgentResponse:
     """Response from agent processing"""
+
     type: str  # "text", "tool_calls", "error"
     content: str
     tool_calls: Optional[List[Dict[str, Any]]] = None
@@ -30,6 +33,7 @@ class AgentResponse:
 @dataclass
 class ToolExecutionRequest:
     """Request to execute a tool"""
+
     tool_name: str
     parameters: Dict[str, Any]
     tool_call_id: Optional[str] = None
@@ -38,6 +42,7 @@ class ToolExecutionRequest:
 @dataclass
 class ToolExecutionResult:
     """Result of tool execution"""
+
     success: bool
     tool_name: str
     output: str
@@ -48,10 +53,12 @@ class ToolExecutionResult:
 @dataclass
 class ToolResult:
     """Result of a tool execution"""
+
     success: bool
     output: str
     error: Optional[str] = None
     tool_name: Optional[str] = None
+
 
 class AgentInterface(ABC):
     """Interface that UI layers can use to interact with agent"""
@@ -67,12 +74,16 @@ class AgentInterface(ABC):
         pass
 
     @abstractmethod
-    async def execute_command(self, command: str, args: Dict[str, Any]) -> CommandResult:
+    async def execute_command(
+        self, command: str, args: Dict[str, Any]
+    ) -> CommandResult:
         """Execute a slash command"""
         pass
 
     @abstractmethod
-    async def execute_tool(self, tool_request: ToolExecutionRequest) -> ToolExecutionResult:
+    async def execute_tool(
+        self, tool_request: ToolExecutionRequest
+    ) -> ToolExecutionResult:
         """Execute a single tool with user approval"""
         pass
 
@@ -91,12 +102,16 @@ class UIEventHandler(ABC):
     """Interface that agent can use to handle UI events"""
 
     @abstractmethod
-    async def handle_tool_confirmation(self, tool_request: ToolExecutionRequest) -> bool:
+    async def handle_tool_confirmation(
+        self, tool_request: ToolExecutionRequest
+    ) -> bool:
         """Handle tool execution confirmation"""
         pass
 
     @abstractmethod
-    async def handle_tool_modification(self, tool_request: ToolExecutionRequest) -> ToolExecutionRequest:
+    async def handle_tool_modification(
+        self, tool_request: ToolExecutionRequest
+    ) -> ToolExecutionRequest:
         """Handle tool parameter modification"""
         pass
 
@@ -104,14 +119,14 @@ class UIEventHandler(ABC):
 @dataclass
 class UserInputRequest:
     """Request for user input"""
+
     prompt: str = "> "
     multiline: bool = False
 
 
-@dataclass  
+@dataclass
 class UserInputResponse:
     """Response containing user input"""
+
     text: str
     cancelled: bool = False
-
-

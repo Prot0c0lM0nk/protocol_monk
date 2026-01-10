@@ -11,6 +11,7 @@ from rich.syntax import Syntax
 from typing import Dict, Any
 
 from ui.base import ToolResult
+from ui.common import render_shared_error
 
 
 class PlainRenderer:
@@ -21,11 +22,9 @@ class PlainRenderer:
 
     def __init__(self):
         self.console = Console(
-            force_terminal=True,
-            color_system="truecolor",
-            highlight=False
+            force_terminal=True, color_system="truecolor", highlight=False
         )
-        
+
         # State tracking
         self._thinking_active = False
         self._in_code_block = False
@@ -38,8 +37,8 @@ class PlainRenderer:
         self.console.print(f"[bold blue][SYS] {message}[/bold blue]")
 
     def print_error(self, message: str):
-        """Print [ERR] tag in red"""
-        self.console.print(f"[bold red][ERR] {message}[/bold red]")
+        """Use shared utility for clear red text."""
+        render_shared_error(self.console, message, use_panel=False)
 
     def print_warning(self, message: str):
         """Print [WARN] tag in yellow"""
@@ -88,7 +87,7 @@ class PlainRenderer:
             if not self._has_printed_thinking_header:
                 self.console.print("[bold green][MONK][/bold green] ", end="")
                 self._has_printed_thinking_header = True
-            
+
             # Print the line dimmed
             self.console.print(line, style="dim italic")
             return
@@ -153,13 +152,17 @@ class PlainRenderer:
         elif tool_name in ["create_file", "append_to_file"]:
             path = params.get("filepath", "N/A")
             content = params.get("content", "")
-            scratch_id = params.get("content_from_scratch") or params.get("content_from_memory")
+            scratch_id = params.get("content_from_scratch") or params.get(
+                "content_from_memory"
+            )
             self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
             self.console.print(
                 f"Operation: [bold green]{tool_name.replace('_', ' ').title()}[/bold green]"
             )
             if scratch_id:
-                self.console.print(f"Source:    [yellow]Scratch Pad ({scratch_id})[/yellow]")
+                self.console.print(
+                    f"Source:    [yellow]Scratch Pad ({scratch_id})[/yellow]"
+                )
             else:
                 self.console.print(f"Size:      {len(content)} characters")
 
@@ -170,7 +173,9 @@ class PlainRenderer:
             new_content = params.get("new_content", "")
             self.console.print(f"File:      [bold cyan]{path}[/bold cyan]")
             self.console.print(f"Target:    Lines {start} - {end}")
-            preview = (new_content[:75] + "...") if len(new_content) > 75 else new_content
+            preview = (
+                (new_content[:75] + "...") if len(new_content) > 75 else new_content
+            )
             self.console.print(f"Insert:    [green]{repr(preview)}[/green]")
 
         elif tool_name == "delete_lines":
@@ -201,7 +206,10 @@ class PlainRenderer:
 
         else:
             for k, v in params.items():
-                if k in ["content", "file_text", "script_content"] and len(str(v)) > 200:
+                if (
+                    k in ["content", "file_text", "script_content"]
+                    and len(str(v)) > 200
+                ):
                     v = f"<{len(str(v))} chars hidden>"
                 self.console.print(f"{k}: {v}")
 
@@ -210,7 +218,7 @@ class PlainRenderer:
     def render_tool_result(self, tool_name: str, result: ToolResult):
         """Render tool result output with indentation"""
         content = str(result.output) if hasattr(result, "output") else str(result)
-        
+
         self.console.print(f"[bold white][TOOL] Result ({tool_name}):[/bold white]")
         # Indent slightly for readability
         for line in content.splitlines():
@@ -231,7 +239,7 @@ class PlainRenderer:
     def render_selection_list(self, title: str, items: list):
         """
         Render a selection list with numbered items.
-        
+
         Args:
             title: Title for the list
             items: List of items to display (can be strings or objects with __str__)
@@ -239,24 +247,28 @@ class PlainRenderer:
         self.console.print()
         self.console.print(f"[bold cyan]{title}[/bold cyan]")
         self.console.print("=" * len(title), style="dim")
-        
+
         for idx, item in enumerate(items, 1):
             # Handle both string items and objects
-            if hasattr(item, 'name'):
+            if hasattr(item, "name"):
                 # ModelInfo objects have name attribute
-                name = getattr(item, 'name', str(item))
-                context_window = getattr(item, 'context_window', None)
-                provider = getattr(item, 'provider', None)
-                
+                name = getattr(item, "name", str(item))
+                context_window = getattr(item, "context_window", None)
+                provider = getattr(item, "provider", None)
+
                 if context_window and provider:
                     self.console.print(
                         f"  [bold white]{idx}.[/bold white] [cyan]{name}[/cyan] "
                         f"[dim]({provider}, {context_window:,} tokens)[/dim]"
                     )
                 else:
-                    self.console.print(f"  [bold white]{idx}.[/bold white] [cyan]{name}[/cyan]")
+                    self.console.print(
+                        f"  [bold white]{idx}.[/bold white] [cyan]{name}[/cyan]"
+                    )
             else:
                 # Simple string items
-                self.console.print(f"  [bold white]{idx}.[/bold white] [cyan]{str(item)}[/cyan]")
-        
+                self.console.print(
+                    f"  [bold white]{idx}.[/bold white] [cyan]{str(item)}[/cyan]"
+                )
+
         self.console.print()

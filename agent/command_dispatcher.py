@@ -299,6 +299,7 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
             await self.event_bus.emit(
                 AgentEvents.ERROR.value, {"message": "Invalid provider selection"}
             )
+
     # --- Helpers ---
 
     async def _prompt_user(self, prompt_text: str) -> str:

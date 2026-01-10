@@ -18,6 +18,7 @@ from rich import box
 
 from ui.base import ToolResult
 from .styles import console, create_monk_panel
+from ui.common import render_shared_error
 
 
 class RichRenderer:
@@ -108,6 +109,7 @@ class RichRenderer:
     # --- STREAMING ---
     def start_streaming(self):
         """Begin a Live context for streaming text."""
+        self.stop_thinking()
         if self._live_display:
             return
 
@@ -261,7 +263,8 @@ class RichRenderer:
         return text
 
     def print_error(self, msg):
-        console.print(f"[error]Error: {msg}[/]")
+        """Use shared utility for Matrix-style errors."""
+        render_shared_error(console, msg, use_panel=True)
 
     def print_system(self, msg):
         console.print(f"[monk.text]System: {msg}[/]")
