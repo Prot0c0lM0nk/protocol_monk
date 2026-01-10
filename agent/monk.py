@@ -442,6 +442,10 @@ class ProtocolAgent(AgentInterface):
                 for tool_call in response_data.message.tool_calls:
                     self.logger.info(f"Parsing Ollama tool_call: {tool_call}")
                     func = tool_call.function
+                    
+                    # Extract ID if present (safe access)
+                    call_id = getattr(tool_call, "id", None)
+                    
                     actions.append(
                         {
                             "action": func.name,
@@ -450,6 +454,7 @@ class ProtocolAgent(AgentInterface):
                                 if isinstance(func.arguments, str)
                                 else func.arguments
                             ),
+                            "id": call_id,  # <--- CRITICAL FIX: Pass ID
                         }
                     )
                 self.logger.info(
@@ -468,6 +473,7 @@ class ProtocolAgent(AgentInterface):
                         "action": tool_call.action,
                         "parameters": tool_call.parameters,
                         "reasoning": getattr(tool_call, "reasoning", None),
+                        "id": getattr(tool_call, "id", None), # <--- CRITICAL FIX
                     }
                 )
 
@@ -485,6 +491,7 @@ class ProtocolAgent(AgentInterface):
                                     if isinstance(func.get("arguments"), str)
                                     else func.get("arguments")
                                 ),
+                                "id": tc.get("id"), # <--- CRITICAL FIX
                             }
                         )
                 # Check for direct action/parameters (Custom/Ollama style)
@@ -494,7 +501,6 @@ class ProtocolAgent(AgentInterface):
             return actions, len(actions) > 0
 
         # CASE 2: Response is a String (Text-based or "Ghost" Tool)
-        # [Keep your existing regex/text parsing logic here if you still want a fallback]
         self.logger.info(f"Response is string, no tool calls extracted")
         return [], False
 

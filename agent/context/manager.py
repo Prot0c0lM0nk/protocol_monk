@@ -183,6 +183,23 @@ class ContextManager:
             # 4. Update Tokens
             self.accountant.add(self.accountant.estimate(content))
 
+    async def remove_last_message(self):
+        """
+        Removes the last message from the conversation history.
+        Used for cleaning up cancelled tool calls or failed attempts to maintain
+        strict Assistant->Tool chains.
+        """
+        async with self._lock:
+            if not self.conversation:
+                return
+
+            msg = self.conversation.pop()
+            
+            # Trigger full recalculation to ensure token count is accurate
+            self.accountant.recalculate(self.system_message, self.conversation)
+            
+            self.logger.info(f"Context Scrub: Removed last message (role={msg.role})")
+
     async def _tick(self):
         """
         Run the decay timer on the file tracker.

@@ -81,20 +81,9 @@ class OpenRouterModelClient(BaseModelClient):
     ) -> AsyncGenerator[Union[str, Dict], None]:
         """
         Get response from OpenRouter using the official SDK.
-
-        Args:
-            conversation_context: List of conversation messages
-            stream: Whether to stream the response (default: True)
-            tools: Optional list of tool definitions
-
-        Yields:
-            str: Content chunks from the response
-            Dict: Tool call responses (when tools are invoked)
-
-        Raises:
-            ModelError: For provider errors
-            ModelTimeoutError: For timeouts
-            EmptyResponseError: For empty responses
+        
+        Note: This version assumes the conversation_context is strictly valid
+        (Assistant Tool Calls MUST be followed by Tool Results).
         """
         try:
             # Prepare the request using OpenAI SDK format
@@ -113,9 +102,9 @@ class OpenRouterModelClient(BaseModelClient):
                 request_params["tools"] = tools
 
             # DEBUG: Log the actual messages being sent
-            self.logger.info(f"DEBUG: Sending {len(messages)} messages to OpenRouter:")
+            self.logger.debug(f"DEBUG: Sending {len(messages)} messages to OpenRouter:")
             for i, msg in enumerate(messages):
-                self.logger.info(f"  messages[{i}]: role={msg.get('role')}, content={repr(msg.get('content'))}, tool_calls={'yes' if msg.get('tool_calls') else 'no'}")
+                self.logger.debug(f"  messages[{i}]: role={msg.get('role')}, content={repr(msg.get('content'))}, tool_calls={'yes' if msg.get('tool_calls') else 'no'}")
 
             self.logger.info(
                 "Making OpenRouter request to model: %s (stream=%s)",
@@ -129,31 +118,48 @@ class OpenRouterModelClient(BaseModelClient):
                 stream_response = await self.client.chat.completions.create(
                     **request_params
                 )
+                
+                self.logger.debug(f"Stream started for model: {self.model_name}")
 
                 async for chunk in stream_response:
-                    # Extract content from delta
+                    # Parse the Delta
+                    if not chunk.choices:
+                        continue
+                        
                     delta = chunk.choices[0].delta
+                    
+                    # DEBUG: Log the raw chunk structure for visibility
+                    self.logger.debug(f"Chunk ID: {chunk.id} | Content: {repr(delta.content)} | ToolCalls: {len(delta.tool_calls) if delta.tool_calls else 0}")
 
-                    # Check for tool calls first
+                    # 1. Check for content (INDEPENDENT CHECK)
+                    if delta.content:
+                        self.logger.debug(f"Yielding content: {delta.content[:50]}...")
+                        yield delta.content
+
+                    # 2. Check for tool calls (INDEPENDENT CHECK - NOT ELIF)
                     if delta.tool_calls:
                         # Convert tool calls to our format
                         tool_calls = []
                         for tc in delta.tool_calls:
-                            tool_calls.append(
-                                {
-                                    "id": tc.id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": tc.function.name,
-                                        "arguments": tc.function.arguments,
-                                    },
-                                }
-                            )
+                            # Safe extraction handling None values
+                            tc_data = {
+                                "index": tc.index,
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {}
+                            }
+                            
+                            # Handle function fields if present
+                            if tc.function:
+                                if tc.function.name:
+                                    tc_data["function"]["name"] = tc.function.name
+                                if tc.function.arguments:
+                                    tc_data["function"]["arguments"] = tc.function.arguments
+                            
+                            tool_calls.append(tc_data)
+                        
+                        self.logger.debug(f"Yielding tool_calls: {tool_calls}")
                         yield {"tool_calls": tool_calls}
-
-                    # Check for content
-                    elif delta.content:
-                        yield delta.content
 
             else:
                 # Non-streaming response
@@ -165,7 +171,23 @@ class OpenRouterModelClient(BaseModelClient):
                 content = response.choices[0].message.content
                 if content:
                     yield content
-                else:
+                
+                # Extract tool calls (non-streaming)
+                message = response.choices[0].message
+                if message.tool_calls:
+                    tool_calls = []
+                    for tc in message.tool_calls:
+                        tool_calls.append({
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments
+                            }
+                        })
+                    yield {"tool_calls": tool_calls}
+                    
+                if not content and not message.tool_calls:
                     raise EmptyResponseError(
                         message="Model returned an empty response",
                         details={"provider": "openrouter", "model": self.model_name},
