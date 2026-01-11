@@ -58,16 +58,13 @@ class Application:
 
             if self.ui_mode == "textual":
                 print(f"[Protocol Monk] Initializing Textual TUI...")
-                # Import the New TUI Stack
-                from ui.textual.app import ProtocolMonkApp
-                from ui.textual.interface import TextualUI
+                # Import the Textual UI
+                from ui.textual.app import TextualUI
 
-                # Instantiate App (The View)
-                self.tui_app = ProtocolMonkApp()
-                # Instantiate Bridge (The Controller)
-                ui_instance = TextualUI(self.tui_app)
-                # Connect the controller to the app
-                self.tui_app.controller = ui_instance
+                # Instantiate TextualUI (combines App and UI)
+                self.tui_app = TextualUI()
+                ui_instance = self.tui_app
+
             elif self.ui_mode == "rich":
                 # Note: We removed the raw print here so the banner is cleaner
                 try:
@@ -114,10 +111,14 @@ class Application:
                 ui=ui_instance,
             )
 
-            # 4. Async Initialization
+            # 4. Connect agent to TextualUI
+            if self.ui_mode == "textual":
+                self.tui_app.set_agent(self.agent)
+
+            # 5. Async Initialization
             await self.agent.async_initialize()
 
-            # 5. EXECUTION BRANCH (The Loop Inversion)
+            # 6. EXECUTION BRANCH (The Loop Inversion)
             self.running = True
 
             if self.ui_mode == "textual":

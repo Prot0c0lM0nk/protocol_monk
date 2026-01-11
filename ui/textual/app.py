@@ -22,6 +22,7 @@ class TextualUI(App):
     """
     Main Textual App for Protocol Monk
     ChatGPT-like terminal agent interface
+    Implements UI interface for agent integration
     """
 
     CSS_PATH = "styles/main.tcss"
@@ -58,11 +59,17 @@ class TextualUI(App):
 
     def __init__(self):
         super().__init__()
+
         self._event_bus = get_event_bus()
         self._input_future: asyncio.Future = None
         self._tool_confirm_future: asyncio.Future = None
+        self._agent = None
+        self._lock = asyncio.Lock()
         self._setup_event_listeners()
 
+    def set_agent(self, agent):
+        """Set the agent instance"""
+        self._agent = agent
     def _setup_event_listeners(self):
         """Subscribe to agent event bus"""
         # Subscribe to all agent events
@@ -84,7 +91,7 @@ class TextualUI(App):
         """Show quit confirmation dialog"""
         self.push_screen("quit_confirm")
 
-    # --- BLOCKING METHODS (Called by Agent) ---
+    # --- BLOCKING METHODS (Called by Agent - from UI base class) ---
 
     async def get_input(self) -> str:
         """
@@ -104,17 +111,39 @@ class TextualUI(App):
         # Wait for user to submit
         return await self._input_future
 
-    async def confirm_tool_execution(self, tool_data: Dict[str, Any]) -> bool:
+    async def confirm_tool_execution(self, tool_call_data: Dict[str, Any]) -> bool:
         """
         Ask user to confirm tool execution
         BLOCKS until user approves or rejects
         """
-        tool_name = tool_data.get("tool_name", "Unknown")
-        parameters = tool_data.get("parameters", {})
+        tool_name = tool_call_data.get("tool_name", "Unknown")
+        parameters = tool_call_data.get("parameters", {})
 
         # Show confirmation modal
         result = await self.push_screen_wait(ToolConfirmScreen(tool_name, parameters))
         return result
+
+    # --- OUTPUT METHODS (from UI base class) ---
+
+    async def print_stream(self, text: str):
+        """Print streaming text to chat display"""
+        self.post_message(self.AgentEvent(AgentEvents.STREAM_CHUNK.value, {"chunk": text}))
+
+    async def print_error(self, message: str):
+        """Print error message"""
+        self.post_message(self.AgentEvent(AgentEvents.ERROR.value, {"message": message}))
+
+    async def print_info(self, message: str):
+        """Print info message"""
+        self.post_message(self.AgentEvent(AgentEvents.INFO.value, {"message": message}))
+
+    async def start_thinking(self):
+        """Show thinking indicator"""
+        self.post_message(self.AgentEvent(AgentEvents.THINKING_STARTED.value, {"message": "Thinking..."}))
+
+    async def stop_thinking(self):
+        """Hide thinking indicator"""
+        self.post_message(self.AgentEvent(AgentEvents.THINKING_STOPPED.value, {}))
 
     # --- EVENT HANDLERS (Called by Agent Event Bus) ---
 
@@ -228,8 +257,53 @@ class TextualUI(App):
         Process user input with agent
         Runs in background worker to not block UI
         """
-        # TODO: Connect to actual agent
-        # For now, just echo back
-        await asyncio.sleep(0.5)
-        self.post_message(self.AgentEvent(AgentEvents.STREAM_CHUNK.value, {"chunk": f"Echo: {user_input}"}))
-        self.post_message(self.AgentEvent(AgentEvents.RESPONSE_COMPLETE.value, {}))
+        if self._agent:
+            # Call the actual agent
+            await self._agent.process_request(user_input)
+        else:
+            # Fallback: echo back (for testing without agent)
+            await asyncio.sleep(0.5)
+            self.post_message(self.AgentEvent(AgentEvents.STREAM_CHUNK.value, {"chunk": f"Echo: {user_input}"}))
+            self.post_message(self.AgentEvent(AgentEvents.RESPONSE_COMPLETE.value, {}))
+    # --- UI INTERFACE METHODS (for agent compatibility) ---
+
+    async def run_async(self):
+        """
+        Run the Textual app (required by UI interface)
+        This is called from within an existing event loop
+        """
+        # Use Textual's run_async() method which is designed for this
+        # It runs the app within the current event loop instead of creating a new one
+        await super().run_async()
+
+    async def print_stream(self, text: str):
+        """Print streaming text to chat display"""
+        self.post_message(self.AgentEvent(AgentEvents.STREAM_CHUNK.value, {"chunk": text}))
+
+    async def print_error(self, message: str):
+        """Print error message"""
+        self.post_message(self.AgentEvent(AgentEvents.ERROR.value, {"message": message}))
+
+    async def print_info(self, message: str):
+        """Print info message"""
+        self.post_message(self.AgentEvent(AgentEvents.INFO.value, {"message": message}))
+
+    async def start_thinking(self):
+        """Show thinking indicator"""
+        self.post_message(self.AgentEvent(AgentEvents.THINKING_STARTED.value, {"message": "Thinking..."}))
+
+    async def stop_thinking(self):
+        """Hide thinking indicator"""
+        self.post_message(self.AgentEvent(AgentEvents.THINKING_STOPPED.value, {}))
+
+    async def display_tool_result(self, result, tool_name: str):
+        """Display tool result"""
+        self.post_message(self.AgentEvent(AgentEvents.TOOL_RESULT.value, {"result": result, "tool_name": tool_name}))
+
+    async def close(self):
+        """Close the UI"""
+        pass
+
+    async def shutdown(self):
+        """Shutdown the UI"""
+        pass
