@@ -20,6 +20,11 @@ class ChatInput(Input):
             self.input_widget = input_widget
             super().__init__()
 
+    def on_click(self, event) -> None:
+        """Handle mouse click on input widget"""
+        # Focus the input when clicked
+        self.focus()
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """
         Handle input submission

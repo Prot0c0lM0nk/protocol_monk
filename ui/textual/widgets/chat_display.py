@@ -3,25 +3,38 @@ ui/textual/widgets/chat_display.py
 Widget for displaying chat messages as bubbles
 """
 
-from textual.containers import VerticalScroll, Horizontal
+from textual.containers import VerticalScroll
 from textual.widgets import Static
+from textual.widget import Widget
 from textual.message import Message
 from .chat_input import ChatInput
 
-class ChatMessage(Static):
+class ChatMessage(Widget):
     """Individual message bubble widget"""
     def __init__(self, content: str, sender: str, **kwargs):
-        super().__init__(content, **kwargs)
+        self.content = content
         self.sender = sender
-        self.add_class(f"message-{sender}")
-        self.add_class("message")
+        super().__init__(**kwargs)
+        # Enable mouse interaction
+        self.can_focus = True
+
+    def compose(self):
+        """Compose the message widget with a Static child"""
+        # Classes go on the Static child (like chatui)
+        yield Static(self.content, classes=f"message message-{self.sender}")
+
+    def on_click(self, event) -> None:
+        """Handle mouse click on message bubble"""
+        # Focus this message when clicked
+        self.focus()
+        # You could add more interaction here, like copying text
+        # or showing message details
 
 class ChatDisplay(VerticalScroll):
     """
     Chat display widget
     Shows conversation history as a list of scrollable message bubbles
     """
-
     class Submitted(Message):
         def __init__(self, value: str, input_widget: "ChatInput") -> None:
             self.value = value
@@ -37,7 +50,7 @@ class ChatDisplay(VerticalScroll):
 
     def add_message(self, sender: str, content: str, style: str = "") -> None:
         """Add a message bubble to the chat display"""
-        
+
         # 1. Clear "Thinking..." if it exists
         if self.thinking_row:
             self.thinking_row.remove()
@@ -48,31 +61,25 @@ class ChatDisplay(VerticalScroll):
             if self.current_response_widget is not None:
                 # Append to existing bubble
                 self.current_response_text += content
-                self.current_response_widget.update(self.current_response_text)
+                # Update the Static child widget
+                static_widget = self.current_response_widget.query_one(Static)
+                static_widget.update(self.current_response_text)
             else:
                 # Start new stream
                 self.current_response_text = content
                 self.current_response_widget = ChatMessage(content, sender=sender)
-                
-                # Wrap in a ROW container for alignment
-                row = Horizontal(self.current_response_widget, classes="message-row row-left")
-                self.mount(row)
+                # Mount directly (no row wrapper - using margin-based alignment)
+                self.mount(self.current_response_widget)
 
-        # 3. User / System Logic (Always new row)
+        # 3. User / System Logic (Always new message)
         else:
             # Reset agent stream if user interrupts
             self.current_response_widget = None
             self.current_response_text = ""
-            
+
             message_widget = ChatMessage(content, sender=sender)
-            
-            # Determine alignment
-            align_class = "row-right" if sender == "user" else "row-left"
-            
-            # Wrap in Row
-            row = Horizontal(message_widget, classes=f"message-row {align_class}")
-            self.mount(row)
-        
+            # Mount directly (no row wrapper - using margin-based alignment)
+            self.mount(message_widget)
         self.scroll_end(animate=False)
 
     def write(self, text: str) -> None:
@@ -89,13 +96,12 @@ class ChatDisplay(VerticalScroll):
         """Add a thinking indicator"""
         if self.thinking_row:
             self.thinking_row.remove()
-            
         # Create thinking bubble
         thinking_widget = ChatMessage(f"[dim italic]{message}[/dim italic]", sender="system")
-        
-        # Wrap in Row (Left Aligned)
-        self.thinking_row = Horizontal(thinking_widget, classes="message-row row-left")
-        self.mount(self.thinking_row)
+
+        # Mount directly (no row wrapper)
+        self.thinking_row = thinking_widget
+        self.mount(thinking_widget)
         self.scroll_end(animate=False)
 
     def add_tool_result(self, tool_name: str, result: str, success: bool = True) -> None:

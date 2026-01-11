@@ -1,14 +1,14 @@
 Screen {
     layout: vertical;
     /* 0% Alpha = Fully Transparent (shows terminal background) */
-    background: rgba(0, 0, 0, 0); 
+    background: rgba(0, 0, 0, 0);
 }
 
 /* --- Main Layout --- */
 
 ChatDisplay {
     height: 1fr;
-    background: #111;
+    background: #000000;
     scrollbar-gutter: stable;
     padding: 1;
     overflow-y: scroll;
@@ -16,22 +16,24 @@ ChatDisplay {
 
 #input-area {
     dock: bottom;
-    padding: 0;
+    height: auto;
+    width: 100%;
+    margin: 0 0 2 0;
+    align_horizontal: center;
     background: #000000;
-    height: 5;
     border-top: solid #875fd7;
 }
 
 StatusBar {
     dock: bottom;
-    background: #111;
-    padding: 0 1;
-    height: 1;
+    background: #000000;
+    padding: 0;
+    height: 0;
     color: #5fd700;
 }
 
 Header {
-    background: #000000;
+    background: #111;
     color: #87ff00;
     height: 1;
 }
@@ -61,20 +63,24 @@ Header {
 .message {
     padding: 1 2;
     height: auto;
-    width: auto;      /* Let text decide width */
-    max-width: 80%;   /* Stop it from getting too wide [cite: 106] */
-    
+    width: auto;
+    max-width: 80%;
     background: #1f1f1f;
-    border: tall #333; 
+    border: tall #333;
 }
 
 /* User Bubble Visuals */
 .message-user {
-    background: rgba(0, 215, 255, 0.15); 
+    background: rgba(0, 215, 255, 0.15);
     border: round #00d7ff;
     color: #ffffff;
-    /* Align text to the right */
     text-align: right;
+}
+
+/* User bubble hover effect */
+.message-user:hover {
+    background: rgba(0, 215, 255, 0.25);
+    border: round #00ffff;
 }
 
 /* Agent Bubble Visuals */
@@ -84,23 +90,19 @@ Header {
     color: #e0e0e0;
 }
 
-/* System/Thinking Visuals */
-.message-system, .message-tool, .message-error {
-    width: 100%; /* Full width for status updates */
-    text-align: center;
-    background: rgba(32, 32, 32, 0.5);
-    border-left: thick #875fd7;
-    color: #a0a0a0;
+/* Agent bubble hover effect */
+.message-agent:hover {
+    background: rgba(95, 215, 0, 0.25);
+    border: round #5fff00;
 }
 
-/* --- Input Widget --- */
+/* --- Chat Input --- */
 
 ChatInput {
-    width: 1fr;
-    background: #202020;
-    border: solid #875fd7;
-    color: gray;
-    padding: 0 1;
+    width: 50%;
+    background: rgba(52, 58, 64, 0.5);
+    border: solid #555;
+    color: #ffffff;
 }
 
 ChatInput:focus {
@@ -122,6 +124,8 @@ ChatInput:focus {
     border: solid #00d7ff;
 }
 
+/* --- Modals --- */
+
 #dialog {
     width: 60;
     height: auto;
@@ -140,10 +144,4 @@ ChatInput:focus {
 #params {
     color: #5fd700;
     margin-bottom: 2;
-}
-
-/* --- Global Focus --- */
-
-*:focus {
-    border: solid #00d7ff;
 }
