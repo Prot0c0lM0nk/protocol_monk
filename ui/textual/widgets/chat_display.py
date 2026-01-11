@@ -1,21 +1,30 @@
 """
 ui/textual/widgets/chat_display.py
-Widget for displaying chat messages
+Widget for displaying chat messages as bubbles
 """
 
-from textual.widgets import RichLog
+from textual.containers import VerticalScroll
+from textual.widgets import Static
 from textual.message import Message
-from typing import Optional
+# 1. Fixed Import
+from .chat_input import ChatInput
 
+class ChatMessage(Static):
+    """Individual message bubble widget"""
+    def __init__(self, content: str, sender: str, **kwargs):
+        super().__init__(content, **kwargs)
+        self.sender = sender
+        self.add_class(f"message-{sender}")
+        self.add_class("message")
 
-class ChatDisplay(RichLog):
+class ChatDisplay(VerticalScroll):
     """
     Chat display widget
-    Shows conversation history with the agent
+    Shows conversation history as a list of scrollable message bubbles
     """
 
     class Submitted(Message):
-        """Message posted when user submits input (for bubbling)"""
+        """Message posted when user submits input"""
         def __init__(self, value: str, input_widget: "ChatInput") -> None:
             self.value = value
             self.input_widget = input_widget
@@ -24,56 +33,28 @@ class ChatDisplay(RichLog):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.auto_scroll = True
-        self.wrap = True
 
     def add_message(self, sender: str, content: str, style: str = "") -> None:
-        """
-        Add a message to the chat display
-
-        Args:
-            sender: Message sender ("user", "agent", "system", "error")
-            content: Message content
-            style: Optional style string
-        """
-        # Format message based on sender
-        if sender == "user":
-            prefix = "[bold cyan]You:[/bold cyan] "
-        elif sender == "agent":
-            prefix = "[bold green]Monk:[/bold green] "
-        elif sender == "system":
-            prefix = "[bold yellow]System:[/bold yellow] "
-        elif sender == "error":
-            prefix = "[bold red]Error:[/bold red] "
-        else:
-            prefix = f"[bold]{sender}:[/bold] "
-
-        # Add message to log
-        self.write(f"{prefix}{content}")
-
-    def clear_messages(self) -> None:
-        """Clear all messages from the chat display"""
-        self.clear()
+        """Add a message bubble to the chat display"""
+        # Create widget
+        message_widget = ChatMessage(content, sender=sender)
+        
+        # Add to scroll view
+        self.mount(message_widget)
+        
+        # 2. Fixed Method: VerticalScroll uses scroll_end(), not scroll_to_end()
+        self.scroll_end(animate=False)
 
     def add_thinking(self, message: str = "Thinking...") -> None:
-        """
-        Add a thinking indicator
-
-        Args:
-            message: Thinking message text
-        """
-        self.write(f"[dim italic]{message}[/dim italic]")
+        """Add a thinking indicator"""
+        self.add_message("system", f"[dim italic]{message}[/dim italic]")
 
     def add_tool_result(self, tool_name: str, result: str, success: bool = True) -> None:
-        """
-        Add a tool execution result
+        """Add a tool execution result"""
+        status = "✓" if success else "✗"
+        content = f"[bold]{status} {tool_name}:[/bold]\n{result}"
+        self.add_message("tool", content)
 
-        Args:
-            tool_name: Name of the tool
-            result: Tool output
-            success: Whether the tool succeeded
-        """
-        if success:
-            prefix = f"[bold green]✓ {tool_name}:[/bold green] "
-        else:
-            prefix = f"[bold red]✗ {tool_name}:[/bold red] "
-        self.write(f"{prefix}{result}")
+    def clear_messages(self) -> None:
+        """Clear all messages"""
+        self.remove_children()
