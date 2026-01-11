@@ -42,17 +42,19 @@ Header {
 .message-row {
     width: 100%;
     height: auto;
-    margin-bottom: 1;
+    margin-bottom: 2;
     padding: 0;
 }
 
 /* 2. Alignment Classes */
 .row-right {
-    align: right middle; /* Puts User bubble on the Right */
+    /* Push content to the right */
+    align: right middle;
 }
 
 .row-left {
-    align: left middle; /* Puts Agent bubble on the Left */
+    /* Keep content on the left */
+    align: left middle;
 }
 
 /* 3. The Bubble Styling (The Box itself) */
@@ -71,7 +73,8 @@ Header {
     background: rgba(0, 215, 255, 0.15); 
     border: round #00d7ff;
     color: #ffffff;
-    /* No margins needed! Alignment handles position */
+    /* Align text to the right */
+    text-align: right;
 }
 
 /* Agent Bubble Visuals */
@@ -105,7 +108,19 @@ ChatInput:focus {
     background: #303030;
 }
 
-/* --- Modals --- */
+#send-button {
+    margin-left: 1;
+    width: 10;
+}
+
+#send-button:hover {
+    background: #00d7ff;
+    color: #000;
+}
+
+#send-button:focus {
+    border: solid #00d7ff;
+}
 
 #dialog {
     width: 60;

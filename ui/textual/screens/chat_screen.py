@@ -79,5 +79,3 @@ class ChatScreen(Screen):
                 # Clear input
                 input_widget.value = ""
                 input_widget.focus()
-            # Clear input
-            event.input_widget.value = ""
