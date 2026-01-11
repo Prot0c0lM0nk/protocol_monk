@@ -3,6 +3,7 @@ ui/rich/renderer.py
 Visual component manager. Handles Live displays and Thinking states.
 """
 
+import time
 import re
 from typing import Dict, Any
 
@@ -26,9 +27,14 @@ class RichRenderer:
         self._live_display = None
         self._thinking_status = None
 
-        # Split Buffers for "Inner Voice" vs "Outer Voice"
+        # Split Buffers
         self._reasoning_text = ""
         self._response_text = ""
+
+        # --- FIXES: Performance & Concurrency ---
+        self._last_update_time = 0
+        self._render_interval = 0.08  # Throttle updates to ~12 FPS (UI logic only)
+        self._is_locked = False  # Prevents rendering when waiting for user input
 
     # --- COMMANDS & STATUS ---
     def render_command_result(self, success: bool, message: str):
@@ -106,9 +112,12 @@ class RichRenderer:
         )
         console.print(panel)
 
-    # --- STREAMING ---
+    # --- LIFECYCLE ---
     def start_streaming(self):
-        """Begin a Live context for streaming text."""
+        # Respect the lock (e.g. if waiting for input, don't start rendering)
+        if self._is_locked:
+            return
+
         self.stop_thinking()
         if self._live_display:
             return
@@ -126,55 +135,78 @@ class RichRenderer:
         self._live_display.start()
 
     def update_streaming(self, chunk: str, is_thinking: bool = False):
-        """Add text to the correct buffer and update the live panel."""
+        # 1. CONCURRENCY CHECK: If we are waiting for input, ignore all updates.
+        # This fixes the "Race Condition" where stream chunks interrupt the prompt.
+        if self._is_locked:
+            return
+
+        # 2. LAZY START: Auto-start live display if content arrives
         if not self._live_display:
-            # Don't start live display for empty signals
             if not chunk and not self._reasoning_text and not self._response_text:
                 return
             self.start_streaming()
+            # If start_streaming failed (e.g. due to lock), stop here
+            if not self._live_display:
+                return
 
-        # 1. Route Chunk to Correct Buffer
+        # 3. BUFFER UPDATES (Cheap string ops)
         if is_thinking:
             self._reasoning_text += chunk
         else:
             self._response_text += chunk
 
-        # 2. Prepare Display Components
-        renderables = []
+        # 4. THROTTLE CHECK (Performance Fix)
+        # Don't regenerate the Rich object tree unless enough time has passed.
+        # This prevents the O(N^2) markdown parsing bottleneck on every token.
+        now = time.time()
+        if now - self._last_update_time < self._render_interval:
+            return
+        self._last_update_time = now
 
-        # Clean tags from both buffers
+        # 5. RENDER PREPARATION (Expensive ops - now throttled)
+        renderables = []
         clean_reasoning = self._clean_think_tags(self._reasoning_text)
         clean_response = self._clean_think_tags(self._response_text)
 
-        # A. Inner Voice (Reasoning) -> Text Component (Forced Style)
         if clean_reasoning.strip():
-            # We force "dim italic" here, bypassing Markdown completely
             renderables.append(Text(clean_reasoning, style="dim italic"))
-            # Add a spacer if we also have a response coming
             if clean_response.strip():
                 renderables.append(Text(""))
 
-        # B. Outer Voice (Response) -> Markdown Component (Rich Syntax)
         if clean_response.strip():
-            # If it looks like Markdown, render as Markdown
+            # Only parse Markdown if necessary
             if any(c in clean_response for c in ["`", "#", "*", "_", ">"]):
                 renderables.append(Markdown(clean_response))
             else:
                 renderables.append(Text(clean_response, style="monk.text"))
 
-        # 3. Update Live Panel
+        # 6. UPDATE LIVE DISPLAY
         if renderables:
             self._live_display.update(create_monk_panel(Group(*renderables)))
 
     def end_streaming(self):
-        """Finalize the live display."""
         if self._live_display:
             try:
                 self._live_display.stop()
             except Exception:
                 pass
             self._live_display = None
-            console.print()
+            # We do NOT print() here automatically anymore, 
+            # allowing the input loop to control the spacing.
+
+    # --- CONCURRENCY LOCKS ---
+    def lock_for_input(self):
+        """
+        Call this before asking for user input. 
+        It ensures no streaming updates interrupt the prompt.
+        """
+        self._is_locked = True
+        self.end_streaming()
+        self.stop_thinking()
+
+    def unlock_for_input(self):
+        """Call this after user input is received."""
+        self._is_locked = False
 
     # --- THINKING SPINNER ---
     def start_thinking(self, message: str = "Contemplating..."):
