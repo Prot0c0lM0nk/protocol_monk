@@ -120,11 +120,21 @@ class RichUI(UI):
         self.renderer.print_system(f"Provider Switched: {data.get('new_provider')}")
 
     # --- BLOCKING INTERFACE ---
-
     async def get_input(self) -> str:
-        self.renderer.end_streaming()
-        # We assume the user sees the list above and just types the number here
-        return await self.input.get_input("User Input")
+        # 1. Lock the renderer immediately. 
+        # This stops any lingering stream chunks from hijacking the terminal.
+        self.renderer.lock_for_input()
+        
+        # 2. Print a newline to separate the previous stream from the prompt
+        console.print()
+
+        # 3. Get Input
+        try:
+            user_input = await self.input.get_input("User Input")
+            return user_input
+        finally:
+            # 4. Always unlock, even if KeyboardInterrupt occurs
+            self.renderer.unlock_for_input()
 
     async def confirm_tool_execution(self, tool_data: Dict[str, Any]) -> bool:
         tool_name = tool_data.get("tool_name", "Unknown")
