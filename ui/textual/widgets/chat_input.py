@@ -13,7 +13,7 @@ class ChatInput(Input):
     Handles user message input and submission
     """
 
-    class Submitted(Message):
+    class UserSubmitted(Message):
         """Message posted when user submits input"""
         def __init__(self, value: str, input_widget: "ChatInput") -> None:
             self.value = value
@@ -25,5 +25,5 @@ class ChatInput(Input):
         Handle input submission
         Posted when user presses Enter
         """
-        # Post our custom Submitted message
-        self.post_message(self.Submitted(event.value, self))
+        # Post our custom UserSubmitted message
+        self.post_message(self.UserSubmitted(event.value, self))

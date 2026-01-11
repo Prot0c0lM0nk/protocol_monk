@@ -6,7 +6,7 @@ Main chat screen for the agent interface
 from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.containers import Vertical, Horizontal
-from textual.widgets import Header, Static
+from textual.widgets import Header
 
 from ..widgets.chat_display import ChatDisplay
 from ..widgets.chat_input import ChatInput
@@ -24,6 +24,7 @@ class ChatScreen(Screen):
         ("ctrl+s", "app.switch_mode('settings')", "Settings"),
         ("ctrl+h", "app.switch_mode('help')", "Help"),
     ]
+
     def compose(self) -> ComposeResult:
         """Compose the chat screen"""
         yield Header()
@@ -34,6 +35,7 @@ class ChatScreen(Screen):
                     placeholder="Type your message...",
                     id="user-input"
                 )
+        yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
         """Called when screen is mounted"""
@@ -41,7 +43,7 @@ class ChatScreen(Screen):
         input_widget = self.query_one("#user-input", ChatInput)
         input_widget.focus()
 
-    def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
+    def on_chat_input_user_submitted(self, event: ChatInput.UserSubmitted) -> None:
         """
         Handle user input submission
         Event posted by ChatInput when user presses Enter
@@ -52,8 +54,8 @@ class ChatScreen(Screen):
             chat_display = self.query_one("#chat-display", ChatDisplay)
             chat_display.add_message("user", user_message)
 
-            # TODO: Process with agent
-            # self.app.process_agent_request(user_message)
+            # Process with agent (runs in worker)
+            self.app.process_agent_request(user_message)
 
             # Clear input
             event.input_widget.value = ""
