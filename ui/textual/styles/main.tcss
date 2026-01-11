@@ -1,0 +1,80 @@
+Screen {
+    layout: vertical;
+    background: black;
+}
+
+/* Chat Display */
+ChatDisplay {
+    color: #87ff00;
+    border: thick #875fd7;
+    background: black;
+    height: 1fr;
+    padding: 1;
+    scrollbar-size: 1 1;
+}
+
+/* Input area container */
+#input-area {
+    dock: bottom;
+    padding: 0;
+    background: black;
+    height: 5;
+    border-top: solid #875fd7;
+}
+
+/* Chat input */
+ChatInput {
+    width: 1fr;
+    background: #202020;
+    border: solid #875fd7;
+    color: gray;
+    padding: 0 1;
+}
+
+ChatInput:focus {
+    border: double #00d7ff;
+    background: #303030;
+}
+
+/* Status bar */
+StatusBar {
+    dock: bottom;
+    background: black;
+    padding: 0 1;
+    height: 1;
+    color: #5fd700;
+}
+
+/* Header */
+Header {
+    background: black;
+    color: #87ff00;
+    height: 1;
+}
+
+/* Modal dialogs */
+#dialog {
+    width: 80;
+    height: auto;
+    max-width: 100;
+    padding: 2;
+    background: black;
+    border: thick #875fd7;
+}
+
+#title {
+    text-align: center;
+    color: #87ff00;
+    text-style: bold;
+    margin-bottom: 2;
+}
+
+#params {
+    color: #5fd700;
+    margin-bottom: 2;
+}
+
+/* Global focus indicator */
+*:focus {
+    border: solid #00d7ff;
+}
