@@ -267,14 +267,14 @@ class TextualUI(App):
             self.post_message(self.AgentEvent(AgentEvents.RESPONSE_COMPLETE.value, {}))
     # --- UI INTERFACE METHODS (for agent compatibility) ---
 
-    async def run_async(self):
+    async def run_async(self, *args, **kwargs):  # <--- CHANGED: Added args/kwargs
         """
         Run the Textual app (required by UI interface)
         This is called from within an existing event loop
         """
         # Use Textual's run_async() method which is designed for this
-        # It runs the app within the current event loop instead of creating a new one
-        await super().run_async()
+        # Pass all arguments through to the Textual base method
+        await super().run_async(*args, **kwargs)  # <--- CHANGED: Pass them to super
 
     async def print_stream(self, text: str):
         """Print streaming text to chat display"""
