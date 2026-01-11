@@ -44,10 +44,9 @@ Header {
 .message-row {
     width: 100%;
     height: auto;
-    margin-bottom: 2;
+    margin-bottom: 1;
     padding: 0;
 }
-
 /* 2. Alignment Classes */
 .row-right {
     /* Push content to the right */
@@ -94,6 +93,15 @@ Header {
 .message-agent:hover {
     background: rgba(95, 215, 0, 0.25);
     border: round #5fff00;
+}
+
+/* System Message Visuals (more compact) */
+.message-system {
+    background: rgba(135, 95, 215, 0.1);
+    border-left: thick #875fd7;
+    color: #a0a0a0;
+    text-align: left;
+    padding: 0 2;
 }
 
 /* --- Chat Input --- */

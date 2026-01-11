@@ -3,7 +3,7 @@ ui/textual/widgets/chat_display.py
 Widget for displaying chat messages as bubbles
 """
 
-from textual.containers import VerticalScroll
+from textual.containers import VerticalScroll, Horizontal
 from textual.widgets import Static
 from textual.widget import Widget
 from textual.message import Message
@@ -68,8 +68,10 @@ class ChatDisplay(VerticalScroll):
                 # Start new stream
                 self.current_response_text = content
                 self.current_response_widget = ChatMessage(content, sender=sender)
-                # Mount directly (no row wrapper - using margin-based alignment)
-                self.mount(self.current_response_widget)
+
+                # Wrap in a ROW container for alignment
+                row = Horizontal(self.current_response_widget, classes="message-row row-left")
+                self.mount(row)
 
         # 3. User / System Logic (Always new message)
         else:
@@ -78,8 +80,14 @@ class ChatDisplay(VerticalScroll):
             self.current_response_text = ""
 
             message_widget = ChatMessage(content, sender=sender)
-            # Mount directly (no row wrapper - using margin-based alignment)
-            self.mount(message_widget)
+
+            # Determine alignment
+            align_class = "row-right" if sender == "user" else "row-left"
+
+            # Wrap in Row
+            row = Horizontal(message_widget, classes=f"message-row {align_class}")
+            self.mount(row)
+
         self.scroll_end(animate=False)
 
     def write(self, text: str) -> None:
@@ -99,15 +107,15 @@ class ChatDisplay(VerticalScroll):
         # Create thinking bubble
         thinking_widget = ChatMessage(f"[dim italic]{message}[/dim italic]", sender="system")
 
-        # Mount directly (no row wrapper)
-        self.thinking_row = thinking_widget
-        self.mount(thinking_widget)
+        # Wrap in Row (Left Aligned)
+        self.thinking_row = Horizontal(thinking_widget, classes="message-row row-left")
+        self.mount(self.thinking_row)
         self.scroll_end(animate=False)
 
     def add_tool_result(self, tool_name: str, result: str, success: bool = True) -> None:
         status = "✓" if success else "✗"
         content = f"[bold]{status} {tool_name}:[/bold]\n{result}"
-        self.add_message("tool", content)
+        self.add_message("system", content)
 
     def clear_messages(self) -> None:
         self.remove_children()
