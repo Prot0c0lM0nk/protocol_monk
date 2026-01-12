@@ -1,0 +1,41 @@
+/* ui/textual/styles/components.tcss */
+
+InputBar {
+    dock: bottom;
+    height: 3; /* Standard height for single line input */
+    padding: 0 1;
+    background: $panel;
+    align: center middle;
+}
+
+InputBar > Input {
+    width: 1fr;
+    margin: 0 1;
+}
+
+InputBar > Button {
+    min-width: 3;
+    width: auto; 
+}
+
+StatusBar {
+    dock: top;
+    height: 3;
+    background: $surface;
+    color: $text-muted;
+    padding: 0 1;
+    align: center middle;
+}
+
+StatusBar #app-title {
+    color: $primary;
+    text-style: bold;
+}
+
+StatusBar .spacer {
+    width: 1fr; /* Takes up all available space to push status right */
+}
+
+StatusBar .status-thinking { color: $warning; }
+StatusBar .status-error { color: $error; }
+StatusBar .status-idle { color: $success; }

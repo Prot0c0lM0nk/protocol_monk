@@ -59,10 +59,10 @@ class Application:
             if self.ui_mode == "textual":
                 print(f"[Protocol Monk] Initializing Textual TUI...")
                 # Import the Textual UI
-                from ui.textual.app import TextualUI
+                from ui.textual.app import ProtocolMonkApp
 
                 # Instantiate TextualUI (combines App and UI)
-                self.tui_app = TextualUI()
+                self.tui_app = ProtocolMonkApp()
                 ui_instance = self.tui_app
 
             elif self.ui_mode == "rich":
