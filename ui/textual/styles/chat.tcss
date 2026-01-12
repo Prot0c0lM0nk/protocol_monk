@@ -4,45 +4,43 @@
 ChatArea {
     height: 1fr;
     width: 100%;
-    overflow-y: auto;
     padding: 1 2;
     background: $background;
+    /* Note: VerticalScroll handles overflow-y automatically */
 }
 
-/* === AI Response (The "Canvas") === */
+/* === AI Response === */
 AIResponseCanvas {
     width: 100%;
     height: auto;
-    padding: 1 0; /* Minimal padding, mostly vertical */
+    padding: 1 0;
     margin-bottom: 2;
-    background: $background; /* Blends with main background */
+    background: $background;
     color: $text;
 }
 
-/* === User Message Wrapper (Forces Right Alignment) === */
+/* === User Message Wrapper === */
 .user-message-row {
     width: 100%;
     height: auto;
-    align: right top; /* CRITICAL: This pushes the bubble to the right */
+    align: right top; 
     margin-bottom: 1;
     padding-bottom: 1;
 }
 
-/* === User Message Bubble (The Visual Part) === */
+/* === User Message Bubble === */
 UserMessageBubble {
     width: auto;
-    max-width: 70%; /* Don't let it stretch too wide */
+    max-width: 70%;
     height: auto;
-    background: $surface; /* Distinct dark bubble color */
+    background: $surface;
     color: $text;
     padding: 1 2;
-    /* "Round" styling if terminal supports it, otherwise square */
-    border: none; 
+    border: none;
 }
 
-/* Collapsed state for long user messages */
 UserMessageBubble.collapsed {
     height: 3;
     overflow: hidden;
-    border: solid $primary; /* Visual cue that it's collapsed */
+    border: solid $primary;
 }

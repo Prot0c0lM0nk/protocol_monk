@@ -1,34 +1,25 @@
 /* ui/textual/styles/main.tcss */
 
-/* === Theme Variables === */
-/* Using the "Protocol Monk" theme palette from your notes */
-$primary: #7B68EE;      /* Medium slate blue */
-$primary-darken-1: #6A5ACD;
-$secondary: #9370DB;    /* Medium purple */
-$accent: #FFD700;       /* Gold */
-$background: #1A1A2E;   /* Deep dark blue */
-$surface: #16213E;      /* Slightly lighter blue for status/input */
-$panel: #0F3460;        /* Panel background */
-$success: #32CD32;
-$warning: #FFA500;
-$error: #FF6347;
-
-$text: #E8E8E8;
-$text-muted: #888888;
-
 /* === Global Resets === */
 Screen {
-    background: $background;
-    color: $text;
     layout: vertical;
+    /* We let the theme handle colors ($background), but you can force defaults here if needed */
 }
 
-/* Scrollbar Styling */
+/* === Scrollbar Styling === */
 ScrollBar {
-    background: $surface;
     width: 1;
+    background: $surface;
 }
-
 ScrollBar > .thumb {
     background: $primary;
+}
+
+/* === 🚧 THE RED BORDER TRICK 🚧 === */
+/* This puts a red border on ALL containers. 
+   It allows us to see exactly how much space 
+   the ChatArea and InputBar are actually taking.
+*/
+* {
+    border: solid red;
 }

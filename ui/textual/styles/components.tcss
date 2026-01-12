@@ -1,10 +1,11 @@
 /* ui/textual/styles/components.tcss */
 
+/* === Input Bar === */
 InputBar {
     dock: bottom;
-    height: 3; /* Standard height for single line input */
+    height: 3;
     padding: 0 1;
-    background: $panel;
+    background: $panel; 
     align: center middle;
 }
 
@@ -18,6 +19,7 @@ InputBar > Button {
     width: auto; 
 }
 
+/* === Status Bar === */
 StatusBar {
     dock: top;
     height: 3;
@@ -33,7 +35,7 @@ StatusBar #app-title {
 }
 
 StatusBar .spacer {
-    width: 1fr; /* Takes up all available space to push status right */
+    width: 1fr;
 }
 
 StatusBar .status-thinking { color: $warning; }
