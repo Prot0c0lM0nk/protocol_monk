@@ -18,9 +18,9 @@ class ProtocolMonkApp(App):
     """Protocol Monk - The Oracle of the Holy Light"""
 
     CSS_PATH = [
-        "styles/main.tcss",
-        "styles/chat.tcss",
-        "styles/components.tcss"
+        "styles/main.tcss", 
+        "styles/components.tcss", 
+        "styles/chat.tcss"
     ]
 
     BINDINGS = [
@@ -60,6 +60,19 @@ class ProtocolMonkApp(App):
         super().__init__(**kwargs)
         self.event_bus = get_event_bus()
         self.agent = MockEventAgent(self.event_bus)
+
+    # ... inside ProtocolMonkApp class ...
+
+    def set_agent(self, agent):
+        """
+        Allows main.py to inject a specific agent instance 
+        (Mock or Real) into the application.
+        """
+        self.agent = agent
+        # If the injected agent has an event bus, we should use that one
+        # to ensure the UI subscribes to the right events.
+        if hasattr(agent, "event_bus"):
+            self.event_bus = agent.event_bus
 
     def on_mount(self) -> None:
         """Initialize the app."""
