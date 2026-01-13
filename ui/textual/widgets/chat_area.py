@@ -37,6 +37,7 @@ class ChatArea(VerticalScroll):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._current_ai_message = None
+        self._current_ai_text = ""  # Track accumulated AI text
         self._thinking_indicator = None
 
     def compose(self) -> ComposeResult:
@@ -67,18 +68,17 @@ class ChatArea(VerticalScroll):
         """Add a streaming chunk to the current AI message."""
         if self._current_ai_message is None:
             # Start a new AI message if none exists
-            self._current_ai_message = AIMessage(chunk)
+            self._current_ai_text = chunk
+            self._current_ai_message = AIMessage(self._current_ai_text)
             self.call_later(self.mount, self._current_ai_message)
         else:
             # Append to existing message
-            current_content = self._current_ai_message.document.text
-            new_content = current_content + chunk
-            self._current_ai_message.update(new_content)
+            self._current_ai_text += chunk
+            self._current_ai_message.update(self._current_ai_text)
         
         # Scroll to make the new content visible
         if self._current_ai_message:
             self._current_ai_message.scroll_visible()
-
     def show_thinking(self, is_thinking: bool) -> None:
         """Show or hide the thinking indicator."""
         if is_thinking:
@@ -97,11 +97,13 @@ class ChatArea(VerticalScroll):
             f"{success_icon} **{tool_name}**: {result.output}"
         )
         self.call_later(self.mount, tool_widget)
+        
 
     def finalize_response(self) -> None:
         """Finalize the current AI response."""
         # Hide thinking indicator
         self.show_thinking(False)
         
-        # Reset current AI message pointer
+        # Reset current AI message pointer and accumulated text
         self._current_ai_message = None
+        self._current_ai_text = ""
