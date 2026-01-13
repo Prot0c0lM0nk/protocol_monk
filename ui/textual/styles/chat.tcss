@@ -2,12 +2,16 @@
 
 /* === The Main Scrollable Container === */
 ChatArea {
-    height: 1fr;
+    /* The Layout Logic */
+    height: 1fr;          /* 1fr = Grow to fill all available vertical space */
     width: 100%;
-    padding: 1 2;
+    
+    
+    
+    /* Aesthetics */
     background: $background;
-    /* Note: VerticalScroll handles overflow-y automatically */
 }
+
 
 /* === AI Response === */
 AIResponseCanvas {

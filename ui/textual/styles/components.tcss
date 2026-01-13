@@ -1,43 +1,29 @@
 /* ui/textual/styles/components.tcss */
 
-/* === Input Bar === */
 InputBar {
     dock: bottom;
-    height: 3;
-    padding: 0 1;
-    background: $panel; 
+    width: 100%;
+    height: auto;      /* Let it fit the content naturally */
+    min-height: 3;     /* Ensure it's at least one line tall */
+    padding: 0 1 2 0;      /* Small side padding */
+    background: $background; 
     align: center middle;
+
+    /* The Visual Debugger */
+    border: solid red;    /* Only this box will be red */
 }
 
 InputBar > Input {
-    width: 1fr;
-    margin: 0 1;
+    width: 75%;        /* VITAL: This forces the input to take all available width */
+    padding: 0 1;      /* Small side padding */
+    margin-right: 1;   /* Space between input and button */
+    content-align: center middle;
+    border: tall solid red; /* Standard Textual border style */
 }
 
 InputBar > Button {
-    min-width: 3;
-    width: auto; 
+    width: auto;
+    min-width: 8;      /* Minimum width for the "Send" button */
+    content-align: center middle;
+    height: auto;
 }
-
-/* === Status Bar === */
-StatusBar {
-    dock: top;
-    height: 3;
-    background: $surface;
-    color: $text-muted;
-    padding: 0 1;
-    align: center middle;
-}
-
-StatusBar #app-title {
-    color: $primary;
-    text-style: bold;
-}
-
-StatusBar .spacer {
-    width: 1fr;
-}
-
-StatusBar .status-thinking { color: $warning; }
-StatusBar .status-error { color: $error; }
-StatusBar .status-idle { color: $success; }

@@ -14,12 +14,3 @@ ScrollBar {
 ScrollBar > .thumb {
     background: $primary;
 }
-
-/* === 🚧 THE RED BORDER TRICK 🚧 === */
-/* This puts a red border on ALL containers. 
-   It allows us to see exactly how much space 
-   the ChatArea and InputBar are actually taking.
-*/
-* {
-    border: solid red;
-}
