@@ -96,8 +96,7 @@ class ChatArea(VerticalScroll):
         tool_widget = ToolResultWidget(
             f"{success_icon} **{tool_name}**: {result.output}"
         )
-        asyncio.create_task(self.mount(tool_widget))
-        tool_widget.scroll_visible()
+        self.call_later(self.mount, tool_widget)
 
     def finalize_response(self) -> None:
         """Finalize the current AI response."""
