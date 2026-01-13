@@ -125,16 +125,20 @@ class Application:
                 # === TEXTUAL MODE ===
                 # The App owns the main loop. The Agent runs in the background.
 
-                # A. Start Agent in Background
-                self.agent_task = asyncio.create_task(self.agent.run())
+                # A. Start Agent in Background - but don't start it yet!
+                # The agent will be started when the first user input comes in
+                self.agent_task = None
 
                 # B. Run App in Foreground (BLOCKING)
                 await self.tui_app.run_async()
 
                 # C. Cleanup when App exits
-                if not self.agent_task.done():
+                if self.agent_task and not self.agent_task.done():
                     self.agent_task.cancel()
-
+                    try:
+                        await self.agent_task
+                    except asyncio.CancelledError:
+                        pass
             else:
                 # === CLI/RICH MODE ===
                 # The Agent owns the main loop. The UI updates in background/inline.

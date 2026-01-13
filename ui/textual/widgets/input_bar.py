@@ -1,9 +1,14 @@
-# ui/textual/widgets/input_bar.py
+"""
+ui/textual/widgets/input_bar.py
+Multi-line input bar for Protocol Monk TUI
+"""
 
+import asyncio
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import TextArea, Button
 from textual import events
+
 
 class InputBar(Horizontal):
     """
@@ -12,7 +17,12 @@ class InputBar(Horizontal):
     Shift+Enter -> New Line (handled natively by TextArea)
     """
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._input_future = None
+
     def compose(self) -> ComposeResult:
+        """Create the input bar layout."""
         # We use TextArea for multiline support
         text_area = TextArea(id="msg-input", show_line_numbers=False)
         text_area.placeholder = "Ask Protocol Monk..."
@@ -22,7 +32,16 @@ class InputBar(Horizontal):
 
     def on_mount(self) -> None:
         """Focus the input automatically."""
-        self.query_one("#msg-input").focus()
+        self.focus_input()
+
+    def focus_input(self) -> None:
+        """Focus the text input area."""
+        text_area = self.query_one("#msg-input", TextArea)
+        text_area.focus()
+
+    def set_input_future(self, future: asyncio.Future) -> None:
+        """Set the future to resolve when input is received."""
+        self._input_future = future
 
     def on_key(self, event: events.Key) -> None:
         """
@@ -37,13 +56,23 @@ class InputBar(Horizontal):
             self._submit_message()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press events."""
         if event.button.id == "send-btn":
             self._submit_message()
 
     def _submit_message(self) -> None:
+        """Submit the current message."""
         text_widget = self.query_one("#msg-input", TextArea)
         value = text_widget.text.strip()
         
         if value:
-            self.app.call_from_child_submit(value)
-            text_widget.text = ""
+            # Check if we're waiting for input from the agent
+            if self._input_future and not self._input_future.done():
+                # Resolve the future with the input
+                self._input_future.set_result(value)
+                self._input_future = None
+                text_widget.text = ""
+            else:
+                # Normal user submission
+                self.app.call_from_child_submit(value)
+                text_widget.text = ""
