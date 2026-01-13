@@ -68,7 +68,7 @@ class ChatArea(VerticalScroll):
         if self._current_ai_message is None:
             # Start a new AI message if none exists
             self._current_ai_message = AIMessage(chunk)
-            asyncio.create_task(self.mount(self._current_ai_message))
+            self.call_later(self.mount, self._current_ai_message)
         else:
             # Append to existing message
             current_content = self._current_ai_message.document.text
@@ -84,7 +84,7 @@ class ChatArea(VerticalScroll):
         if is_thinking:
             if self._thinking_indicator is None:
                 self._thinking_indicator = ThinkingIndicator("🤔 Thinking...")
-                asyncio.create_task(self.mount(self._thinking_indicator))
+                self.call_later(self.mount, self._thinking_indicator)
         else:
             if self._thinking_indicator is not None:
                 self._thinking_indicator.remove()
