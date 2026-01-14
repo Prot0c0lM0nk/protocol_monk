@@ -24,8 +24,6 @@ AIMessage {
 UserMessage {
     width: 30%;
     height: auto;
-    content-align: right middle;
-    text-align: right;
     background: $surface;
     color: $text;
     border: solid red;

@@ -53,96 +53,105 @@ class Application:
             self.working_dir, self.ui_mode = bootstrap_application()
             setup_logging()
 
-            # 2. UI Factory Logic
-            ui_instance = None
-
-            if self.ui_mode == "textual":
-                print(f"[Protocol Monk] Initializing Textual TUI...")
-                # Import the Textual UI
-                from ui.textual.app import ProtocolMonkApp
-
-                # Instantiate TextualUI (combines App and UI)
-                self.tui_app = ProtocolMonkApp()
-                ui_instance = self.tui_app
-
-            elif self.ui_mode == "rich":
-                # Note: We removed the raw print here so the banner is cleaner
-                try:
-                    from ui.rich import RichUI
-
-                    ui_instance = RichUI()
-                except ImportError:
-                    # Fallback to factory if you kept the old structure
-                    from ui.rich import create_rich_ui
-
-                    ui_instance = create_rich_ui()
-
-                # === [THE TRIGGER] ===
-                # This activates your new renderer logic
-                await ui_instance.display_startup_banner("Protocol Monk Online")
-                # =====================
-
-            else:
-                print(f"[Protocol Monk] Starting with Plain UI...")
-                from ui.plain.interface import PlainUI
-
-                ui_instance = PlainUI()
-
-            # 3. Agent Instantiation
-            from agent.monk import ProtocolAgent
-            from tools.registry import ToolRegistry
-
-            tool_registry = ToolRegistry(
-                working_dir=self.working_dir,
-                preferred_env=None,
-                venv_path=None,
-            )
-
-            self.agent = ProtocolAgent(
-                working_dir=self.working_dir,
-                model_name=settings.model.default_model,
-                provider=(
-                    settings.api.provider_chain[0]
-                    if settings.api.provider_chain
-                    else "ollama"
-                ),
-                tool_registry=tool_registry,
-                event_bus=None,
-                ui=ui_instance,
-            )
-
-            # 4. Connect agent to TextualUI
-            if self.ui_mode == "textual":
-                self.tui_app.set_agent(self.agent)
-
-            # 5. Async Initialization
-            await self.agent.async_initialize()
-
-            # 6. EXECUTION BRANCH (The Loop Inversion)
-            self.running = True
-
+            # 2. Setup based on Mode
             if self.ui_mode == "textual":
                 # === TEXTUAL MODE ===
-                # The App owns the main loop. The Agent runs in the background.
+                print(f"[Protocol Monk] Initializing Textual TUI...")
+                from ui.textual.app import ProtocolMonkApp
+                from ui.textual.interface import TextualUI
+                from agent.monk import ProtocolAgent
+                from tools.registry import ToolRegistry
 
-                # A. Start Agent in Background - but don't start it yet!
-                # The agent will be started when the first user input comes in
-                self.agent_task = None
+                # A. Create the Components
+                self.tui_app = ProtocolMonkApp()
+                ui_bridge = TextualUI(self.tui_app)
+                
+                # B. Create the Tool Registry
+                tool_registry = ToolRegistry(
+                    working_dir=self.working_dir,
+                    preferred_env=None,
+                    venv_path=None,
+                )
 
-                # B. Run App in Foreground (BLOCKING)
-                await self.tui_app.run_async()
+                # C. Create the Agent (Give it the Bridge immediately)
+                self.agent = ProtocolAgent(
+                    working_dir=self.working_dir,
+                    model_name=settings.model.default_model,
+                    provider=(settings.api.provider_chain[0] if settings.api.provider_chain else "ollama"),
+                    tool_registry=tool_registry,
+                    event_bus=None,
+                    ui=ui_bridge  # <--- Linked at birth
+                )
 
-                # C. Cleanup when App exits
-                if self.agent_task and not self.agent_task.done():
-                    self.agent_task.cancel()
+                # D. Wire the App (Give it the Bridge and Agent)
+                self.tui_app.textual_ui = ui_bridge
+                self.tui_app.agent = self.agent  # Direct assignment, no helper method needed
+
+                # E. Async Initialization
+                await self.agent.async_initialize()
+
+                # F. START AGENT BACKGROUND TASK (The "Concurrent" Fix)
+                # We start it NOW. We do not wait for user input.
+                async def run_agent_safely():
                     try:
-                        await self.agent_task
+                        await self.agent.run()
                     except asyncio.CancelledError:
                         pass
+                    except Exception as e:
+                        logging.error(f"Agent crashed: {e}", exc_info=True)
+
+                self.agent_task = asyncio.create_task(run_agent_safely())
+                self.running = True
+
+                # G. Run App in Foreground (BLOCKING)
+                await self.tui_app.run_async()
+
+                # H. Cleanup when App exits
+                if self.agent_task:
+                    self.agent_task.cancel()
+                    await self.agent_task
+
             else:
                 # === CLI/RICH MODE ===
-                # The Agent owns the main loop. The UI updates in background/inline.
+                # (Existing logic for non-Textual modes)
+                print(f"[Protocol Monk] Starting with {self.ui_mode.capitalize()} UI...")
+                
+                # UI Factory
+                if self.ui_mode == "rich":
+                    try:
+                        from ui.rich import RichUI
+                        ui_instance = RichUI()
+                    except ImportError:
+                        from ui.rich import create_rich_ui
+                        ui_instance = create_rich_ui()
+                    await ui_instance.display_startup_banner("Protocol Monk Online")
+                else:
+                    from ui.plain.interface import PlainUI
+                    ui_instance = PlainUI()
 
+                # Agent Factory
+                from agent.monk import ProtocolAgent
+                from tools.registry import ToolRegistry
+
+                tool_registry = ToolRegistry(
+                    working_dir=self.working_dir,
+                    preferred_env=None,
+                    venv_path=None,
+                )
+
+                self.agent = ProtocolAgent(
+                    working_dir=self.working_dir,
+                    model_name=settings.model.default_model,
+                    provider=(settings.api.provider_chain[0] if settings.api.provider_chain else "ollama"),
+                    tool_registry=tool_registry,
+                    event_bus=None,
+                    ui=ui_instance,
+                )
+
+                await self.agent.async_initialize()
+                self.running = True
+
+                # Start UI background task if needed
                 if hasattr(ui_instance, "run_async"):
                     self.ui_task = asyncio.create_task(ui_instance.run_async())
 

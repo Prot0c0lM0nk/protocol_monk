@@ -56,14 +56,13 @@ class ProtocolMonkApp(App):
         Connect the agent to the UI bridge.
         This is called from main.py after agent creation.
         """
-        # Create the UI bridge that connects events to this app
-        self.textual_ui = TextualUI(self)
-        
         # Store the agent reference for potential direct access
         self.agent = agent
         
-        # If the agent has a UI reference, update it to use our bridge
-        if hasattr(agent, 'ui') and agent.ui:
+        # If the agent needs our UI bridge (and doesn't have it), give it to him.
+        if hasattr(agent, 'ui') and agent.ui is None:
+             # This handles the case where main.py didn't do its job
+            self.textual_ui = TextualUI(self)
             agent.ui = self.textual_ui
             
     async def get_user_input_wait(self) -> str:
