@@ -104,7 +104,7 @@ class TextualUI(UI):
         Relies on App having 'push_screen_wait'.
         """
         # Import here to avoid circular dependency at module level
-        from .screens.tool_confirm import ToolConfirmModal
+        from .screens.modals.tool_confirm import ToolConfirmModal
 
         if hasattr(self.app, "push_screen_wait"):
             # This blocks the Agent task until the UI Modal is dismissed

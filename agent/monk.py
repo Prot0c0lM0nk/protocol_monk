@@ -692,6 +692,9 @@ class ProtocolAgent(AgentInterface):
                     if result is None:
                         success = await self.process_request(text)
 
+                        # Tell the UI the turn is over!
+                        await self.event_bus.emit(AgentEvents.RESPONSE_COMPLETE.value, {})
+
                 except KeyboardInterrupt:
                     await self.event_bus.emit(
                         AgentEvents.INFO.value,
