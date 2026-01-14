@@ -64,15 +64,15 @@ class InputBar(Horizontal):
         """Submit the current message."""
         text_widget = self.query_one("#msg-input", TextArea)
         value = text_widget.text.strip()
-        
+
         if value:
             # Check if we're waiting for input from the agent
             if self._input_future and not self._input_future.done():
-                # Resolve the future with the input
+                # Agent is waiting - just resolve the future, don't submit to app
                 self._input_future.set_result(value)
                 self._input_future = None
                 text_widget.text = ""
             else:
-                # Normal user submission
+                # Normal user submission - send to app
                 self.app.call_from_child_submit(value)
                 text_widget.text = ""

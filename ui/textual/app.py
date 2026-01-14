@@ -37,6 +37,7 @@ class ProtocolMonkApp(App):
         super().__init__(**kwargs)
         self.textual_ui = None  # Will hold the TextualUI bridge instance
         self._input_future = None
+        self._pending_input = None  # Store input that arrived before agent was waiting
 
     def compose(self) -> ComposeResult:
         """Create the app layout."""
@@ -64,17 +65,36 @@ class ProtocolMonkApp(App):
         # If the agent has a UI reference, update it to use our bridge
         if hasattr(agent, 'ui') and agent.ui:
             agent.ui = self.textual_ui
-
+            
     async def get_user_input_wait(self) -> str:
         """
         Wait for user input from the chat screen.
         This is called by the TextualUI bridge when agent needs input.
         """
-        # Get the current chat screen
+        # If we have pending input from earlier, return it immediately
+        if self._pending_input is not None:
+            result = self._pending_input
+            self._pending_input = None
+            return result
+
+        # Create a future to wait for input
+        self._input_future = asyncio.Future()
+
+        # Get the input bar and set its future
         screen = self.screen
-        if hasattr(screen, 'await_user_input'):
-            return await screen.await_user_input()
-        return ""
+        if hasattr(screen, 'query_one'):
+            try:
+                input_bar = screen.query_one("InputBar")
+                input_bar.set_input_future(self._input_future)
+            except Exception:
+                pass
+
+        # Wait for the user to submit
+        try:
+            result = await self._input_future
+            return result
+        finally:
+            self._input_future = None
 
     async def push_screen_wait(self, screen):
         """
@@ -98,39 +118,31 @@ class ProtocolMonkApp(App):
 
     async def _process_user_input(self, text: str):
         """Process user input through the agent."""
-        screen = None  # Initialize screen variable
-        
+        screen = None
+
         try:
-            # Get screen safely - it might not be available during app initialization
+            # Get screen safely
             try:
                 screen = self.screen
             except Exception:
-                # If no screen is available, just process the text without UI updates
-                if hasattr(self, 'agent') and self.agent:
-                    # Start agent on first use if not already running
-                    if not hasattr(self, 'agent_task') or self.agent_task is None:
-                        self.agent_task = asyncio.create_task(self.agent.run())
-                    
-                    # Process the user request
-                    await self.agent.process_request(text)
-                return
+                pass
 
             # Add user message to chat
-            if hasattr(screen, 'add_user_message'):
+            if screen and hasattr(screen, 'add_user_message'):
                 await screen.add_user_message(text)
 
             # Show thinking status
-            if hasattr(screen, 'show_thinking'):
+            if screen and hasattr(screen, 'show_thinking'):
                 screen.show_thinking(True)
 
-            # Process through agent if available
+            # Start agent on first use if not already running
             if hasattr(self, 'agent') and self.agent:
-                # Start agent on first use if not already running
                 if not hasattr(self, 'agent_task') or self.agent_task is None:
                     self.agent_task = asyncio.create_task(self.agent.run())
-                
-                # Process the user request
-                await self.agent.process_request(text)
+
+                # Store the input as pending
+                # The agent's get_input_wait() will pick it up when it's ready
+                self._pending_input = text
             else:
                 # Fallback response
                 await self._handle_mock_response(text)
@@ -141,6 +153,7 @@ class ProtocolMonkApp(App):
             # Hide thinking status
             if screen and hasattr(screen, 'show_thinking'):
                 screen.show_thinking(False)
+                
     async def _handle_mock_response(self, text: str):
         """Handle mock response when no agent is connected."""
         screen = self.screen
