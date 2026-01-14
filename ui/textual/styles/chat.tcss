@@ -3,48 +3,47 @@
 /* === The Main Scrollable Container === */
 ChatArea {
     /* The Layout Logic */
-    height: 1fr;          /* 1fr = Grow to fill all available vertical space */
+    height: 1fr; /* 1fr = Grow to fill all available vertical space */
     width: 100%;
-    
-    
-    
     /* Aesthetics */
     background: $background;
 }
 
-
-/* === AI Response === */
-AIResponseCanvas {
+/* === AI Message === */
+AIMessage {
     width: 100%;
     height: auto;
-    padding: 1 0;
+    padding: 1 2;
     margin-bottom: 2;
     background: $background;
     color: $text;
+    border: solid red;
 }
 
-/* === User Message Wrapper === */
-.user-message-row {
-    width: 100%;
+/* === User Message === */
+UserMessage {
+    width: 30%;
     height: auto;
-    align: right top; 
-    margin-bottom: 1;
-    padding-bottom: 1;
-}
-
-/* === User Message Bubble === */
-UserMessageBubble {
-    width: auto;
-    max-width: 70%;
-    height: auto;
+    content-align: right middle;
+    text-align: right;
     background: $surface;
     color: $text;
-    padding: 1 2;
-    border: none;
+    border: solid red;
 }
 
-UserMessageBubble.collapsed {
-    height: 3;
-    overflow: hidden;
-    border: solid $primary;
+/* === Thinking Indicator === */
+ThinkingIndicator {
+    padding: 0 0;
+    color: $text;
+    text-style: italic;
+}
+
+/* === Tool Result Widget === */
+ToolResultWidget {
+    width: 100%;
+    height: auto;
+    padding: 1 2;
+    margin-bottom: 1;
+    background: $surface;
+    border: solid $accent;
 }
