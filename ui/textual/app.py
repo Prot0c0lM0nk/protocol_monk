@@ -92,6 +92,8 @@ class ProtocolMonkApp(App):
         # Wait for the user to submit
         try:
             result = await self._input_future
+            if hasattr(screen, 'add_user_message'):
+                await screen.add_user_message(result)
             return result
         finally:
             self._input_future = None
