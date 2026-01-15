@@ -17,7 +17,8 @@ class AgentCommandProvider(Provider):
         # -- Real Agent Actions --
         ("Quit Protocol Monk", "action_quit", "Exit the application gracefully"),
         ("Clear Context", "action_clear", "Reset conversation memory"),
-        ("Show Status", "action_status", "Show agent model and token usage"),
+        ("Switch Model", "action_model", "Switch the AI model"),
+        ("Switch Provider", "action_provider", "Switch between Ollama/OpenRouter"),
         
         # -- UI Stress Tests (Manual Verification) --
         ("Test: Error Toast", "test_error", "[DEBUG] Fire a fake error event"),
@@ -71,8 +72,11 @@ class AgentCommandProvider(Provider):
     async def action_clear(self):
         await self._inject_command("/clear")
 
-    async def action_status(self):
-        await self._inject_command("/status")
+    async def action_model(self):
+        await self._inject_command("/model")
+
+    async def action_provider(self):
+        await self._inject_command("/provider")
 
     # --- 2. DEBUG TESTS (Event Emission) ---
 

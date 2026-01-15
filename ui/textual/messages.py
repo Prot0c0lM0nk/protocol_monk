@@ -2,7 +2,7 @@
 ui/textual/messages.py
 Custom Textual Messages for Agent-UI Communication
 """
-
+from typing import Dict, Any
 from textual.message import Message
 from ui.base import ToolResult
 
@@ -38,4 +38,10 @@ class AgentSystemMessage(Message):
     def __init__(self, message: str, type: str = "info"):
         self.message = message
         self.type = type  # info, error, warning, response_complete
+        super().__init__()
+
+class AgentStatusUpdate(Message):
+    """Carries updated agent statistics to the UI."""
+    def __init__(self, stats: Dict[str, Any]):
+        self.stats = stats
         super().__init__()

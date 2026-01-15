@@ -17,6 +17,7 @@ from .messages import (
     AgentThinkingStatus,
     AgentToolResult,
     AgentSystemMessage,
+    AgentStatusUpdate,
 )
 
 class ProtocolMonkApp(App):
@@ -112,6 +113,19 @@ class ProtocolMonkApp(App):
         """Handle tool results."""
         if hasattr(self.screen, 'add_tool_result'):
             self.screen.add_tool_result(message.tool_name, message.result)
+
+    def on_agent_status_update(self, message: AgentStatusUpdate) -> None:
+        """Handle status updates from the agent."""
+        if hasattr(self.screen, 'update_status_bar'):
+            self.screen.update_status_bar(message.stats)
+        # Fallback: Try querying the widget directly if screen helper missing
+        else:
+            try:
+                status_bar = self.screen.query_one("StatusBar")
+                if status_bar:
+                    status_bar.update_metrics(message.stats)
+            except Exception:
+                pass
 
     def on_agent_system_message(self, message: AgentSystemMessage) -> None:
         """Handle system messages."""
