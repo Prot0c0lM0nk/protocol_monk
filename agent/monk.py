@@ -12,10 +12,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Agent Components
-from agent.context import ContextManager
+from agent.context.manager_v2 import ContextManagerV2 as ContextManager
 from exceptions import ContextValidationError, ModelConfigurationError
 from exceptions import ModelResponseParseError, ModelRateLimitError
-from exceptions import ModelConfigurationError
 from agent.model_client import ModelClient
 from agent.model_manager import RuntimeModelManager
 from agent.scratch_manager import ScratchManager
@@ -739,3 +738,20 @@ class ProtocolAgent(AgentInterface):
 
         text = await self.ui.get_input()
         return UserInputResponse(text=text, cancelled=False)
+
+    async def shutdown(self):
+        """
+        Shutdown the agent gracefully.
+        Stops all background services including V2 components.
+        """
+        self.logger.info("Shutting down ProtocolAgent...")
+
+        # Stop context manager (V2 has stop method)
+        if hasattr(self.context_manager, 'stop'):
+            await self.context_manager.stop()
+
+        # Stop UI if it has stop method
+        if self.ui and hasattr(self.ui, 'stop'):
+            await self.ui.stop()
+
+        self.logger.info("ProtocolAgent shutdown complete")
