@@ -8,6 +8,7 @@ from typing import Dict, Any
 
 from ui.base import UI, ToolResult
 from agent.events import AgentEvents, get_event_bus
+from .screens.modals.tool_confirm import ToolConfirmModal
 from .messages import (
     AgentStreamChunk,
     AgentThinkingStatus,
@@ -100,17 +101,33 @@ class TextualUI(UI):
 
     async def confirm_tool_execution(self, tool_data: Dict[str, Any]) -> bool:
         """
-        Called by Agent to confirm action.
-        Relies on App having 'push_screen_wait'.
+        Called by Agent Worker to confirm action.
+        This will suspend the Worker until the Modal returns.
         """
-        # Import here to avoid circular dependency at module level
-        from .screens.modals.tool_confirm import ToolConfirmModal
-
         if hasattr(self.app, "push_screen_wait"):
-            # This blocks the Agent task until the UI Modal is dismissed
+            # This is safe because Agent is a Worker, not the UI thread.
             return await self.app.push_screen_wait(ToolConfirmModal(tool_data))
+        return True
 
-        return True  # Fallback
+    async def _on_tool_result(self, data: Dict[str, Any]):
+        # 2. ROBUST DATA HANDLING
+        res = data.get("result")
+        name = data.get("tool_name", "Unknown")
+
+        # Handle case where 'result' object might be missing or raw
+        if res is None:
+             res = ToolResult(success=False, output="No result data", tool_name=name)
+        elif not hasattr(res, "success"):
+            res = ToolResult(
+                success=data.get("success", True),
+                output=str(data.get("output", "")),
+                tool_name=name,
+            )
+
+        self.app.post_message(AgentToolResult(name, res))
+        
+        # 3. RE-ENABLE THINKING (Fixing the "Hang")
+        self.app.post_message(AgentThinkingStatus(is_thinking=True))
 
     # --- REQUIRED STUBS (Base Class Compliance) ---
     async def print_stream(self, text: str):
