@@ -8,6 +8,8 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import Header, Footer
 
+from .command_provider import AgentCommandProvider
+
 from .screens.main_chat import MainChatScreen
 from .interface import TextualUI
 from .messages import (
@@ -31,6 +33,8 @@ class ProtocolMonkApp(App):
         Binding("ctrl+p", "command_palette", "Commands"),
         Binding("f1", "show_help", "Help"),
     ]
+
+    COMMANDS = {AgentCommandProvider}
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
