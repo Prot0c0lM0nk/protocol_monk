@@ -193,6 +193,7 @@ class ContextManagerV2:
         msg_id = f"msg_{self._messages_added - 1}"
         if msg_id in self._message_events:
             self._message_events[msg_id].set()
+            self._message_events.pop(msg_id, None)
 
     async def add_user_message(self, content: str, importance: int = 4):
         """Add a user message."""
@@ -260,6 +261,7 @@ class ContextManagerV2:
         msg_id = f"msg_{self._messages_added}"
         if msg_id in self._message_events:
             self._message_events[msg_id].set()
+            self._message_events.pop(msg_id, None)
 
     async def add_tool_result_message(
         self,
@@ -324,6 +326,7 @@ class ContextManagerV2:
         msg_id = f"msg_{self._messages_added}"
         if msg_id in self._message_events:
             self._message_events[msg_id].set()
+            self._message_events.pop(msg_id, None)
 
     async def remove_last_message(self):
         """Remove the last message."""
@@ -354,6 +357,7 @@ class ContextManagerV2:
         msg_id = f"remove_{self._messages_added}"
         if msg_id in self._message_events:
             self._message_events[msg_id].set()
+            self._message_events.pop(msg_id, None)
 
     # --- Context Retrieval (Non-Blocking) ---
 
@@ -398,6 +402,7 @@ class ContextManagerV2:
         msg_id = f"clear_{self._messages_added}"
         if msg_id in self._message_events:
             self._message_events[msg_id].set()
+            self._message_events.pop(msg_id, None)
 
     # --- Properties and Stats ---
 
@@ -488,6 +493,7 @@ class ContextManagerV2:
         msg_id = f"clear_old_{self._messages_added}"
         if msg_id in self._message_events:
             self._message_events[msg_id].set()
+            self._message_events.pop(msg_id, None)
 
     async def update_max_tokens(self, new_max_tokens: int):
         """Update max token limit."""
@@ -527,6 +533,7 @@ class ContextManagerV2:
         msg_id = f"update_max_{self._messages_added}"
         if msg_id in self._message_events:
             self._message_events[msg_id].set()
+            self._message_events.pop(msg_id, None)
 
     # --- Background Operation Processor ---
 
