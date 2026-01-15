@@ -20,6 +20,8 @@ class RichUI(UI):
         self.renderer = RichRenderer()
         self.input = RichInput()
         self._event_bus = get_event_bus()
+        # Stream buffer for handling updates during input
+        self._stream_buffer = ""
         self._setup_event_listeners()
 
     def _setup_event_listeners(self):
@@ -59,6 +61,17 @@ class RichUI(UI):
 
     # --- EVENT HANDLERS ---
     async def _on_stream_chunk(self, data: Dict[str, Any]):
+        # Check if renderer is locked (waiting for input)
+        if self.renderer._is_locked:
+            # Buffer the stream chunk for later
+            thinking = data.get("thinking")
+            chunk = data.get("chunk", "")
+            if thinking:
+                self._stream_buffer += f"[THINKING]{thinking}"
+            elif chunk:
+                self._stream_buffer += chunk
+            return
+
         # Handle Reasoning (Thinking)
         thinking = data.get("thinking")
         if thinking:
@@ -71,12 +84,24 @@ class RichUI(UI):
             self.renderer.update_streaming(chunk, is_thinking=False)
 
     async def _on_response_complete(self, data: Dict[str, Any]):
+        if self.renderer._is_locked:
+            # Mark buffer as complete for later flushing
+            self._stream_buffer += "[COMPLETE]"
+            return
         self.renderer.end_streaming()
 
     async def _on_thinking_started(self, data: Dict[str, Any]):
+        if self.renderer._is_locked:
+            # Buffer thinking state change
+            self._stream_buffer += "[THINKING_START]"
+            return
         self.renderer.start_thinking(data.get("message", "Contemplating..."))
 
     async def _on_thinking_stopped(self, data: Dict[str, Any]):
+        if self.renderer._is_locked:
+            # Buffer thinking state change
+            self._stream_buffer += "[THINKING_STOP]"
+            return
         self.renderer.stop_thinking()
 
     async def _on_tool_result(self, data: Dict[str, Any]):
@@ -86,18 +111,36 @@ class RichUI(UI):
             from ui.base import ToolResult
 
             res = ToolResult(success=True, output=str(res), tool_name=name)
+        
+        if self.renderer._is_locked:
+            # Buffer tool result for later rendering
+            self._stream_buffer += f"[TOOL_RESULT]{name}|{res.success}|{res.output}"
+            return
         self.renderer.render_tool_result(res, name)
 
     async def _on_error(self, data: Dict[str, Any]):
+        if self.renderer._is_locked:
+            # Buffer error message
+            self._stream_buffer += f"[ERROR]{data.get('message', 'Unknown Error')}"
+            return
         self.renderer.print_error(data.get("message", "Unknown Error"))
 
     async def _on_warning(self, data: Dict[str, Any]):
+        if self.renderer._is_locked:
+            # Buffer warning message
+            self._stream_buffer += f"[WARNING]{data.get('message', '')}"
+            return
         self.renderer.print_system(f"[warning]Warning:[/] {data.get('message', '')}")
 
     async def _on_info(self, data: Dict[str, Any]):
         msg = data.get("message", "")
         context = data.get("context", "")
         items = data.get("data", [])
+
+        if self.renderer._is_locked:
+            # Buffer info message
+            self._stream_buffer += f"[INFO]{msg}|{context}|{len(items) if items else 0}"
+            return
 
         if context in ["model_selection", "provider_selection"] and items:
             await self.display_selection_list(msg, items)
@@ -107,17 +150,118 @@ class RichUI(UI):
     async def _on_command_result(self, data: Dict[str, Any]):
         success = data.get("success", True)
         message = data.get("message", "")
+        
+        if self.renderer._is_locked:
+            # Buffer command result
+            self._stream_buffer += f"[COMMAND_RESULT]{success}|{message}"
+            return
+            
         if message:
             self.renderer.render_command_result(success, message)
 
     async def _on_task_complete(self, data: Dict[str, Any]):
+        if self.renderer._is_locked:
+            self._stream_buffer += "[TASK_COMPLETE]"
+            return
         self.renderer.end_streaming()
 
     async def _on_model_switched(self, data: Dict[str, Any]):
+        if self.renderer._is_locked:
+            self._stream_buffer += f"[MODEL_SWITCHED]{data.get('new_model')}"
+            return
         self.renderer.print_system(f"Model Switched: {data.get('new_model')}")
 
     async def _on_provider_switched(self, data: Dict[str, Any]):
+        if self.renderer._is_locked:
+            self._stream_buffer += f"[PROVIDER_SWITCHED]{data.get('new_provider')}"
+            return
         self.renderer.print_system(f"Provider Switched: {data.get('new_provider')}")
+
+    # --- BUFFER FLUSHING ---
+    async def _flush_buffer(self):
+        """Process and render all buffered events after input completes."""
+        if not self._stream_buffer:
+            return
+
+        # Parse and process buffered commands
+        buffer = self._stream_buffer
+        self._stream_buffer = ""
+
+        # Parse the buffer for special markers
+        # Simple parser: find markers and process sequentially
+        import re
+
+        # Pattern for markers: [MARKER]content or [MARKER]
+        pattern = r'\[([A-Z_]+)\](.*?)(?=\[|$)'
+        matches = re.findall(pattern, buffer, re.DOTALL)
+
+        thinking_active = False
+        thinking_content = ""
+        response_content = ""
+
+        for marker, content in matches:
+            marker = marker.strip()
+            content = content.strip()
+
+            if marker == "THINKING":
+                thinking_content += content
+                thinking_active = True
+            elif marker == "THINKING_START":
+                thinking_active = True
+            elif marker == "THINKING_STOP":
+                thinking_active = False
+            elif marker == "COMPLETE":
+                # End of streaming
+                pass
+            elif marker == "TOOL_RESULT":
+                # Parse: name|success|output
+                parts = content.split("|", 2)
+                if len(parts) == 3:
+                    name, success, output = parts
+                    from ui.base import ToolResult
+                    res = ToolResult(success=success.lower() == "true", output=output, tool_name=name)
+                    self.renderer.render_tool_result(res, name)
+            elif marker == "ERROR":
+                self.renderer.print_error(content)
+            elif marker == "WARNING":
+                self.renderer.print_system(f"[warning]Warning:[/] {content}")
+            elif marker == "INFO":
+                # Parse: msg|context|item_count
+                parts = content.split("|", 2)
+                if len(parts) >= 1 and parts[0].strip():
+                    self.renderer.print_system(parts[0].strip())
+            elif marker == "COMMAND_RESULT":
+                # Parse: success|message
+                parts = content.split("|", 1)
+                if len(parts) == 2:
+                    success, message = parts
+                    if message.strip():
+                        self.renderer.render_command_result(success.lower() == "true", message)
+            elif marker == "TASK_COMPLETE":
+                self.renderer.end_streaming()
+            elif marker == "MODEL_SWITCHED":
+                self.renderer.print_system(f"Model Switched: {content}")
+            elif marker == "PROVIDER_SWITCHED":
+                self.renderer.print_system(f"Provider Switched: {content}")
+            elif marker == "" and content:
+                # Plain content (stream chunks)
+                if thinking_active:
+                    thinking_content += content
+                else:
+                    response_content += content
+
+        # Render any buffered streaming content
+        if thinking_content or response_content:
+            # Start streaming if we have content
+            self.renderer.start_streaming()
+
+            if thinking_content:
+                self.renderer.update_streaming(thinking_content, is_thinking=True)
+            if response_content:
+                self.renderer.update_streaming(response_content, is_thinking=False)
+
+            # End streaming to finalize
+            self.renderer.end_streaming()
 
     # --- BLOCKING INTERFACE ---
     async def get_input(self) -> str:
@@ -135,6 +279,8 @@ class RichUI(UI):
         finally:
             # 4. Always unlock, even if KeyboardInterrupt occurs
             self.renderer.unlock_for_input()
+            # 5. Flush any buffered events that occurred during input
+            await self._flush_buffer()
 
     async def confirm_tool_execution(self, tool_data: Dict[str, Any]) -> bool:
         tool_name = tool_data.get("tool_name", "Unknown")
