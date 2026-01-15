@@ -41,9 +41,9 @@ class Application:
         self.working_dir = None
         self.ui_mode = None
         self.agent = None
-        self.ui_task = None  # For Plain/Rich (Background UI)
-        self.agent_task = None  # For Textual (Background Agent)
-        self.tui_app = None  # For Textual App instance
+        self.ui_task = None 
+        self.agent_task = None
+        self.tui_app = None 
         self.running = False
 
     async def start(self):
@@ -53,9 +53,7 @@ class Application:
             self.working_dir, self.ui_mode = bootstrap_application()
             setup_logging()
 
-            # 2. UI Factory Logic
-            ui_instance = None
-
+            # 2. Textual Mode (Worker Architecture)
             if self.ui_mode == "textual":
                 print(f"[Protocol Monk] Initializing Textual TUI...")
                 from ui.textual.app import ProtocolMonkApp
@@ -63,7 +61,6 @@ class Application:
                 from agent.monk import ProtocolAgent
                 from tools.registry import ToolRegistry
 
-                # A. Create Objects
                 self.tui_app = ProtocolMonkApp()
                 ui_bridge = TextualUI(self.tui_app)
                 
@@ -73,7 +70,6 @@ class Application:
                     venv_path=None,
                 )
 
-                # B. Configure Agent (Inject Bridge)
                 self.agent = ProtocolAgent(
                     working_dir=self.working_dir,
                     model_name=settings.model.default_model,
@@ -83,37 +79,34 @@ class Application:
                     ui=ui_bridge 
                 )
                 
-                # C. Initialize Agent Async components
                 await self.agent.async_initialize()
 
-                # D. Connect Agent to App (The "Plug")
+                # Connect
                 self.tui_app.textual_ui = ui_bridge
                 self.tui_app.agent = self.agent 
 
-                # E. Run App (App will start Agent Worker in on_mount)
+                # BLOCKING RUN for Textual
                 self.running = True
                 await self.tui_app.run_async()
 
-            # ... [PLAIN/RICH LOGIC REMAINS UNTOUCHED BELOW] ...
+            # 3. Rich Mode (Legacy Loop)
             elif self.ui_mode == "rich":
-                # (Existing Rich logic...)
                 try:
                     from ui.rich import RichUI
                     ui_instance = RichUI()
                 except ImportError:
                     from ui.rich import create_rich_ui
                     ui_instance = create_rich_ui()
+                    
                 await ui_instance.display_startup_banner("Protocol Monk Online")
-                
-                # (Shared Agent Setup for Non-Textual)
-                self._start_cli_agent(ui_instance)
+                await self._run_legacy_agent(ui_instance)
 
+            # 4. Plain Mode (Legacy Loop)
             else:
-                # (Existing Plain logic...)
                 print(f"[Protocol Monk] Starting with Plain UI...")
                 from ui.plain.interface import PlainUI
                 ui_instance = PlainUI()
-                self._start_cli_agent(ui_instance)
+                await self._run_legacy_agent(ui_instance)
 
         except BootstrapError as e:
             print(f"❌ Bootstrap Error: {e}", file=sys.stderr)
@@ -123,8 +116,8 @@ class Application:
             logging.getLogger().critical("Application crash", exc_info=True)
             sys.exit(1)
 
-    # Helper to keep CLI logic clean and separate
-    def _start_cli_agent(self, ui_instance):
+    async def _run_legacy_agent(self, ui_instance):
+        """Helper to run the agent in blocking mode for CLI/Rich."""
         from agent.monk import ProtocolAgent
         from tools.registry import ToolRegistry
         
@@ -143,49 +136,31 @@ class Application:
             ui=ui_instance,
         )
 
-        asyncio.create_task(self.agent.async_initialize())
+        await self.agent.async_initialize()
         self.running = True
         
+        # Start UI background task if needed
         if hasattr(ui_instance, "run_async"):
             self.ui_task = asyncio.create_task(ui_instance.run_async())
 
-        # CLI blocks on Agent, not App
-        asyncio.create_task(self.agent.run())
-        # Note: In CLI mode, we usually await agent.run(), 
-        # but to match the structure we'll use a task or await depending on your original main.py preference.
-        # For safety based on your request, I assume the original logic awaiting agent.run() is preferred here.
+        # === THE FIX: AWAIT HERE ===
+        # This keeps the program alive for CLI/Rich
+        await self.agent.run()
 
     async def stop(self):
         """Stop the application gracefully."""
         self.running = False
-
-        # Stop Textual App if running
         if self.tui_app:
             await self.tui_app.exit()
-
-        # Stop Background Agent (Textual Mode)
         if self.agent_task and not self.agent_task.done():
             self.agent_task.cancel()
-            try:
-                await self.agent_task
-            except asyncio.CancelledError:
-                pass
-
-        # Stop Background UI (CLI Mode)
         if self.ui_task and not self.ui_task.done():
             self.ui_task.cancel()
-            try:
-                await self.ui_task
-            except asyncio.CancelledError:
-                pass
-
-        # Shutdown Agent
         if self.agent:
             try:
                 await self.agent.shutdown()
-            except Exception as e:
-                logging.getLogger(__name__).error(f"Error stopping agent: {e}")
-
+            except Exception:
+                pass
         try:
             close_debug_log()
         except Exception:
@@ -193,12 +168,10 @@ class Application:
 
 
 def signal_handler(app, signum, frame):
-    """Handle shutdown signals."""
     asyncio.create_task(app.stop())
 
 
 async def main():
-    """Main entry point."""
     app = Application()
     signal.signal(signal.SIGTERM, lambda s, f: asyncio.create_task(app.stop()))
     await app.start()
