@@ -1,12 +1,16 @@
 """
 ui/textual/app.py
 The Protocol Monk Textual Application - Worker Edition
+Refactored for Event Bubbling and Modal Waiting.
 """
 
 import asyncio
+from typing import Any
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import Header, Footer
+from textual.widgets import Header, Footer, Input
+from textual.screen import Screen
 
 from .command_provider import AgentCommandProvider
 
@@ -50,17 +54,13 @@ class ProtocolMonkApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        """
-        Initialize the app and START THE AGENT WORKER.
-        The App owns the Agent's lifecycle.
-        """
+        """Initialize the app and START THE AGENT WORKER."""
         self.notify("Protocol Monk TUI Ready", severity="information")
         self.push_screen(MainChatScreen())
 
         if self.agent:
-            # === THE WORKER SOCKET ===
-            # We launch the agent immediately. Textual manages this task.
-            # If the App closes, Textual cancels this worker automatically[cite: 72].
+            # Launch the agent in a dedicated worker thread/task
+            # group="agent" allows us to manage it collectively
             self.run_worker(self._agent_runner(), name="agent_brain", group="agent", exclusive=True)
         else:
             self.notify("⚠️ No Agent Connected!", severity="error")
@@ -68,67 +68,86 @@ class ProtocolMonkApp(App):
     async def _agent_runner(self):
         """The dedicated coroutine for the Agent Worker."""
         try:
-            # This will run forever until the App exits
             await self.agent.run()
         except asyncio.CancelledError:
-            # Normal shutdown behavior [cite: 65]
             pass 
         except Exception as e:
             self.notify(f"Agent Crashed: {e}", severity="error")
 
+    # --- 1. CRITICAL FIX: MODAL WAITER ---
+    async def push_screen_wait(self, screen: Screen) -> Any:
+        """
+        A custom wrapper to await a screen's result linearly.
+        Used by interface.py for Tool Confirmations.
+        """
+        wait_future = asyncio.Future()
+
+        def callback(result: Any):
+            wait_future.set_result(result)
+
+        self.push_screen(screen, callback=callback)
+        return await wait_future
+
+    # --- 2. CRITICAL FIX: INPUT HAND-OFF ---
     async def get_user_input_wait(self) -> str:
         """
-        Wait for user input. 
+        Wait for user input.
         The Agent Worker calls this and sleeps here until input arrives.
         """
         self._input_future = asyncio.Future()
-
-        # Connect the future to the InputBar widget
-        screen = self.screen
-        if hasattr(screen, 'query_one'):
-            try:
-                screen.query_one("InputBar").set_input_future(self._input_future)
-            except Exception:
-                pass
-
         try:
-            # Block the Agent Worker (not the UI thread) until input is ready
+            # Block the Agent Worker until the UI thread resolves this future
             return await self._input_future
         finally:
             self._input_future = None
 
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """
+        Handle input from ANY Input widget (including our InputBar).
+        This runs on the UI thread.
+        """
+        user_text = event.value
+        
+        # 1. Show the user's message immediately (Optimistic UI)
+        if hasattr(self.screen, "add_user_message"):
+            asyncio.create_task(self.screen.add_user_message(user_text))
+
+        # 2. If the Agent is waiting for input, give it to them
+        if self._input_future and not self._input_future.done():
+            self._input_future.set_result(user_text)
+        
+        # 3. If Agent is NOT waiting (e.g., busy thinking), notify user
+        else:
+            # Optional: You could queue this, but for now we warn
+            self.notify("Agent is busy processing...", severity="warning")
+
     # --- Message Handlers (The UI Thread) ---
+    # These handle events coming FROM the Agent (via interface.py)
     
     def on_agent_stream_chunk(self, message: AgentStreamChunk) -> None:
-        """Handle streaming text."""
         if hasattr(self.screen, 'add_stream_chunk'):
             self.screen.add_stream_chunk(message.chunk)
 
     def on_agent_thinking_status(self, message: AgentThinkingStatus) -> None:
-        """Handle thinking status."""
         if hasattr(self.screen, 'show_thinking'):
             self.screen.show_thinking(message.is_thinking)
 
     def on_agent_tool_result(self, message: AgentToolResult) -> None:
-        """Handle tool results."""
         if hasattr(self.screen, 'add_tool_result'):
             self.screen.add_tool_result(message.tool_name, message.result)
 
     def on_agent_status_update(self, message: AgentStatusUpdate) -> None:
-        """Handle status updates from the agent."""
         if hasattr(self.screen, 'update_status_bar'):
             self.screen.update_status_bar(message.stats)
-        # Fallback: Try querying the widget directly if screen helper missing
         else:
             try:
-                status_bar = self.screen.query_one("StatusBar")
-                if status_bar:
-                    status_bar.update_metrics(message.stats)
+                # Fallback search for the widget
+                status_bar = self.query_one("StatusBar")
+                status_bar.update_metrics(message.stats)
             except Exception:
                 pass
 
     def on_agent_system_message(self, message: AgentSystemMessage) -> None:
-        """Handle system messages."""
         if message.type == "error":
             self.notify(message.message, severity="error")
         elif message.type == "info":
