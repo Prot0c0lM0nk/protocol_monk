@@ -4,7 +4,7 @@ The Rich UI Controller.
 """
 
 import asyncio
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 from ui.base import UI, ToolResult
 from ui.prompts import AsyncPrompt
@@ -178,6 +178,59 @@ class RichUI(UI):
         self.renderer.print_system(f"Provider Switched: {data.get('new_provider')}")
 
     # --- BUFFER FLUSHING ---
+    def _parse_buffer_content(self, buffer: str) -> List[Tuple[str, str]]:
+        """
+        Parse buffer content, extracting both plain text and marked content.
+        
+        This replaces the broken regex that missed plain content at the start.
+        """
+        if not buffer:
+            return []
+        
+        results = []
+        i = 0
+        current_content = ""
+        
+        while i < len(buffer):
+            if buffer[i] == '[' and i < len(buffer) - 1:
+                # Found potential marker start
+                # First, save any accumulated plain content
+                if current_content.strip():
+                    results.append(("", current_content))
+                    current_content = ""
+                
+                # Find the closing bracket
+                end = buffer.find(']', i)
+                if end != -1:
+                    marker = buffer[i+1:end]
+                    
+                    # Find content until next marker or end
+                    content_start = end + 1
+                    next_marker = buffer.find('[', content_start)
+                    
+                    if next_marker == -1:
+                        # No more markers, take rest of string
+                        marker_content = buffer[content_start:]
+                        results.append((marker, marker_content))
+                        break
+                    else:
+                        # Take content until next marker
+                        marker_content = buffer[content_start:next_marker]
+                        results.append((marker, marker_content))
+                        i = next_marker
+                else:
+                    # No closing bracket, treat as plain text
+                    current_content += buffer[i]
+                    i += 1
+            else:
+                current_content += buffer[i]
+                i += 1
+        
+        # Don't forget final plain content
+        if current_content.strip():
+            results.append(("", current_content))
+        
+        return results
     async def _flush_buffer(self):
         """Process and render all buffered events after input completes."""
         if not self._stream_buffer:
@@ -188,12 +241,8 @@ class RichUI(UI):
         self._stream_buffer = ""
 
         # Parse the buffer for special markers
-        # Simple parser: find markers and process sequentially
-        import re
-
-        # Pattern for markers: [MARKER]content or [MARKER]
-        pattern = r'\[([A-Z_]+)\](.*?)(?=\[|$)'
-        matches = re.findall(pattern, buffer, re.DOTALL)
+        # Use the new parser instead of broken regex
+        matches = self._parse_buffer_content(buffer)
 
         thinking_active = False
         thinking_content = ""
