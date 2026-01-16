@@ -11,84 +11,148 @@ from .input import InputManager
 
 
 class PlainUI(UI):
-    def __init__(self):
+    def __init__(self, event_bus=None):
         super().__init__()
+        # 1. Initialize Infrastructure FIRST
         self.renderer = PlainRenderer()
         self.input = InputManager()
-        self._event_bus = get_event_bus()
+        
+        # CRITICAL: Define event_bus before calling setup_listeners
+        self._event_bus = event_bus or get_event_bus()
+        
         self._stream_line_buffer = ""
         self._in_thinking_block = False
+        
+        self.turn_complete = asyncio.Event()
+        self.running = False
+        
+        # 2. Setup Listeners LAST (Now safe because self._event_bus exists)
         self._setup_event_listeners()
 
     def _setup_event_listeners(self):
         # We ONLY listen for passive output events now.
         # Active control (Input/Confirmation) is handled via direct calls.
         self._event_bus.subscribe(AgentEvents.STREAM_CHUNK.value, self._on_stream_chunk)
-        self._event_bus.subscribe(
-            AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete
-        )
+        self._event_bus.subscribe(AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete)
         self._event_bus.subscribe(AgentEvents.TOOL_RESULT.value, self._on_tool_result)
         self._event_bus.subscribe(AgentEvents.ERROR.value, self._on_agent_error)
         self._event_bus.subscribe(AgentEvents.WARNING.value, self._on_agent_warning)
         self._event_bus.subscribe(AgentEvents.INFO.value, self._on_agent_info)
-        self._event_bus.subscribe(
-            AgentEvents.THINKING_STARTED.value, self._on_thinking_started
-        )
-        self._event_bus.subscribe(
-            AgentEvents.THINKING_STOPPED.value, self._on_thinking_stopped
-        )
-        self._event_bus.subscribe(
-            AgentEvents.CONTEXT_OVERFLOW.value, self._on_context_overflow
-        )
-        self._event_bus.subscribe(
-            AgentEvents.MODEL_SWITCHED.value, self._on_model_switched
-        )
-        self._event_bus.subscribe(
-            AgentEvents.PROVIDER_SWITCHED.value, self._on_provider_switched
-        )
-        self._event_bus.subscribe(
-            AgentEvents.COMMAND_RESULT.value, self._on_command_result
-        )
+        self._event_bus.subscribe(AgentEvents.THINKING_STARTED.value, self._on_thinking_started)
+        self._event_bus.subscribe(AgentEvents.THINKING_STOPPED.value, self._on_thinking_stopped)
+        self._event_bus.subscribe(AgentEvents.CONTEXT_OVERFLOW.value, self._on_context_overflow)
+        self._event_bus.subscribe(AgentEvents.MODEL_SWITCHED.value, self._on_model_switched)
+        self._event_bus.subscribe(AgentEvents.PROVIDER_SWITCHED.value, self._on_provider_switched)
+        self._event_bus.subscribe(AgentEvents.COMMAND_RESULT.value, self._on_command_result)
+        
+        # Interactive Requests
+        self._event_bus.subscribe(AgentEvents.TOOL_CONFIRMATION_REQUESTED.value, self._on_tool_confirmation_requested)
+        self._event_bus.subscribe(AgentEvents.INPUT_REQUESTED.value, self._on_input_requested)
+        
+        # Startup Banner
+        self._event_bus.subscribe(AgentEvents.APP_STARTED.value, self._on_app_started)
 
-    # --- BLOCKING METHODS (Called by Agent) ---
+    async def _on_app_started(self, data: Dict[str, Any]):
+        """Render the startup banner from the data packet."""
+        wd = data.get("working_dir", ".")
+        model = data.get("model", "Unknown")
+        provider = data.get("provider", "Unknown")
 
-    async def get_input(self) -> str:
-        """Agent calls this when it wants a command."""
+        # The UI controls the formatting (Colors, Layout, Text)
+        self.renderer.print_system(f"✠ Protocol Monk started in {wd}")
+        self.renderer.print_system(f"Model: {model} ({provider})")
+        self.renderer.print_system("Type '/help' for commands, '/quit' to exit.")
+
+    # --- MAIN LOOP ---
+    async def run_loop(self):
+        """The main blocking loop for the application."""
+        self.running = True
+        
+        # Initial prompt
+        # We don't print anything, just wait for input
+        
+        while self.running:
+            try:
+                # 1. Get Input (Blocking Console)
+                # We assume InputManager.read_input is properly async or run_in_executor
+                user_input = await self.input.read_input(is_main_loop=True)
+                
+                if user_input is None: # EOF/Interrupt
+                    break
+                    
+                if not user_input.strip():
+                    continue
+                
+                if user_input.lower() in ("/quit", "/exit"):
+                    await self._event_bus.emit(AgentEvents.INFO.value, {"message": "Shutting down..."})
+                    break
+
+                self.turn_complete.clear()
+
+                # 2. Fire Event
+                await self._event_bus.emit(AgentEvents.USER_INPUT.value, {"input": user_input})
+                
+                # 3. Wait for Agent Response
+                await self.turn_complete.wait()
+                
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                self.renderer.print_error(f"UI Loop Error: {e}")
+
+    # --- INTERACTIVE HANDLERS (The New Logic) ---
+    
+    async def _on_tool_confirmation_requested(self, data: Dict[str, Any]):
+        """Handle request for tool confirmation."""
+        tool_call = data.get("tool_call", {})
+        tool_name = tool_call.get("action", "Unknown")
+        params = tool_call.get("parameters", {})
+        tool_id = data.get("tool_call_id")
+        
+        # Render
         await self._flush_stream_buffer()
-        return await self.input.read_input(is_main_loop=True) or ""
-
-    async def confirm_tool_execution(self, tool_data: Dict[str, Any]) -> bool:
-        """Agent calls this when it wants approval."""
-        await self._flush_stream_buffer()
-
-        tool_name = tool_data.get("tool_name", "Unknown")
-        params = tool_data.get("parameters", {})
-
-        # 1. Render the Prompt
         self.renderer.render_tool_confirmation(tool_name, params)
-
-        # 2. Block for Input
+        
+        # Block for Input
+        # Note: input.read_input must handle re-entrancy if needed, 
+        # or we rely on the fact that this is called within the event loop
         user_ans = await self.input.read_input("Approve execution? (y/n)")
-
-        if user_ans is None:
-            return False  # Ctrl+C
-
-        approved = user_ans.lower().startswith("y")
-
-        if approved:
+        
+        approved = False
+        if user_ans and user_ans.lower().startswith("y"):
+            approved = True
             self.renderer.print_system(f"✓ Approved {tool_name}")
         else:
             self.renderer.print_error(f"✗ Rejected {tool_name}")
 
-        return approved
+        # Respond
+        await self._event_bus.emit(
+            AgentEvents.TOOL_CONFIRMATION_RESPONSE.value, 
+            {
+                "approved": approved,
+                "tool_call_id": tool_id,
+                "edits": None # Logic for edits can be added here
+            }
+        )
+
+    async def _on_input_requested(self, data: Dict[str, Any]):
+        """Handle generic input request (e.g. for filename)."""
+        prompt = data.get("prompt", "> ")
+        await self._flush_stream_buffer()
+        
+        user_input = await self.input.read_input(prompt)
+        
+        await self._event_bus.emit(
+            AgentEvents.INPUT_RESPONSE.value,
+            {"input": user_input}
+        )
 
     # --- EVENT HANDLERS (Passive Output) ---
+    # (These remain largely the same, just keeping them clean)
     async def _on_stream_chunk(self, data: Dict[str, Any]):
-        """Hybrid Streaming: Instant Text, Buffered Code"""
         thinking_chunk = data.get("thinking")
         answer_chunk = data.get("chunk", "")
-
-        # 1. Handle Thinking (Keep strict buffering for clean dimming)
+        
         if thinking_chunk:
             self._in_thinking_block = True
             self._stream_line_buffer += thinking_chunk
@@ -97,46 +161,37 @@ class PlainUI(UI):
                 self.renderer.render_line(line, is_thinking=True)
             return
 
-        # 2. Handle Answer (Hybrid)
         if answer_chunk:
-            # If we were previously thinking, flush that state first
             if self._in_thinking_block:
                 if self._stream_line_buffer:
-                    self.renderer.render_line(
-                        self._stream_line_buffer, is_thinking=True
-                    )
+                    self.renderer.render_line(self._stream_line_buffer, is_thinking=True)
                     self._stream_line_buffer = ""
                 self.renderer.console.print()
                 self._in_thinking_block = False
 
-            # Heuristic: If we see code fences, switch to buffering
-            # (Use renderer state if available, or track locally)
-            if "```" in answer_chunk or self.renderer._in_code_block:
+            if "```" in answer_chunk or getattr(self.renderer, "_in_code_block", False):
                 self._stream_line_buffer += answer_chunk
                 while "\n" in self._stream_line_buffer:
-                    line, self._stream_line_buffer = self._stream_line_buffer.split(
-                        "\n", 1
-                    )
+                    line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
                     self.renderer.render_line(line, is_thinking=False)
             else:
-                # FAST PATH: Print text instantly!
-                # If we have a leftover buffer from a previous partial line, print it first
                 if self._stream_line_buffer:
                     self.renderer.print_stream(self._stream_line_buffer)
                     self._stream_line_buffer = ""
-
                 self.renderer.print_stream(answer_chunk)
 
     async def _on_response_complete(self, data: Dict[str, Any]):
         await self._flush_stream_buffer()
         self.renderer.console.print()
         self.renderer.reset_thinking_state()
+        self.turn_complete.set() # Unblock run_loop
 
     async def _on_tool_result(self, data: Dict[str, Any]):
-        result = data.get("result", "")
+        result = data.get("result")
         tool_name = data.get("tool_name", "Unknown")
-        output = result.output if hasattr(result, "output") else str(result)
-        self.renderer.render_tool_result(tool_name, ToolResult(True, output, tool_name))
+        if result:
+            output = result.output if hasattr(result, "output") else str(result)
+            self.renderer.render_tool_result(tool_name, ToolResult(True, output, tool_name))
 
     async def _on_agent_error(self, data: Dict[str, Any]):
         self.renderer.print_error(data.get("message", "Unknown error"))
@@ -149,7 +204,6 @@ class PlainUI(UI):
         context = data.get("context", "")
         items = data.get("data", [])
 
-        # Check if this is a selection list (model_selection or provider_selection context)
         if context in ["model_selection", "provider_selection"] and items:
             self.renderer.render_selection_list(msg, items)
         elif msg.strip():
@@ -162,43 +216,36 @@ class PlainUI(UI):
         self.renderer.stop_thinking()
 
     async def _on_context_overflow(self, data: Dict[str, Any]):
-        self.renderer.print_warning(
-            f"Context: {data.get('current_tokens')}/{data.get('max_tokens')}"
-        )
+        self.renderer.print_warning(f"Context: {data.get('current_tokens')}/{data.get('max_tokens')}")
 
     async def _on_model_switched(self, data: Dict[str, Any]):
-        self.renderer.print_system(
-            f"Model: {data.get('old_model')} → {data.get('new_model')}"
-        )
+        self.renderer.print_system(f"Model: {data.get('old_model')} → {data.get('new_model')}")
 
     async def _on_provider_switched(self, data: Dict[str, Any]):
-        self.renderer.print_system(
-            f"Provider: {data.get('old_provider')} → {data.get('new_provider')}"
-        )
+        self.renderer.print_system(f"Provider: {data.get('old_provider')} → {data.get('new_provider')}")
 
     async def _on_command_result(self, data: Dict[str, Any]):
         success = data.get("success", True)
         message = data.get("message", "")
         if message:
-            if success:
-                await self.print_info(message)
-            else:
-                await self.print_error(message)
+            if success: await self.print_info(message)
+            else: await self.print_error(message)
 
     # --- HELPER ---
     async def _flush_stream_buffer(self):
         async with self._lock:
             if self._stream_line_buffer:
-                self.renderer.render_line(
-                    self._stream_line_buffer, is_thinking=self._in_thinking_block
-                )
+                self.renderer.render_line(self._stream_line_buffer, is_thinking=self._in_thinking_block)
                 self._stream_line_buffer = ""
 
-    # --- REQUIRED BY BASE ---
-    async def run_async(self):
-        self.renderer.print_startup_banner()
-        # Keep task alive if needed, but agent drives loop
-        await asyncio.Event().wait()
+    # --- LEGACY/COMPAT ---
+    async def get_input(self) -> str:
+        # Should not be called by agent anymore, but kept for Interface compliance
+        return await self.input.read_input(is_main_loop=True) or ""
+
+    async def confirm_tool_execution(self, tool_data: Dict[str, Any]) -> bool:
+        # Deprecated
+        return False
 
     async def print_stream(self, text: str):
         self.renderer.print_stream(text)

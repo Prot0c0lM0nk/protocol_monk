@@ -13,6 +13,7 @@ from enum import Enum
 class AgentEvents(Enum):
     """All events that the agent can emit"""
 
+    APP_STARTED = "app.started"
     ERROR = "agent.error"
     WARNING = "agent.warning"
     INFO = "agent.info"
@@ -26,13 +27,14 @@ class AgentEvents(Enum):
     TOOL_ERROR = "agent.tool_error"
     TOOL_RESULT = "agent.tool_result"
 
-    # --- NEW: Critical Tool Events (Fixed Crash) ---
+    # --- Tool Confirmation Events ---
     TOOL_CONFIRMATION_REQUESTED = "agent.tool_confirmation_requested"
+    TOOL_CONFIRMATION_RESPONSE = "agent.tool_confirmation_response"
     TOOL_REJECTED = "agent.tool_rejected"
     TOOL_MODIFIED = "agent.tool_modified"
+    
     TASK_COMPLETE = "agent.task_complete"
     AUTO_CONFIRM_CHANGED = "agent.auto_confirm_changed"
-    # -----------------------------------------------
 
     STREAM_CHUNK = "agent.stream_chunk"
     RESPONSE_COMPLETE = "agent.response_complete"
@@ -43,12 +45,16 @@ class AgentEvents(Enum):
 
     COMMAND_RESULT = "agent.command_result"
     STATUS_CHANGED = "agent.status_changed"
+    
+    USER_INPUT = "user.input"
+    INPUT_REQUESTED = "agent.input_requested"
+    INPUT_RESPONSE = "user.input_response"
+
 
 
 @dataclass
 class Event:
     """Event data container"""
-
     type: str
     data: Dict[str, Any]
     timestamp: float
@@ -63,6 +69,8 @@ class EventBus:
 
     def subscribe(self, event_type: str, callback: Callable) -> None:
         """Subscribe to a specific event type"""
+        # Simple list append doesn't need a lock if we assume single-threaded event loop setup,
+        # but for safety we can keep it strictly synchronous or use the lock only for modification.
         if event_type not in self._listeners:
             self._listeners[event_type] = []
         self._listeners[event_type].append(callback)
@@ -74,37 +82,67 @@ class EventBus:
                 self._listeners[event_type].remove(callback)
 
     async def emit(self, event_type: str, data: Dict[str, Any]) -> None:
-        """Emit an event to all subscribers"""
+        """Emit an event to all subscribers without causing deadlocks."""
+        
+        # 1. CAPTURE SUBSCRIBERS (With Lock)
+        callbacks_to_run = []
         async with self._lock:
             if event_type in self._listeners:
-                # Create event object
-                event = Event(
-                    type=event_type,
-                    data=data,
-                    timestamp=asyncio.get_event_loop().time(),
-                )
+                # Copy the list to allow modification during execution
+                callbacks_to_run = list(self._listeners[event_type])
 
-                # Call all subscribers
-                tasks = []
-                for callback in self._listeners[event_type]:
-                    try:
-                        # Handle both sync and async callbacks
-                        if asyncio.iscoroutinefunction(callback):
-                            tasks.append(callback(event.data))
-                        else:
-                            callback(event.data)
-                    except Exception as e:
-                        print(f"Error in event callback: {e}")
+        # 2. EXECUTE SUBSCRIBERS (Lock Released)
+        # This allows subscribers to emit new events without deadlocking.
+        if callbacks_to_run:
+            event = Event(
+                type=event_type,
+                data=data,
+                timestamp=asyncio.get_event_loop().time(),
+            )
 
-                # Wait for all async callbacks to complete
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
+            tasks = []
+            for callback in callbacks_to_run:
+                try:
+                    if asyncio.iscoroutinefunction(callback):
+                        tasks.append(callback(event.data))
+                    else:
+                        callback(event.data)
+                except Exception as e:
+                    print(f"Error in event callback: {e}")
+
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     async def emit_batch(self, events: List[tuple]) -> None:
-        """Emit multiple events atomically"""
-        async with self._lock:
-            for event_type, data in events:
-                await self.emit(event_type, data)
+        """Emit multiple events"""
+        for event_type, data in events:
+            await self.emit(event_type, data)
+
+    async def wait_for(self, event_type: str, timeout: float = None, predicate: Callable[[Dict], bool] = None) -> Dict[str, Any]:
+        """
+        Wait for a specific event to occur.
+        """
+        future = asyncio.get_event_loop().create_future()
+
+        def _listener(data: Dict[str, Any]):
+            if future.done():
+                return
+            
+            if predicate:
+                try:
+                    if not predicate(data):
+                        return
+                except Exception:
+                    return
+
+            future.set_result(data)
+
+        self.subscribe(event_type, _listener)
+        
+        try:
+            return await asyncio.wait_for(future, timeout=timeout)
+        finally:
+            self.unsubscribe(event_type, _listener)
 
 
 # Global event bus instance

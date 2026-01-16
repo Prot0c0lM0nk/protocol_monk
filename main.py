@@ -2,6 +2,7 @@
 """
 Application Starter for Protocol Monk
 ====================================
+Wires together the Event Bus, Agent Service, and UI.
 """
 
 import asyncio
@@ -10,6 +11,9 @@ import signal
 import sys
 from pathlib import Path
 
+# New Architecture Imports
+from agent.service import AgentService
+from agent.events import EventBus, AgentEvents
 from config.bootstrap import bootstrap_application
 from config.static import settings
 from exceptions.config import BootstrapError
@@ -35,15 +39,18 @@ def setup_logging():
 
 
 class Application:
-    """Main application container."""
+    """
+    Main application container.
+    Responsible for dependency injection and lifecycle management.
+    """
 
     def __init__(self):
         self.working_dir = None
         self.ui_mode = None
-        self.agent = None
-        self.ui_task = None 
-        self.agent_task = None
-        self.tui_app = None 
+        self.event_bus = None
+        self.agent_service = None
+        self.ui = None
+        self.tui_app = None
         self.running = False
 
     async def start(self):
@@ -53,60 +60,36 @@ class Application:
             self.working_dir, self.ui_mode = bootstrap_application()
             setup_logging()
 
-            # 2. Textual Mode (Worker Architecture)
+            # 2. Initialize Infrastructure (The Spine)
+            self.event_bus = EventBus()
+            
+            # 3. Initialize Agent Service (The Brain)
+            # It sits in the background and waits for events.
+            from tools.registry import ToolRegistry
+            tool_registry = ToolRegistry(
+                working_dir=self.working_dir,
+                preferred_env=None,
+                venv_path=None,
+            )
+
+            print(f"[Protocol Monk] Initializing Agent Service...")
+            self.agent_service = AgentService(
+                working_dir=self.working_dir,
+                model_name=settings.model.default_model,
+                provider=(settings.api.provider_chain[0] if settings.api.provider_chain else "ollama"),
+                tool_registry=tool_registry,
+                event_bus=self.event_bus,
+            )
+            
+            await self.agent_service.async_initialize()
+
+            # 4. Initialize UI (The Driver) based on mode
             if self.ui_mode == "textual":
-                print(f"[Protocol Monk] Initializing Textual TUI...")
-                from ui.textual.app import ProtocolMonkApp
-                from ui.textual.interface import TextualUI
-                from agent.monk import ProtocolAgent
-                from tools.registry import ToolRegistry
-
-                self.tui_app = ProtocolMonkApp()
-                ui_bridge = TextualUI(self.tui_app)
-                
-                tool_registry = ToolRegistry(
-                    working_dir=self.working_dir,
-                    preferred_env=None,
-                    venv_path=None,
-                )
-
-                self.agent = ProtocolAgent(
-                    working_dir=self.working_dir,
-                    model_name=settings.model.default_model,
-                    provider=(settings.api.provider_chain[0] if settings.api.provider_chain else "ollama"),
-                    tool_registry=tool_registry,
-                    event_bus=None,
-                    ui=ui_bridge 
-                )
-                
-                await self.agent.async_initialize()
-
-                # Connect
-                self.tui_app.textual_ui = ui_bridge
-                self.tui_app.agent = self.agent 
-
-                # BLOCKING RUN for Textual
-                self.running = True
-                await self.tui_app.run_async()
-
-            # 3. Rich Mode (Legacy Loop)
+                await self._start_textual_ui()
             elif self.ui_mode == "rich":
-                try:
-                    from ui.rich import RichUI
-                    ui_instance = RichUI()
-                except ImportError:
-                    from ui.rich import create_rich_ui
-                    ui_instance = create_rich_ui()
-                    
-                await ui_instance.display_startup_banner("Protocol Monk Online")
-                await self._run_legacy_agent(ui_instance)
-
-            # 4. Plain Mode (Legacy Loop)
+                await self._start_rich_ui()
             else:
-                print(f"[Protocol Monk] Starting with Plain UI...")
-                from ui.plain.interface import PlainUI
-                ui_instance = PlainUI()
-                await self._run_legacy_agent(ui_instance)
+                await self._start_plain_ui()
 
         except BootstrapError as e:
             print(f"❌ Bootstrap Error: {e}", file=sys.stderr)
@@ -116,51 +99,84 @@ class Application:
             logging.getLogger().critical("Application crash", exc_info=True)
             sys.exit(1)
 
-    async def _run_legacy_agent(self, ui_instance):
-        """Helper to run the agent in blocking mode for CLI/Rich."""
-        from agent.monk import ProtocolAgent
-        from tools.registry import ToolRegistry
+    async def _start_plain_ui(self):
+        """Start the Plain CLI."""
+        print(f"[Protocol Monk] Starting Plain UI...")
+        from ui.plain.interface import PlainUI
+
+        self.ui = PlainUI(event_bus=self.event_bus)
         
-        tool_registry = ToolRegistry(
-            working_dir=self.working_dir,
-            preferred_env=None,
-            venv_path=None,
+        # === ARCHITECTURAL FIX: Emit pure data packet ===
+        await self.event_bus.emit(
+            AgentEvents.APP_STARTED.value,
+            {
+                "working_dir": str(self.working_dir),
+                "model": self.agent_service.current_model,
+                "provider": self.agent_service.current_provider,
+                "version": "1.0.0" # Example metadata
+            }
         )
-
-        self.agent = ProtocolAgent(
-            working_dir=self.working_dir,
-            model_name=settings.model.default_model,
-            provider="ollama",
-            tool_registry=tool_registry,
-            event_bus=None,
-            ui=ui_instance,
-        )
-
-        await self.agent.async_initialize()
+        # ===============================================
+        
         self.running = True
-        
-        # Start UI background task if needed
-        if hasattr(ui_instance, "run_async"):
-            self.ui_task = asyncio.create_task(ui_instance.run_async())
+        await self.ui.run_loop()
 
-        # === THE FIX: AWAIT HERE ===
-        # This keeps the program alive for CLI/Rich
-        await self.agent.run()
+    async def _start_rich_ui(self):
+        """Start the Rich UI in blocking loop mode."""
+        print(f"[Protocol Monk] Starting Rich UI...")
+        try:
+            from ui.rich import RichUI
+            self.ui = RichUI(event_bus=self.event_bus)
+        except ImportError:
+            # Fallback if RichUI signature hasn't been updated yet
+            from ui.rich import create_rich_ui
+            self.ui = create_rich_ui()
+            if hasattr(self.ui, 'event_bus'):
+                self.ui.event_bus = self.event_bus
+
+        await self.ui.display_startup_banner("Protocol Monk Online")
+        
+        self.running = True
+        # Rich UI must also implement run_loop or similar
+        if hasattr(self.ui, 'run_loop'):
+            await self.ui.run_loop()
+        else:
+            # Fallback for partial migration
+            print("⚠️ Rich UI run_loop not implemented. Exiting.")
+
+    async def _start_textual_ui(self):
+        """Start the Textual TUI."""
+        print(f"[Protocol Monk] Initializing Textual TUI...")
+        from ui.textual.app import ProtocolMonkApp
+        from ui.textual.interface import TextualUI
+
+        self.tui_app = ProtocolMonkApp()
+        
+        # Wire up the bridge
+        # Note: TextualUI likely needs updates to fully utilize AgentService events
+        # but passing the service instance maintains compatibility for now.
+        ui_bridge = TextualUI(self.tui_app)
+        self.tui_app.textual_ui = ui_bridge
+        self.tui_app.agent = self.agent_service  # Service replaces Agent
+
+        self.running = True
+        await self.tui_app.run_async()
 
     async def stop(self):
         """Stop the application gracefully."""
         self.running = False
+        
+        # Stop UI
         if self.tui_app:
             await self.tui_app.exit()
-        if self.agent_task and not self.agent_task.done():
-            self.agent_task.cancel()
-        if self.ui_task and not self.ui_task.done():
-            self.ui_task.cancel()
-        if self.agent:
+            
+        # Stop Service
+        if self.agent_service:
             try:
-                await self.agent.shutdown()
+                await self.agent_service.shutdown()
             except Exception:
                 pass
+                
         try:
             close_debug_log()
         except Exception:
