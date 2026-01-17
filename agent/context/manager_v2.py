@@ -219,13 +219,14 @@ class ContextManagerV2:
         self._message_events.pop(msg_id, None)
 
     async def _process_add_tool_call(self, tool_calls: List[Dict]):
-        """Process tool call message addition."""
+        """Process tool call message addition with Robust Format Translation."""
         # Trigger file tracker tick
         await self.file_tracker.tick(self.conversation)
 
         # Convert tool calls
         converted_tool_calls = []
         for tc in tool_calls:
+            # 1. Handle Pydantic Objects (Ollama SDK native)
             if hasattr(tc, "function"):
                 func = tc.function
                 arguments = func.arguments
@@ -235,15 +236,31 @@ class ContextManagerV2:
                     except json.JSONDecodeError:
                         pass
                 converted_tool_calls.append({
+                    "type": "function",
                     "function": {
                         "name": func.name,
                         "arguments": arguments,
                     }
                 })
-            elif isinstance(tc, dict):
+            
+            # 2. Handle Internal "MonkCode" Format ({"action": "...", "parameters": ...})
+            # This is the translation layer that fixes the crash.
+            elif isinstance(tc, dict) and "action" in tc:
+                 converted_tool_calls.append({
+                    "type": "function",
+                    "function": {
+                        "name": tc["action"],
+                        "arguments": tc.get("parameters", {})
+                    }
+                })
+
+            # 3. Handle Standard API Dicts ({"function": ...})
+            elif isinstance(tc, dict) and "function" in tc:
                 converted_tool_calls.append(tc)
+
+            # 4. Fallback (try to wrap whatever it is)
             else:
-                converted_tool_calls.append({"function": tc})
+                converted_tool_calls.append({"type": "function", "function": tc})
 
         # Create and add
         msg = Message(

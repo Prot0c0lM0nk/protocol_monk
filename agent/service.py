@@ -162,18 +162,34 @@ class AgentService:
             # C. Parse
             actions, has_actions = ToolCallExtractor.extract(response_obj)
 
-            self.enhanced_logger.log_turn(
-                turn_number=loop_count,
-                model_input=context,
-                model_output=response_obj,
-                parsed_actions=actions
-            )
+            # Use the new safe logger method
+            if hasattr(self.enhanced_logger, 'log_turn'):
+                self.enhanced_logger.log_turn(
+                    turn_number=loop_count,
+                    model_input=context,
+                    model_output=response_obj,
+                    parsed_actions=actions
+                )
 
             # D. Record Assistant Message
             if has_actions:
-                 # If we have tool calls, we must record them as tool_calls in context
-                 # (Implementation depends on context manager V2 specific API, assumed generic here)
-                 await self.context_manager.add_tool_call_message(response_obj)
+                 # FIX: Extract ONLY the tool_calls list, not the full object
+                 tool_calls_payload = []
+                 
+                 if isinstance(response_obj, dict) and "message" in response_obj:
+                     # Standard Ollama/OpenAI API dict format
+                     tool_calls_payload = response_obj["message"].get("tool_calls", [])
+                 elif hasattr(response_obj, "tool_calls"):
+                     # Pydantic object format
+                     tool_calls_payload = response_obj.tool_calls
+                 elif isinstance(response_obj, dict) and "tool_calls" in response_obj:
+                     # Flattened dict format
+                     tool_calls_payload = response_obj["tool_calls"]
+                 else:
+                     # Fallback: trust the extractor or empty
+                     tool_calls_payload = actions if isinstance(actions, list) else []
+                 
+                 await self.context_manager.add_tool_call_message(tool_calls_payload)
             else:
                  # Just text
                  if isinstance(response_obj, str) and response_obj.strip():
