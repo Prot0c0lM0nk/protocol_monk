@@ -196,6 +196,7 @@ class ToolExecutor:
                 raise UserCancellationError("User rejected tool execution")
 
             if edits:
+                # Apply user edits
                 normalized["parameters"] = edits
 
             return normalized, None
@@ -216,16 +217,34 @@ class ToolExecutor:
         try:
             normalized = self._normalize_tool_call(tool_call)
         except ToolExecutionError:
-            return ToolResult(success=False, output="Invalid format", tool_call_id=call_id), False
+            # FIX: manual assignment to prevent TypeError
+            res = ToolResult(success=False, output="Invalid format")
+            res.tool_call_id = call_id
+            return res, False
 
         if normalized["action"] == "finish":
             await self.event_bus.emit(AgentEvents.TASK_COMPLETE.value, {"summary": normalized["parameters"].get("summary", "")})
-            return ToolResult(success=True, output="Task completed", tool_name="finish", tool_call_id=call_id), True
+            # FIX: manual assignment to prevent TypeError
+            res = ToolResult(success=True, output="Task completed", tool_name="finish")
+            res.tool_call_id = call_id
+            return res, True
 
         # Calls the new event-based confirmation
-        final_tool_call, suggestion_result = await self._confirm_and_handle_edits(normalized, call_id)
-        if suggestion_result:
-            return suggestion_result, False
+        try:
+            final_tool_call, suggestion_result = await self._confirm_and_handle_edits(normalized, call_id)
+            if suggestion_result:
+                return suggestion_result, False
+        
+        except UserCancellationError:
+            # FIX: Convert Cancellation to a valid ToolResult instead of crashing
+            # AND FIX: Assign tool_call_id attribute manually since it's not in __init__
+            result = ToolResult(
+                success=False, 
+                output="Tool execution cancelled by user.", 
+                tool_name=normalized["action"]
+            )
+            result.tool_call_id = call_id
+            return result, False
 
         result = await self._execute_tool(final_tool_call)
         result.tool_name = final_tool_call["action"]
