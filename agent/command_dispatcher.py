@@ -10,7 +10,8 @@ from typing import Optional, Dict, List, Any
 
 from agent.events import AgentEvents
 
-BLESSING = "☦ Go in peace. May your code compile without warning. ☦"
+# DEPRECATED: The model handles this now.
+# BLESSING = "☦ Go in peace. May your code compile without warning. ☦"
 
 
 class CommandDispatcher:
@@ -30,8 +31,9 @@ class CommandDispatcher:
 
         # Handle Commands
         if cmd == "/quit":
-            await self.event_bus.emit(AgentEvents.INFO.value, {"message": BLESSING, "context": "shutdown"})
-            return False
+            # Feature Upgrade: Deliberate Model Farewell
+            await self._handle_quit_protocol()
+            return True  # Handled (prevents service.py from double-processing)
 
         if cmd == "/help":
             await self._handle_help()
@@ -66,6 +68,38 @@ class CommandDispatcher:
 
     # --- Command Handlers ---
 
+    async def _handle_quit_protocol(self):
+        """
+        Orchestrates a graceful, model-driven shutdown.
+        1. Prompts model for farewell.
+        2. Waits for response.
+        3. Signals UI to die.
+        """
+        # 1. Inject the "Director's Note" (Invisible to user, instruction to model)
+        # We assume the user just typed "/quit", so we translate that intent.
+        farewell_prompt = (
+            "The user has issued the /quit command to disconnect. "
+            "Please provide a brief, formal, and thematic monastic farewell/blessing "
+            "before the connection is severed."
+        )
+        
+        # We add this directly to context without triggering a UI event for the input
+        await self.agent.context_manager.add_message("user", farewell_prompt)
+        
+        # 2. Trigger the Agent's Brain manually
+        # This ensures the response is generated/streamed BEFORE we kill the app.
+        try:
+            await self.agent._run_cognitive_loop()
+        except Exception as e:
+            self.logger.error(f"Error during farewell generation: {e}")
+
+        # 3. NOW we kill it.
+        # This event tells RichUI to set running=False
+        await self.event_bus.emit(
+            AgentEvents.INFO.value, 
+            {"message": "Connection Terminated.", "context": "shutdown"}
+        )
+
     async def _handle_help(self):
         help_text = """The Protocol Commands:
 /help     - Display this wisdom
@@ -74,7 +108,7 @@ class CommandDispatcher:
 /provider - Switch to a different provider
 /clear    - Clear conversation history
 /file     - Load a file into context
-/quit     - Exit with blessing"""
+/quit     - Receive final blessing and exit"""
         await self.event_bus.emit(AgentEvents.INFO.value, {"message": help_text, "context": "help"})
 
     async def _handle_status(self):
@@ -177,12 +211,10 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
     async def _prompt_user(self, prompt_text: str) -> str:
         """Event-driven prompt that waits for a response."""
         # 1. START LISTENING NOW (Before asking)
-        # We create a task that subscribes immediately and waits.
-        # This prevents the race condition where the UI responds before we start waiting.
         response_future = asyncio.create_task(
             self.event_bus.wait_for(
                 AgentEvents.INPUT_RESPONSE.value,
-                timeout=None # Infinite patience for humans
+                timeout=None
             )
         )
         
@@ -192,12 +224,11 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
             {"prompt": prompt_text}
         )
         
-        # 3. Wait for the response we are already listening for
+        # 3. Wait for the response
         try:
             response_data = await response_future
             return response_data.get("input", "")
         except asyncio.TimeoutError:
-            # Should not happen with timeout=None
             return ""
 
     def _resolve_selection(self, choice: str, options: List[str]) -> Optional[str]:

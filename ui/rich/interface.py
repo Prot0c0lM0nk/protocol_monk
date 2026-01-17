@@ -1,9 +1,11 @@
 """
 ui/rich/interface.py
 The Rich UI Controller.
+Updated for Full Event-Driven Architecture (Bidirectional).
 """
 
 import asyncio
+import sys
 from typing import Dict, Any, List, Tuple
 
 from ui.base import UI, ToolResult
@@ -15,17 +17,25 @@ from .styles import console
 
 
 class RichUI(UI):
-    def __init__(self):
+    def __init__(self, event_bus=None):
         super().__init__()
         self.renderer = RichRenderer()
         self.input = RichInput()
-        self._event_bus = get_event_bus()
+        
+        # FIX: Accept injected event_bus from main.py
+        self._event_bus = event_bus or get_event_bus()
+        
         # Stream buffer for handling updates during input
         self._stream_buffer = ""
+        
+        # State Management
+        self.turn_complete = asyncio.Event()
+        self.running = False
+        
         self._setup_event_listeners()
 
     def _setup_event_listeners(self):
-        # Passive Output Listeners
+        # --- PASSIVE OUTPUT (Agent Speaking) ---
         self._event_bus.subscribe(AgentEvents.STREAM_CHUNK.value, self._on_stream_chunk)
         self._event_bus.subscribe(
             AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete
@@ -38,17 +48,23 @@ class RichUI(UI):
         )
         self._event_bus.subscribe(AgentEvents.TOOL_RESULT.value, self._on_tool_result)
 
-        # Error / Info / Status
+        # --- ACTIVE INPUT REQUESTS (Agent Asking) ---
+        self._event_bus.subscribe(
+            AgentEvents.INPUT_REQUESTED.value, self._on_input_requested
+        )
+        self._event_bus.subscribe(
+            AgentEvents.TOOL_CONFIRMATION_REQUESTED.value, self._on_tool_confirmation_requested
+        )
+
+        # --- SYSTEM STATUS ---
         self._event_bus.subscribe(AgentEvents.ERROR.value, self._on_error)
         self._event_bus.subscribe(AgentEvents.WARNING.value, self._on_warning)
         self._event_bus.subscribe(AgentEvents.INFO.value, self._on_info)
-
-        # Slash Commands
         self._event_bus.subscribe(
             AgentEvents.COMMAND_RESULT.value, self._on_command_result
         )
 
-        # Lifecycle
+        # --- LIFECYCLE ---
         self._event_bus.subscribe(
             AgentEvents.TASK_COMPLETE.value, self._on_task_complete
         )
@@ -59,11 +75,94 @@ class RichUI(UI):
             AgentEvents.PROVIDER_SWITCHED.value, self._on_provider_switched
         )
 
-    # --- EVENT HANDLERS ---
+    # === MAIN LOOP ===
+    
+    async def run_loop(self):
+        """
+        The main UI lifecycle.
+        1. Get User Input.
+        2. Send to Agent.
+        3. Wait for Agent to Finish (while handling intermediate events).
+        """
+        self.running = True
+        # Ensure turn_complete is set initially so we can type the first message
+        self.turn_complete.set()
+
+        while self.running:
+            try:
+                # 1. Wait for user input
+                user_input = await self.get_input()
+                
+                # FIX: Handle Ctrl+C (RichInput returns empty on interrupt, or we catch it)
+                if user_input is None: # Explicit exit signal
+                    break
+                if not user_input and not self.running: # Shutdown signal received during input
+                    break
+                if not user_input:
+                    continue
+                
+                # 2. Lock UI & Emit Input
+                self.turn_complete.clear()
+                await self._event_bus.emit(
+                    AgentEvents.USER_INPUT.value, 
+                    {"input": user_input}
+                )
+
+                # 3. Wait for Agent to finish thinking/acting
+                # During this wait, active handlers (input_requested, tool_confirmation)
+                # will be triggered by the event bus.
+                await self.turn_complete.wait()
+                
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                print("\n[UI] Interrupted. Exiting...")
+                self.running = False
+                break
+            except Exception as e:
+                self.renderer.print_error(f"UI Loop Error: {e}")
+                self.turn_complete.set() # Recovery
+
+    # === ACTIVE LISTENERS (The Missing Link) ===
+
+    async def _on_input_requested(self, data: Dict[str, Any]):
+        """
+        Agent needs nested input (e.g. Model Selection).
+        We hijack the input stream momentarily.
+        """
+        prompt = data.get("prompt", "Value needed")
+        
+        # 1. Ask User
+        user_value = await self.get_input(prompt_text=prompt)
+        
+        # 2. Respond to Agent
+        await self._event_bus.emit(
+            AgentEvents.INPUT_RESPONSE.value,
+            {"input": user_value}
+        )
+
+    async def _on_tool_confirmation_requested(self, data: Dict[str, Any]):
+        """
+        Agent needs approval for a tool.
+        """
+        tool_call = data.get("tool_call", {})
+        tool_call_id = data.get("tool_call_id")
+        
+        # 1. Ask User (using shared Prompt logic)
+        approved = await self.confirm_tool_execution(tool_call)
+        
+        # 2. Respond to Agent
+        await self._event_bus.emit(
+            AgentEvents.TOOL_CONFIRMATION_RESPONSE.value,
+            {
+                "tool_call_id": tool_call_id,
+                "approved": approved,
+                "edits": None
+            }
+        )
+
+    # === PASSIVE HANDLERS ===
+
     async def _on_stream_chunk(self, data: Dict[str, Any]):
-        # Check if renderer is locked (waiting for input)
         if self.renderer._is_locked:
-            # Buffer the stream chunk for later
             thinking = data.get("thinking")
             chunk = data.get("chunk", "")
             if thinking:
@@ -72,34 +171,32 @@ class RichUI(UI):
                 self._stream_buffer += chunk
             return
 
-        # Handle Reasoning (Thinking)
         thinking = data.get("thinking")
         if thinking:
             self.renderer.update_streaming(thinking, is_thinking=True)
             return
 
-        # Handle Standard Content
         chunk = data.get("chunk", "")
         if chunk:
             self.renderer.update_streaming(chunk, is_thinking=False)
 
     async def _on_response_complete(self, data: Dict[str, Any]):
         if self.renderer._is_locked:
-            # Mark buffer as complete for later flushing
             self._stream_buffer += "[COMPLETE]"
-            return
-        self.renderer.end_streaming()
+        else:
+            self.renderer.end_streaming()
+        
+        # CRITICAL: Unlock the main loop
+        self.turn_complete.set()
 
     async def _on_thinking_started(self, data: Dict[str, Any]):
         if self.renderer._is_locked:
-            # Buffer thinking state change
             self._stream_buffer += "[THINKING_START]"
             return
         self.renderer.start_thinking(data.get("message", "Contemplating..."))
 
     async def _on_thinking_stopped(self, data: Dict[str, Any]):
         if self.renderer._is_locked:
-            # Buffer thinking state change
             self._stream_buffer += "[THINKING_STOP]"
             return
         self.renderer.stop_thinking()
@@ -109,25 +206,21 @@ class RichUI(UI):
         name = data.get("tool_name", "Unknown")
         if not hasattr(res, "success"):
             from ui.base import ToolResult
-
             res = ToolResult(success=True, output=str(res), tool_name=name)
         
         if self.renderer._is_locked:
-            # Buffer tool result for later rendering
             self._stream_buffer += f"[TOOL_RESULT]{name}|{res.success}|{res.output}"
             return
         self.renderer.render_tool_result(res, name)
 
     async def _on_error(self, data: Dict[str, Any]):
         if self.renderer._is_locked:
-            # Buffer error message
             self._stream_buffer += f"[ERROR]{data.get('message', 'Unknown Error')}"
             return
         self.renderer.print_error(data.get("message", "Unknown Error"))
 
     async def _on_warning(self, data: Dict[str, Any]):
         if self.renderer._is_locked:
-            # Buffer warning message
             self._stream_buffer += f"[WARNING]{data.get('message', '')}"
             return
         self.renderer.print_system(f"[warning]Warning:[/] {data.get('message', '')}")
@@ -137,8 +230,14 @@ class RichUI(UI):
         context = data.get("context", "")
         items = data.get("data", [])
 
+        # FIX: Check for Shutdown Signal
+        if context == "shutdown":
+            self.renderer.print_system(f"[bold]{msg}[/]")
+            self.running = False
+            self.turn_complete.set() # Unblock loop so it can exit
+            return
+
         if self.renderer._is_locked:
-            # Buffer info message
             self._stream_buffer += f"[INFO]{msg}|{context}|{len(items) if items else 0}"
             return
 
@@ -152,7 +251,6 @@ class RichUI(UI):
         message = data.get("message", "")
         
         if self.renderer._is_locked:
-            # Buffer command result
             self._stream_buffer += f"[COMMAND_RESULT]{success}|{message}"
             return
             
@@ -179,11 +277,6 @@ class RichUI(UI):
 
     # --- BUFFER FLUSHING ---
     def _parse_buffer_content(self, buffer: str) -> List[Tuple[str, str]]:
-        """
-        Parse buffer content, extracting both plain text and marked content.
-        
-        This replaces the broken regex that missed plain content at the start.
-        """
         if not buffer:
             return []
         
@@ -193,57 +286,44 @@ class RichUI(UI):
         
         while i < len(buffer):
             if buffer[i] == '[' and i < len(buffer) - 1:
-                # Found potential marker start
-                # First, save any accumulated plain content
                 if current_content.strip():
                     results.append(("", current_content))
                     current_content = ""
                 
-                # Find the closing bracket
                 end = buffer.find(']', i)
                 if end != -1:
                     marker = buffer[i+1:end]
-                    
-                    # Find content until next marker or end
                     content_start = end + 1
                     next_marker = buffer.find('[', content_start)
                     
                     if next_marker == -1:
-                        # No more markers, take rest of string
                         marker_content = buffer[content_start:]
                         results.append((marker, marker_content))
                         break
                     else:
-                        # Take content until next marker
                         marker_content = buffer[content_start:next_marker]
                         results.append((marker, marker_content))
                         i = next_marker
                 else:
-                    # No closing bracket, treat as plain text
                     current_content += buffer[i]
                     i += 1
             else:
                 current_content += buffer[i]
                 i += 1
         
-        # Don't forget final plain content
         if current_content.strip():
             results.append(("", current_content))
         
         return results
+
     async def _flush_buffer(self):
-        """Process and render all buffered events after input completes."""
         if not self._stream_buffer:
             return
 
-        # Parse and process buffered commands
         buffer = self._stream_buffer
         self._stream_buffer = ""
 
-        # Parse the buffer for special markers
-        # Use the new parser instead of broken regex
         matches = self._parse_buffer_content(buffer)
-
         thinking_active = False
         thinking_content = ""
         response_content = ""
@@ -260,10 +340,8 @@ class RichUI(UI):
             elif marker == "THINKING_STOP":
                 thinking_active = False
             elif marker == "COMPLETE":
-                # End of streaming
                 pass
             elif marker == "TOOL_RESULT":
-                # Parse: name|success|output
                 parts = content.split("|", 2)
                 if len(parts) == 3:
                     name, success, output = parts
@@ -275,12 +353,15 @@ class RichUI(UI):
             elif marker == "WARNING":
                 self.renderer.print_system(f"[warning]Warning:[/] {content}")
             elif marker == "INFO":
-                # Parse: msg|context|item_count
+                # Check shutdown in buffer too
+                if "context=shutdown" in content: # Simplified check
+                    self.running = False
+                    self.turn_complete.set()
+                
                 parts = content.split("|", 2)
                 if len(parts) >= 1 and parts[0].strip():
                     self.renderer.print_system(parts[0].strip())
             elif marker == "COMMAND_RESULT":
-                # Parse: success|message
                 parts = content.split("|", 1)
                 if len(parts) == 2:
                     success, message = parts
@@ -293,46 +374,36 @@ class RichUI(UI):
             elif marker == "PROVIDER_SWITCHED":
                 self.renderer.print_system(f"Provider Switched: {content}")
             elif marker == "" and content:
-                # Plain content (stream chunks)
                 if thinking_active:
                     thinking_content += content
                 else:
                     response_content += content
 
-        # Render any buffered streaming content
         if thinking_content or response_content:
-            # Start streaming if we have content
             self.renderer.start_streaming()
-
             if thinking_content:
                 self.renderer.update_streaming(thinking_content, is_thinking=True)
             if response_content:
                 self.renderer.update_streaming(response_content, is_thinking=False)
-
-            # End streaming to finalize
             self.renderer.end_streaming()
 
     # --- BLOCKING INTERFACE ---
-    async def get_input(self) -> str:
-        # 1. Lock the renderer immediately. 
-        # This stops any lingering stream chunks from hijacking the terminal.
+    async def get_input(self, prompt_text: str = "") -> str:
         self.renderer.lock_for_input()
-        
-        # 2. Print a newline to separate the previous stream from the prompt
         console.print()
 
-        # 3. Get Input
         try:
-            user_input = await self.input.get_input("User Input")
+            user_input = await self.input.get_input(prompt_text)
             return user_input
         finally:
-            # 4. Always unlock, even if KeyboardInterrupt occurs
             self.renderer.unlock_for_input()
-            # 5. Flush any buffered events that occurred during input
             await self._flush_buffer()
 
     async def confirm_tool_execution(self, tool_data: Dict[str, Any]) -> bool:
         tool_name = tool_data.get("tool_name", "Unknown")
+        if not tool_name and "action" in tool_data:
+            tool_name = tool_data["action"]
+            
         params = tool_data.get("parameters", {})
 
         self.renderer.render_tool_confirmation(tool_name, params)
@@ -346,7 +417,6 @@ class RichUI(UI):
         self.renderer.render_banner(greeting)
 
     async def display_selection_list(self, title: str, items: List[Any]):
-        """Just render the list. Input is handled by main loop."""
         self.renderer.render_selection_list(title, items)
 
     async def display_tool_result(self, result: ToolResult, tool_name: str):
