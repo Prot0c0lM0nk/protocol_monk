@@ -36,24 +36,18 @@ logger = logging.getLogger("Bootstrap")
 
 async def main():
     try:
-        # --- PHASE 1: Configuration ---
+        # --- PHASE 1: Configuration (Pydantic V2) ---
         logger.info("Phase 1: Loading Configuration...")
-
+        
         # We assume we are running from the parent directory of protocol_monk
-        # or protocol_monk is the root. Let's assume current working dir.
         app_root = Path(os.getcwd()) / "protocol_monk"
-
-        # Set required env vars for this simulation if not set
-        # In production, these come from the environment
-        if not os.getenv("MONK_WORKSPACE"):
-            os.environ["MONK_WORKSPACE"] = str(Path.cwd())
-        if not os.getenv("MONK_SYSTEM_PROMPT_PATH"):
-            os.environ["MONK_SYSTEM_PROMPT_PATH"] = "system_prompt.txt"
-        if not os.getenv("MONK_LOG_LEVEL"):
-            os.environ["MONK_LOG_LEVEL"] = "INFO"
-
+        
+        # Load settings with automatic env var resolution
         settings = load_settings(app_root)
-        logger.info(f"Config Loaded. Log Level: {settings.log_level}")
+        
+        logger.info(f"Config Loaded. Model: {settings.model_family}")
+        logger.info(f"Context Window: {settings.context_window_limit}")
+        logger.info(f"Pruning Target: {settings.active_model_config['pruning_target']}")
 
         # --- PHASE 2: Dependency Injection (Wiring) ---
         logger.info("Phase 2: Wiring Components...")
