@@ -38,13 +38,13 @@ async def main():
     try:
         # --- PHASE 1: Configuration (Pydantic V2) ---
         logger.info("Phase 1: Loading Configuration...")
-        
+
         # We assume we are running from the parent directory of protocol_monk
         app_root = Path(os.getcwd()) / "protocol_monk"
-        
+
         # Load settings with automatic env var resolution
         settings = load_settings(app_root)
-        
+
         logger.info(f"Config Loaded. Model: {settings.model_family}")
         logger.info(f"Context Window: {settings.context_window_limit}")
         logger.info(f"Pruning Target: {settings.active_model_config['pruning_target']}")
