@@ -1,5 +1,5 @@
 from typing import List, Tuple
-from .structs import Message, ContextStats
+from protocol_monk.agent.structs import Message, ContextStats
 
 
 def count_tokens(text: str) -> int:

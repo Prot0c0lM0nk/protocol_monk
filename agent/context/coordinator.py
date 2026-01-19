@@ -4,7 +4,7 @@ from typing import List
 
 from protocol_monk.config.settings import Settings
 from protocol_monk.exceptions.context import ContextError
-from .structs import Message, ContextStats
+from protocol_monk.agent.structs import Message, ContextStats
 from .store import ContextStore
 from .file_tracker import FileTracker
 from . import logic

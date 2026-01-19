@@ -1,5 +1,5 @@
 from typing import List, Optional
-from .structs import Message
+from protocol_monk.agent.structs import Message
 
 
 class ContextStore:
