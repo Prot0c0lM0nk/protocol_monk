@@ -49,6 +49,13 @@ async def main():
         app_root = Path(os.getcwd()) / "protocol_monk"
         settings = load_settings(app_root)
 
+        # NEW: Initialize model discovery (async)
+        await settings.initialize()
+
+        logger.info(f"Active model: {settings.active_model_name}")
+        logger.info(f"Model family: {settings.model_family}")
+        logger.info(f"Context window: {settings.context_window_limit}")
+
         logger.info("Phase 2: Wiring Components...")
 
         # A. Nervous System
@@ -64,7 +71,6 @@ async def main():
         registry.register(AppendToFileTool(settings))
 
         logger.info(f"Registered Tools: {registry.list_tool_names()}")
-
         # C. Memory Systems (The Brain)
         context_store = ContextStore()
         file_tracker = FileTracker()

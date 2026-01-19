@@ -3,8 +3,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 from pathlib import Path
 import logging
-from typing import Optional, Dict, Any, ClassVar
+from typing import Optional, Dict, Any
+from datetime import datetime
 from protocol_monk.exceptions.config import ConfigError
+from protocol_monk.utils.model_discovery import discover_models
+
+logger = logging.getLogger("Settings")
 
 
 class Settings(BaseSettings):
@@ -12,13 +16,13 @@ class Settings(BaseSettings):
     workspace: Path
     system_prompt_path: Path
     log_level: str
-    model_family: str = "qwen"
     ollama_host: str = "http://localhost:11434"
     ollama_api_key: Optional[str] = None
-    context_window_limit: int = 8000
-    pruning_threshold: float = 0.8
     tool_timeout: int = 60
+    pruning_threshold: float = 0.8
 
+    # Note: model_family, context_window_limit, and active_model_config
+    # are now computed from model discovery, not hardcoded
     # === Computed Fields ===
     system_prompt: Optional[str] = None
     active_model_config: Optional[Dict[str, Any]] = None
@@ -32,6 +36,13 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    # Model discovery fields
+    models_json_path: Path = Field(default=Path("protocol_monk/config/models.json"))
+    force_model_discovery: bool = Field(default=False, env="FORCE_MODEL_DISCOVERY")
+    active_model_alias: str = Field(default="", env="ACTIVE_MODEL_ALIAS")
+
+    # Computed fields
+    models_config: Optional[Dict[str, Any]] = None  # Will be loaded from models.json
     # === Model Validator ===
 
     @model_validator(mode="after")
@@ -64,26 +75,110 @@ class Settings(BaseSettings):
             raise ConfigError(f"Invalid log level: {self.log_level}")
         self.log_level = self.log_level.upper()
 
-        # 4. Validate context window
-        if self.context_window_limit < 1000:
-            raise ConfigError(f"Context window too small: {self.context_window_limit}")
-
-        # 5. Compute model config
-        model_configs = {
-            "qwen": {"avg_chars_per_token": 3.8, "pruning_strategy": "aggressive"},
-            "gpt": {"avg_chars_per_token": 4.0, "pruning_strategy": "conservative"},
-            "claude": {"avg_chars_per_token": 4.2, "pruning_strategy": "balanced"},
-        }
-
-        base = model_configs.get(self.model_family, model_configs["qwen"])
-        self.active_model_config = {
-            **base,
-            "context_window": self.context_window_limit,
-            "family": self.model_family,
-            "pruning_target": int(self.context_window_limit * self.pruning_threshold),
-        }
+        # Note: Model discovery is now async and called separately via initialize()
+        # We set minimal defaults here that will be overridden by discovery
+        self._active_model_name = "llama2"
+        self._active_model_config_dict = {}
 
         return self
+
+    async def initialize(self) -> None:
+        """
+        Async initialization for model discovery.
+        Call this after creating Settings instance.
+        """
+        await self._discover_models()
+
+    async def _discover_models(self) -> None:
+        """Discover models from Ollama and load configuration."""
+        try:
+            logger.info("Discovering models from Ollama...")
+
+            # Run discovery
+            model_config = await discover_models(
+                models_json_path=self.models_json_path,
+                ollama_host=self.ollama_host,
+                force_refresh=self.force_model_discovery,
+            )
+
+            self.models_config = model_config
+
+            # Set active model from alias
+            if self.active_model_alias:
+                self._set_active_model(self.active_model_alias)
+            elif model_config.get("default_model"):
+                self._set_active_model(model_config["default_model"])
+
+            logger.info(
+                f"Model discovery complete. Active model: {self.active_model_name}"
+            )
+
+        except Exception as e:
+            logger.error(f"Model discovery failed: {e}")
+            # Fall back to minimal config
+            self.models_config = self._create_fallback_model_config()
+            
+    def _set_active_model(self, model_alias: str) -> None:
+        """Set the active model from alias or name."""
+        if not self.models_config:
+            return
+
+        models = self.models_config.get("models", {})
+
+        # Direct match
+        if model_alias in models:
+            self._active_model_config = models[model_alias]
+            self.active_model_name = model_alias
+            return
+
+        # Try to find by partial match
+        for name, config in models.items():
+            if model_alias in name:
+                self._active_model_config = config
+                self.active_model_name = name
+                return
+            
+        logger.warning(f"Model '{model_alias}' not found. Using default.")
+        default = self.models_config.get("default_model")
+        if default and default in models:
+            self._active_model_config = models[default]
+            self.active_model_name = default
+            
+    def _create_fallback_model_config(self) -> Dict[str, Any]:
+        """Create minimal fallback config if discovery fails."""
+        return {
+            "version": "1.0",
+            "last_updated": datetime.now().isoformat(),
+            "default_model": "llama2",
+            "families": {
+                "llama": {
+                    "supports_thinking": False,
+                    "supports_tools": True,
+                    "avg_chars_per_token": 4.0,
+                    "default_params": {
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "num_predict": 2048,
+                    },
+                }
+            },
+            "models": {
+                "llama2": {
+                    "name": "llama2",
+                    "family": "llama",
+                    "context_window": 4096,
+                    "supports_thinking": False,
+                    "supports_tools": True,
+                    "parameters": {
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "num_predict": 2048,
+                    },
+                    "discovered_at": datetime.now().isoformat(),
+                    "user_overrides": {},
+                }
+            },
+        }
 
     # === Convenience Properties (for code that expects specific names) ===
 
@@ -96,6 +191,39 @@ class Settings(BaseSettings):
     def tool_timeout_seconds(self) -> int:
         """Alias for tool_timeout - matches existing code."""
         return self.tool_timeout
+
+    @property
+    def active_model_name(self) -> str:
+        """Get the active model name."""
+        return getattr(self, "_active_model_name", "llama2")
+
+    @active_model_name.setter
+    def active_model_name(self, value: str) -> None:
+        self._active_model_name = value
+
+    @property
+    def _active_model_config(self) -> Dict[str, Any]:
+        """Get the active model configuration."""
+        return getattr(self, "_active_model_config_dict", {})
+
+    @_active_model_config.setter
+    def _active_model_config(self, value: Dict[str, Any]) -> None:
+        self._active_model_config_dict = value
+
+    @property
+    def model_family(self) -> str:
+        """Get the active model family."""
+        return self._active_model_config.get("family", "llama")
+
+    @property
+    def context_window_limit(self) -> int:
+        """Get the active model's context window."""
+        return self._active_model_config.get("context_window", 8000)
+
+    @property
+    def model_parameters(self) -> Dict[str, Any]:
+        """Get the active model's default parameters."""
+        return self._active_model_config.get("parameters", {})
 
 
 # === Backward compatibility ===

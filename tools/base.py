@@ -33,11 +33,18 @@ class BaseTool(ABC):
         """JSON schema for the tool arguments."""
         pass
 
+    @property
+    def requires_confirmation(self) -> bool:
+        """
+        Whether this tool requires user confirmation before execution.
+        Default is False. Override in subclasses for sensitive operations.
+        """
+        return False
+
     @abstractmethod
     async def run(self, **kwargs) -> Any:
         """The execution logic."""
         pass
-
     def get_json_schema(self) -> Dict[str, Any]:
         """Standardized export for the LLM API."""
         return {

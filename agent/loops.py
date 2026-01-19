@@ -15,10 +15,10 @@ from protocol_monk.agent.structs import (
 from protocol_monk.agent.core.execution import ToolExecutor
 from protocol_monk.agent.core.state_machine import AgentState
 from protocol_monk.tools.registry import ToolRegistry
+from protocol_monk.config.settings import Settings
 
 # Note: BaseProvider import assumed from providers.base (interface)
 # from protocol_monk.providers.base import BaseProvider
-
 
 logger = logging.getLogger("LogicLoops")
 
@@ -26,7 +26,11 @@ logger = logging.getLogger("LogicLoops")
 
 
 async def run_thinking_loop(
-    context_history: List[Any], provider: Any, bus: EventBus, registry: ToolRegistry
+    context_history: List[Any],
+    provider: Any,
+    bus: EventBus,
+    registry: ToolRegistry,
+    settings: Settings,  # NEW: Add settings parameter
 ) -> AgentResponse:
     """
     Consumes ProviderSignals and builds the response.
@@ -39,30 +43,17 @@ async def run_thinking_loop(
 
     # Get tool definitions to send to provider
     tool_definitions = registry.get_openai_tools()
-    # Note: We pass model name from settings/context in real implementation
-    # For now assuming provider knows, or we pass it in arg.
-    # In service.py we usually inject the configured model name.
-    # We'll update signature in next pass if needed, for now we assume provider handles defaults.
-    # BUT loops.py calls provider.stream_chat(messages, model, tools)
-    # We need the model name here.
-    # FIX: For this refactor, we accept it uses defaults or we extract from context if available.
-    # Let's assume 'default' for the call for now to keep signature clean,
-    # but strictly we should pass it.
 
-    # We'll use a placeholder model name for the loop, assuming Service injects it properly
-    # or provider handles it.
-    # Actually, let's just pass "default" and let Settings in Provider handle it?
-    # No, BaseProvider signature requires model_name.
-    # We will pass a dummy string that the provider (if connected to Settings) might override,
-    # or we update the loop signature later.
-
-    model_name = "active_model"  # Placeholder
+    # Use model name and parameters from settings
+    model_name = settings.active_model_name
 
     try:
         async for signal in provider.stream_chat(
-            context_history, model_name, tool_definitions
+            context_history,
+            model_name,
+            tool_definitions,
+            options=settings.model_parameters,  # Pass model-specific params
         ):
-
             if signal.type == "content":
                 full_text += signal.data
                 await bus.emit(EventTypes.STREAM_CHUNK, {"chunk": signal.data})
@@ -75,7 +66,7 @@ async def run_thinking_loop(
                 # For UI compatibility, let's treat it as stream for now but maybe prefixed?
                 # Or better: Just log it for now.
                 logger.debug(f"Thinking: {signal.data}")
-                # Optional: await bus.emit(EventTypes.STREAM_CHUNK, {"chunk": f"<think>{signal.data}</think>"})
+                # Optional: await bus.emit(EventTypes.STREAM_CHUNK, {"chunk": f"<thinking>{signal.data}</thinking>"})
 
             elif signal.type == "tool_call":
                 req: ToolRequest = signal.data
