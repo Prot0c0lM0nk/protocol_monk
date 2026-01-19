@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     system_prompt_path: Path
     log_level: str
     model_family: str = "qwen"
+    ollama_host: str = "http://localhost:11434"
+    ollama_api_key: Optional[str] = None
     context_window_limit: int = 8000
     pruning_threshold: float = 0.8
     tool_timeout: int = 60
