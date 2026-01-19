@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List
-import time
-import uuid
+
+# --- 1. Upstream Events (UI -> Agent) ---
 
 
 @dataclass
@@ -13,6 +13,41 @@ class UserRequest:
     request_id: str
     timestamp: float
     context: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class ConfirmationResponse:
+    """Payload for TOOL_CONFIRMATION_SUBMITTED."""
+
+    tool_call_id: str
+    decision: str  # "approved", "rejected", "modified"
+    timestamp: float
+    modified_parameters: Optional[Dict[str, Any]] = None
+    feedback: Optional[str] = None
+
+
+# --- 2. Downstream Events (Agent -> UI) ---
+
+
+@dataclass
+class AgentStatus:
+    """Payload for STATUS_CHANGED."""
+
+    status: str
+    message: str
+
+
+@dataclass
+class AgentResponse:
+    """Final output from the Thinking Loop."""
+
+    content: str
+    tool_calls: List["ToolRequest"]
+    tokens: int
+    # Note: 'ToolRequest' reference is forward-resolved in Python or using 'from __future__ import annotations'
+
+
+# --- 3. Tool Lifecycle ---
 
 
 @dataclass
@@ -37,9 +72,31 @@ class ToolResult:
     error: Optional[str] = None
 
 
+# --- 4. Context & Config ---
+
+
+@dataclass
+class Message:
+    """Atomic conversation unit."""
+
+    role: str
+    content: str
+    timestamp: float
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ContextStats:
+    """Pruning metrics."""
+
+    total_tokens: int
+    message_count: int
+    loaded_files_count: int
+
+
 @dataclass
 class ModelConfig:
-    """Configuration for a specific model."""
+    """Model definition."""
 
     name: str
     provider: str

@@ -5,7 +5,7 @@ import time
 import os
 from pathlib import Path
 
-# 1. Import Exceptions for safe startup
+# 1. Import Exceptions
 from protocol_monk.exceptions.config import ConfigError
 from protocol_monk.exceptions.base import MonkBaseError
 
@@ -15,17 +15,26 @@ from protocol_monk.config.settings import load_settings
 # 3. Import Protocol Layer
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
-from protocol_monk.protocol.objects import UserRequest
 
-# 4. Import Context Layer
+# FIXED: Import from agent.structs, not protocol.objects
+from protocol_monk.agent.structs import UserRequest
+
+# 4. Import Context & Tools
 from protocol_monk.agent.context.store import ContextStore
 from protocol_monk.agent.context.file_tracker import FileTracker
 from protocol_monk.agent.context.coordinator import ContextCoordinator
+from protocol_monk.tools.registry import ToolRegistry
+
+# Import Tools to Register
+from protocol_monk.tools.file_operations.read_file_tool import ReadFileTool
+from protocol_monk.tools.file_operations.create_file_tool import CreateFileTool
+from protocol_monk.tools.file_operations.append_to_file_tool import AppendToFileTool
+
+# (Import other tools as needed)
 
 # 5. Import Agent Layer
 from protocol_monk.agent.core.service import AgentService
 
-# Configure Logging (Ephemeral Console Log)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -36,73 +45,60 @@ logger = logging.getLogger("Bootstrap")
 
 async def main():
     try:
-        # --- PHASE 1: Configuration (Pydantic V2) ---
         logger.info("Phase 1: Loading Configuration...")
-
-        # We assume we are running from the parent directory of protocol_monk
         app_root = Path(os.getcwd()) / "protocol_monk"
-
-        # Load settings with automatic env var resolution
         settings = load_settings(app_root)
 
-        logger.info(f"Config Loaded. Model: {settings.model_family}")
-        logger.info(f"Context Window: {settings.context_window_limit}")
-        logger.info(f"Pruning Target: {settings.active_model_config['pruning_target']}")
-
-        # --- PHASE 2: Dependency Injection (Wiring) ---
         logger.info("Phase 2: Wiring Components...")
 
         # A. Nervous System
         bus = EventBus()
 
-        # B. Memory Systems (The "Brain")
+        # B. Tools (The Hands)
+        # Initialize Registry and Load Tools
+        registry = ToolRegistry()
+
+        # Register File Ops (Injecting settings so they know the workspace)
+        registry.register(ReadFileTool(settings))
+        registry.register(CreateFileTool(settings))
+        registry.register(AppendToFileTool(settings))
+
+        logger.info(f"Registered Tools: {registry.list_tool_names()}")
+
+        # C. Memory Systems (The Brain)
         context_store = ContextStore()
         file_tracker = FileTracker()
 
-        # C. Coordinator (The Logic)
-        # We inject store and tracker into the coordinator
+        # D. Coordinator
         coordinator = ContextCoordinator(
             store=context_store, tracker=file_tracker, settings=settings
         )
 
-        # D. Agent Service (The Orchestrator)
-        # We inject the Bus and the Coordinator
-        agent_service = AgentService(bus=bus, coordinator=coordinator)
+        # E. Agent Service (The Orchestrator)
+        # NOW: We inject the registry so the Service can find tools
+        agent_service = AgentService(
+            bus=bus, coordinator=coordinator, registry=registry
+        )
 
-        # --- PHASE 3: Startup ---
         logger.info("Phase 3: Starting Services...")
-
-        # Start the Agent (Listeners)
         await agent_service.start()
 
-        # --- PHASE 4: Simulation (Proof of Life) ---
         logger.info("Phase 4: Simulating User Input...")
-
-        # Create a valid event payload
         simulated_input = UserRequest(
-            text="Hello, Monk! This is a test of the event system.",
+            text="Create a file named hello.txt with the content 'Hello World'",
             source="simulation",
             request_id=str(uuid.uuid4()),
             timestamp=time.time(),
         )
 
-        # Emit the event!
-        # The AgentService is listening for this specific event type.
         await bus.emit(EventTypes.USER_INPUT_SUBMITTED, simulated_input)
 
-        # Give the async loop a moment to process the event
-        await asyncio.sleep(0.5)
-
+        # Keep alive briefly to allow processing
+        await asyncio.sleep(2.0)
         logger.info("Simulation Complete. Shutting down.")
 
-    except ConfigError as e:
-        logger.critical(f"Startup Failed (Configuration): {e}")
-        exit(1)
-    except MonkBaseError as e:
-        logger.critical(f"Startup Failed (Core Logic): {e}")
-        exit(1)
     except Exception as e:
-        logger.critical(f"Startup Failed (Unexpected): {e}", exc_info=True)
+        logger.critical(f"Startup Failed: {e}", exc_info=True)
         exit(1)
 
 

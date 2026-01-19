@@ -3,9 +3,10 @@ from typing import Optional
 
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
-from protocol_monk.protocol.objects import UserRequest, AgentStatus
+from protocol_monk.agent.structs import UserRequest, AgentStatus
 from protocol_monk.agent.context.coordinator import ContextCoordinator
 from protocol_monk.agent.core.state_machine import StateMachine, AgentState
+from protocol_monk.tools.registry import ToolRegistry
 
 
 class AgentService:
@@ -19,9 +20,12 @@ class AgentService:
     4. (Future) Call LLM.
     """
 
-    def __init__(self, bus: EventBus, coordinator: ContextCoordinator):
+    def __init__(
+        self, bus: EventBus, coordinator: ContextCoordinator, registry: ToolRegistry
+    ):
         self._bus = bus
         self._context = coordinator
+        self._registry = registry
         self._state = StateMachine()
         self._logger = logging.getLogger("AgentService")
 
