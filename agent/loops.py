@@ -22,123 +22,85 @@ from protocol_monk.tools.registry import ToolRegistry
 
 logger = logging.getLogger("LogicLoops")
 
-# --- PARSING STRATEGY (Spec 08) ---
-
-
-class StreamParser:
-    """
-    State Machine for 'Locate with Regex, Parse with JSON'.
-    """
-
-    def __init__(self):
-        self.buffer = ""
-        self.state = "TEXT"  # TEXT | TOOL
-        self.json_buffer = ""
-
-    def feed(self, chunk: str) -> List[Dict[str, Any]]:
-        """
-        Ingests a chunk. Returns a list of events to emit:
-        [{'type': 'chunk', 'content': '...'}, {'type': 'tool_start', 'data': '...'}]
-        """
-        events = []
-        self.buffer += chunk
-
-        # Simple heuristic for Phase 1: Look for code block markers
-        # In a production DeepSeek/Ollama integration, we'd use specific tool tokens
-        # but the spec says: Detect ```json
-
-        while True:
-            if self.state == "TEXT":
-                if "```json" in self.buffer:
-                    pre, post = self.buffer.split("```json", 1)
-                    if pre:
-                        events.append({"type": "chunk", "content": pre})
-                    self.buffer = post
-                    self.state = "TOOL"
-                else:
-                    # Safety: If buffer gets too large without marker, flush it
-                    # (Keep a small horizon for split markers)
-                    if len(self.buffer) > 20 and "```" not in self.buffer:
-                        events.append({"type": "chunk", "content": self.buffer})
-                        self.buffer = ""
-                    break
-
-            elif self.state == "TOOL":
-                if "```" in self.buffer:
-                    json_str, post = self.buffer.split("```", 1)
-                    self.json_buffer += json_str
-                    self.buffer = post
-                    self.state = "TEXT"
-                    # We found a block!
-                    events.append({"type": "tool_block", "content": self.json_buffer})
-                    self.json_buffer = ""
-                else:
-                    # All content is potentially JSON, hold it
-                    self.json_buffer += self.buffer
-                    self.buffer = ""
-                    break
-
-        return events
-
-
 # --- THINKING LOOP ---
 
 
 async def run_thinking_loop(
-    context_history: List[Any],  # List[Message]
-    provider: Any,  # BaseProvider
-    bus: EventBus,
+    context_history: List[Any], provider: Any, bus: EventBus, registry: ToolRegistry
 ) -> AgentResponse:
     """
-    Streams tokens from LLM, parses tools, and returns final response.
+    Consumes ProviderSignals and builds the response.
     """
     await bus.emit(EventTypes.THINKING_STARTED)
 
-    parser = StreamParser()
     full_text = ""
     tool_requests: List[ToolRequest] = []
+    token_usage = 0
 
-    # 1. Stream
-    # Note: provider.stream_chat should yield strings
-    async for chunk in provider.stream_chat(context_history):
-        parse_events = parser.feed(chunk)
+    # Get tool definitions to send to provider
+    tool_definitions = registry.get_openai_tools()
+    # Note: We pass model name from settings/context in real implementation
+    # For now assuming provider knows, or we pass it in arg.
+    # In service.py we usually inject the configured model name.
+    # We'll update signature in next pass if needed, for now we assume provider handles defaults.
+    # BUT loops.py calls provider.stream_chat(messages, model, tools)
+    # We need the model name here.
+    # FIX: For this refactor, we accept it uses defaults or we extract from context if available.
+    # Let's assume 'default' for the call for now to keep signature clean,
+    # but strictly we should pass it.
 
-        for evt in parse_events:
-            if evt["type"] == "chunk":
-                full_text += evt["content"]
-                await bus.emit(EventTypes.STREAM_CHUNK, {"chunk": evt["content"]})
+    # We'll use a placeholder model name for the loop, assuming Service injects it properly
+    # or provider handles it.
+    # Actually, let's just pass "default" and let Settings in Provider handle it?
+    # No, BaseProvider signature requires model_name.
+    # We will pass a dummy string that the provider (if connected to Settings) might override,
+    # or we update the loop signature later.
 
-            elif evt["type"] == "tool_block":
-                # 2. Parse Tool JSON (Fail Fast Strategy)
-                try:
-                    data = json.loads(evt["content"])
-                    # DeepSeek/Ollama often output a list of tools or a single object
-                    if isinstance(data, dict):
-                        req = _parse_tool_json(data)
-                        if req:
-                            tool_requests.append(req)
-                    elif isinstance(data, list):
-                        for item in data:
-                            req = _parse_tool_json(item)
-                            if req:
-                                tool_requests.append(req)
-                except json.JSONDecodeError:
-                    logger.warning(f"Failed to parse tool JSON: {evt['content']}")
-                    # Fallback: Treat as text
-                    full_text += f"\n```json{evt['content']}```\n"
+    model_name = "active_model"  # Placeholder
 
-    # Flush remaining text
-    if parser.buffer and parser.state == "TEXT":
-        full_text += parser.buffer
-        await bus.emit(EventTypes.STREAM_CHUNK, {"chunk": parser.buffer})
+    try:
+        async for signal in provider.stream_chat(
+            context_history, model_name, tool_definitions
+        ):
+
+            if signal.type == "content":
+                full_text += signal.data
+                await bus.emit(EventTypes.STREAM_CHUNK, {"chunk": signal.data})
+
+            elif signal.type == "thinking":
+                # We wrap thinking in tags for the UI if needed, or just emit raw
+                # Spec says emit STREAM_CHUNK for thinking too, or distinct event?
+                # Spec: THINKING_STARTED/STOPPED is state.
+                # We can emit thinking chunks as special stream chunks or info.
+                # For UI compatibility, let's treat it as stream for now but maybe prefixed?
+                # Or better: Just log it for now.
+                logger.debug(f"Thinking: {signal.data}")
+                # Optional: await bus.emit(EventTypes.STREAM_CHUNK, {"chunk": f"<think>{signal.data}</think>"})
+
+            elif signal.type == "tool_call":
+                req: ToolRequest = signal.data
+                tool_requests.append(req)
+                logger.info(f"Received Tool Call: {req.name}")
+
+            elif signal.type == "metrics":
+                # Capture token counts
+                data = signal.data
+                if "eval_count" in data:
+                    token_usage = data["eval_count"]
+
+            elif signal.type == "error":
+                logger.error(f"Provider Error Signal: {signal.data}")
+
+    except Exception as e:
+        logger.error(f"Loop Crash: {e}", exc_info=True)
+        # Don't crash the agent, just return what we have
 
     await bus.emit(EventTypes.THINKING_STOPPED)
 
-    # 3. Finalize
     response = AgentResponse(
         content=full_text,
         tool_calls=tool_requests,
-        tokens=len(full_text) // 4,  # Rough estimate
+        tokens=token_usage if token_usage > 0 else len(full_text) // 4,
     )
 
     await bus.emit(

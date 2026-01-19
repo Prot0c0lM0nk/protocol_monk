@@ -1,6 +1,26 @@
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List
 
+# --- 0. Provider Signals (The New Stream Contract) ---
+
+
+@dataclass
+class ProviderSignal:
+    """
+    A unified signal from the AI Provider.
+    Replaces raw string streaming.
+    """
+
+    type: str  # "content", "tool_call", "thinking", "metrics", "error"
+    data: Any  # str, ToolRequest, or Dict
+
+    # Validation: type must be one of the known constants
+    # content -> str
+    # thinking -> str
+    # tool_call -> ToolRequest (or dict to be converted)
+    # metrics -> Dict
+
+
 # --- 1. Upstream Events (UI -> Agent) ---
 
 
@@ -44,7 +64,6 @@ class AgentResponse:
     content: str
     tool_calls: List["ToolRequest"]
     tokens: int
-    # Note: 'ToolRequest' reference is forward-resolved in Python or using 'from __future__ import annotations'
 
 
 # --- 3. Tool Lifecycle ---
