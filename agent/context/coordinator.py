@@ -23,8 +23,8 @@ class ContextCoordinator:
 
         # Use computed values from settings
         self._limit = settings.context_window_limit
-        self._pruning_target = settings.active_model_config["pruning_target"]
-
+        self._pruning_target = int(self._limit * settings.pruning_threshold)
+        
         # Initialize token estimator with model family
         from protocol_monk.utils.token_estimation import SmartTokenEstimator
 
@@ -72,8 +72,8 @@ class ContextCoordinator:
 
         if logic.should_prune(stats, self._limit):
             # Perform Pruning
-            # We target 80% of limit to give breathing room
-            target = int(self._limit * 0.8)
+            # Use the pre-calculated pruning target (80% of limit by default)
+            target = self._pruning_target
             new_history = logic.prune_messages(history, target)
 
             # Update Store

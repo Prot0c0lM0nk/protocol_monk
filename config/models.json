@@ -1,0 +1,693 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-01-19T19:10:55.609247",
+  "default_model": "ministral-3:8b-instruct-2512-q4_K_M",
+  "families": {
+    "qwen": {
+      "supports_thinking": true,
+      "supports_tools": true,
+      "avg_chars_per_token": 3.8,
+      "default_params": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      }
+    },
+    "mistral": {
+      "supports_thinking": false,
+      "supports_tools": true,
+      "avg_chars_per_token": 4.0,
+      "default_params": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "num_predict": 8192
+      }
+    },
+    "llama": {
+      "supports_thinking": false,
+      "supports_tools": true,
+      "avg_chars_per_token": 4.2,
+      "default_params": {
+        "temperature": 0.8,
+        "top_p": 0.9,
+        "num_predict": 2048
+      }
+    },
+    "deepseek": {
+      "supports_thinking": true,
+      "supports_tools": true,
+      "avg_chars_per_token": 3.8,
+      "default_params": {
+        "temperature": 0.6,
+        "top_p": 0.9,
+        "num_predict": 4096
+      }
+    },
+    "gemma": {
+      "supports_thinking": false,
+      "supports_tools": true,
+      "avg_chars_per_token": 4.0,
+      "default_params": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 2048
+      }
+    },
+    "phi": {
+      "supports_thinking": false,
+      "supports_tools": true,
+      "avg_chars_per_token": 4.0,
+      "default_params": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 2048
+      }
+    },
+    "glm": {
+      "supports_thinking": false,
+      "supports_tools": true,
+      "avg_chars_per_token": 4.0,
+      "default_params": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 8192
+      }
+    },
+    "gptoss": {
+      "supports_thinking": false,
+      "supports_tools": true,
+      "avg_chars_per_token": 4.0,
+      "default_params": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      }
+    },
+    "minimax": {
+      "supports_thinking": false,
+      "supports_tools": true,
+      "avg_chars_per_token": 4.0,
+      "default_params": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      }
+    },
+    "gemini": {
+      "supports_thinking": false,
+      "supports_tools": true,
+      "avg_chars_per_token": 4.0,
+      "default_params": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 8192
+      }
+    },
+    "nemotron": {
+      "supports_thinking": false,
+      "supports_tools": true,
+      "avg_chars_per_token": 4.0,
+      "default_params": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      }
+    }
+  },
+  "models": {
+    "ministral-3:8b-instruct-2512-q4_K_M": {
+      "name": "ministral-3:8b-instruct-2512-q4_K_M",
+      "family": "mistral",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.15,
+        "top_p": 0.95,
+        "num_predict": 8192
+      },
+      "discovered_at": "2026-01-19T19:10:54.599874",
+      "user_overrides": {}
+    },
+    "rnj-1:8b-instruct-q4_K_M": {
+      "name": "rnj-1:8b-instruct-q4_K_M",
+      "family": "gemma",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "num_predict": 2048
+      },
+      "discovered_at": "2026-01-19T19:10:54.669579",
+      "user_overrides": {}
+    },
+    "minimax-m2.1:cloud": {
+      "name": "minimax-m2.1:cloud",
+      "family": "minimax",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:54.671536",
+      "user_overrides": {}
+    },
+    "glm-4.7:cloud": {
+      "name": "glm-4.7:cloud",
+      "family": "glm",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 8192
+      },
+      "discovered_at": "2026-01-19T19:10:54.673322",
+      "user_overrides": {}
+    },
+    "gemma3:27b-cloud": {
+      "name": "gemma3:27b-cloud",
+      "family": "gemma",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 2048
+      },
+      "discovered_at": "2026-01-19T19:10:54.674805",
+      "user_overrides": {}
+    },
+    "gemma3:12b-cloud": {
+      "name": "gemma3:12b-cloud",
+      "family": "gemma",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 2048
+      },
+      "discovered_at": "2026-01-19T19:10:54.676724",
+      "user_overrides": {}
+    },
+    "gemma3:4b-cloud": {
+      "name": "gemma3:4b-cloud",
+      "family": "gemma",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 2048
+      },
+      "discovered_at": "2026-01-19T19:10:54.678645",
+      "user_overrides": {}
+    },
+    "gemini-3-pro-preview:latest": {
+      "name": "gemini-3-pro-preview:latest",
+      "family": "gemini",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 8192
+      },
+      "discovered_at": "2026-01-19T19:10:54.680718",
+      "user_overrides": {}
+    },
+    "functiongemma:270m-it-fp16": {
+      "name": "functiongemma:270m-it-fp16",
+      "family": "gemma",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "num_predict": 2048
+      },
+      "discovered_at": "2026-01-19T19:10:54.815578",
+      "user_overrides": {}
+    },
+    "devstral-small-2:24b-cloud": {
+      "name": "devstral-small-2:24b-cloud",
+      "family": "mistral",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "num_predict": 8192
+      },
+      "discovered_at": "2026-01-19T19:10:54.818767",
+      "user_overrides": {}
+    },
+    "nemotron-3-nano:30b-cloud": {
+      "name": "nemotron-3-nano:30b-cloud",
+      "family": "nemotron",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:54.821165",
+      "user_overrides": {}
+    },
+    "gemini-3-flash-preview:cloud": {
+      "name": "gemini-3-flash-preview:cloud",
+      "family": "gemini",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 8192
+      },
+      "discovered_at": "2026-01-19T19:10:54.823755",
+      "user_overrides": {}
+    },
+    "devstral-2:123b-cloud": {
+      "name": "devstral-2:123b-cloud",
+      "family": "mistral",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "num_predict": 8192
+      },
+      "discovered_at": "2026-01-19T19:10:54.826504",
+      "user_overrides": {}
+    },
+    "rnj-1:8b-cloud": {
+      "name": "rnj-1:8b-cloud",
+      "family": "gemma",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 2048
+      },
+      "discovered_at": "2026-01-19T19:10:54.829053",
+      "user_overrides": {}
+    },
+    "qwen3-next:80b-cloud": {
+      "name": "qwen3-next:80b-cloud",
+      "family": "qwen",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:54.831547",
+      "user_overrides": {}
+    },
+    "deepseek-v3.2:cloud": {
+      "name": "deepseek-v3.2:cloud",
+      "family": "deepseek",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.6,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:54.834213",
+      "user_overrides": {}
+    },
+    "mistral-large-3:675b-cloud": {
+      "name": "mistral-large-3:675b-cloud",
+      "family": "mistral",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "num_predict": 8192
+      },
+      "discovered_at": "2026-01-19T19:10:54.836832",
+      "user_overrides": {}
+    },
+    "ministral-3:14b-cloud": {
+      "name": "ministral-3:14b-cloud",
+      "family": "mistral",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "num_predict": 8192
+      },
+      "discovered_at": "2026-01-19T19:10:54.839474",
+      "user_overrides": {}
+    },
+    "ministral-3:8b-cloud": {
+      "name": "ministral-3:8b-cloud",
+      "family": "mistral",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "num_predict": 8192
+      },
+      "discovered_at": "2026-01-19T19:10:54.841587",
+      "user_overrides": {}
+    },
+    "ministral-3:3b-cloud": {
+      "name": "ministral-3:3b-cloud",
+      "family": "mistral",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "num_predict": 8192
+      },
+      "discovered_at": "2026-01-19T19:10:54.843975",
+      "user_overrides": {}
+    },
+    "qwen3-embedding:4b-q8_0": {
+      "name": "qwen3-embedding:4b-q8_0",
+      "family": "qwen",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:54.898805",
+      "user_overrides": {}
+    },
+    "qwen3-embedding:0.6b-fp16": {
+      "name": "qwen3-embedding:0.6b-fp16",
+      "family": "qwen",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:54.952698",
+      "user_overrides": {}
+    },
+    "llama3.2:1b-instruct-fp16": {
+      "name": "llama3.2:1b-instruct-fp16",
+      "family": "llama",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.8,
+        "top_p": 0.9,
+        "num_predict": 2048
+      },
+      "discovered_at": "2026-01-19T19:10:55.028700",
+      "user_overrides": {}
+    },
+    "llama3.2:3b-instruct-q8_0": {
+      "name": "llama3.2:3b-instruct-q8_0",
+      "family": "llama",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.8,
+        "top_p": 0.9,
+        "num_predict": 2048
+      },
+      "discovered_at": "2026-01-19T19:10:55.092669",
+      "user_overrides": {}
+    },
+    "gemma3:270m-it-bf16": {
+      "name": "gemma3:270m-it-bf16",
+      "family": "gemma",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "num_predict": 2048
+      },
+      "discovered_at": "2026-01-19T19:10:55.162105",
+      "user_overrides": {}
+    },
+    "gemma3:1b-it-q8_0": {
+      "name": "gemma3:1b-it-q8_0",
+      "family": "gemma",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "num_predict": 2048
+      },
+      "discovered_at": "2026-01-19T19:10:55.295618",
+      "user_overrides": {}
+    },
+    "qwen3:0.6b-fp16": {
+      "name": "qwen3:0.6b-fp16",
+      "family": "qwen",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.348660",
+      "user_overrides": {}
+    },
+    "qwen3:1.7b-q8_0": {
+      "name": "qwen3:1.7b-q8_0",
+      "family": "qwen",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.401511",
+      "user_overrides": {}
+    },
+    "qwen3:4b-instruct-2507-q4_K_M": {
+      "name": "qwen3:4b-instruct-2507-q4_K_M",
+      "family": "qwen",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.456633",
+      "user_overrides": {}
+    },
+    "qwen3-vl:2b-instruct-q8_0": {
+      "name": "qwen3-vl:2b-instruct-q8_0",
+      "family": "qwen",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.520640",
+      "user_overrides": {}
+    },
+    "qwen3-vl:4b-instruct-q4_K_M": {
+      "name": "qwen3-vl:4b-instruct-q4_K_M",
+      "family": "qwen",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.584401",
+      "user_overrides": {}
+    },
+    "cogito-2.1:671b-cloud": {
+      "name": "cogito-2.1:671b-cloud",
+      "family": "deepseek",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.6,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.586822",
+      "user_overrides": {}
+    },
+    "minimax-m2:cloud": {
+      "name": "minimax-m2:cloud",
+      "family": "minimax",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.589215",
+      "user_overrides": {}
+    },
+    "kimi-k2-thinking:cloud": {
+      "name": "kimi-k2-thinking:cloud",
+      "family": "deepseek",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.6,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.591660",
+      "user_overrides": {}
+    },
+    "glm-4.6:cloud": {
+      "name": "glm-4.6:cloud",
+      "family": "glm",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 8192
+      },
+      "discovered_at": "2026-01-19T19:10:55.594129",
+      "user_overrides": {}
+    },
+    "qwen3-vl:235b-cloud": {
+      "name": "qwen3-vl:235b-cloud",
+      "family": "qwen",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.596643",
+      "user_overrides": {}
+    },
+    "kimi-k2:1t-cloud": {
+      "name": "kimi-k2:1t-cloud",
+      "family": "deepseek",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.6,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.599238",
+      "user_overrides": {}
+    },
+    "gpt-oss:120b-cloud": {
+      "name": "gpt-oss:120b-cloud",
+      "family": "gptoss",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.601722",
+      "user_overrides": {}
+    },
+    "gpt-oss:20b-cloud": {
+      "name": "gpt-oss:20b-cloud",
+      "family": "gptoss",
+      "context_window": 8192,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.604179",
+      "user_overrides": {}
+    },
+    "deepseek-v3.1:671b-cloud": {
+      "name": "deepseek-v3.1:671b-cloud",
+      "family": "deepseek",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.6,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.606712",
+      "user_overrides": {}
+    },
+    "qwen3-coder:480b-cloud": {
+      "name": "qwen3-coder:480b-cloud",
+      "family": "qwen",
+      "context_window": 8192,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "num_predict": 4096
+      },
+      "discovered_at": "2026-01-19T19:10:55.609233",
+      "user_overrides": {}
+    }
+  }
+}

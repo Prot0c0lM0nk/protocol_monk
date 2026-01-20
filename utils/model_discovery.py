@@ -32,13 +32,17 @@ class ModelDiscovery:
     # Family detection patterns
     FAMILY_PATTERNS = {
         "qwen": re.compile(r"qwen", re.IGNORECASE),
-        "mistral": re.compile(r"mistral|ministral", re.IGNORECASE),
+        "mistral": re.compile(r"mistral|ministral|devstral", re.IGNORECASE),
         "llama": re.compile(r"llama", re.IGNORECASE),
-        "gemma": re.compile(r"gemma", re.IGNORECASE),
-        "deepseek": re.compile(r"deepseek", re.IGNORECASE),
+        "gemma": re.compile(r"gemma|rnj", re.IGNORECASE),  # rnj-1 is gemma3
+        "deepseek": re.compile(r"deepseek|kimi|cogito", re.IGNORECASE),  # kimi/cogito are deepseek2
         "phi": re.compile(r"phi", re.IGNORECASE),
+        "glm": re.compile(r"glm", re.IGNORECASE),
+        "gptoss": re.compile(r"gpt-oss", re.IGNORECASE),
+        "minimax": re.compile(r"minimax", re.IGNORECASE),
+        "gemini": re.compile(r"gemini", re.IGNORECASE),
+        "nemotron": re.compile(r"nemotron", re.IGNORECASE),
     }
-
     # Capability detection from Modelfile
     PARAMETER_PATTERNS = {
         "context_window": re.compile(r"num_ctx\s+(\d+)"),
@@ -107,6 +111,56 @@ class ModelDiscovery:
                 "temperature": 0.7,
                 "top_p": 0.9,
                 "num_predict": 2048,
+            },
+        },
+        "glm": {
+            "supports_thinking": False,
+            "supports_tools": True,
+            "avg_chars_per_token": 4.0,
+            "default_params": {
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "num_predict": 8192,
+            },
+        },
+        "gptoss": {
+            "supports_thinking": False,
+            "supports_tools": True,
+            "avg_chars_per_token": 4.0,
+            "default_params": {
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "num_predict": 4096,
+            },
+        },
+        "minimax": {
+            "supports_thinking": False,
+            "supports_tools": True,
+            "avg_chars_per_token": 4.0,
+            "default_params": {
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "num_predict": 4096,
+            },
+        },
+        "gemini": {
+            "supports_thinking": False,
+            "supports_tools": True,
+            "avg_chars_per_token": 4.0,
+            "default_params": {
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "num_predict": 8192,
+            },
+        },
+        "nemotron": {
+            "supports_thinking": False,
+            "supports_tools": True,
+            "avg_chars_per_token": 4.0,
+            "default_params": {
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "num_predict": 4096,
             },
         },
     }
@@ -183,11 +237,12 @@ class ModelDiscovery:
         except Exception:
             return False
 
-    async def _query_ollama_models(self) -> List[Dict[str, Any]]:
+    async def _query_ollama_models(self) -> List[Any]:
         """Query Ollama for list of available models."""
         try:
             response = await self._client.list()
-            return response.get("models", [])
+            # SDK returns ListResponse object with .models attribute (Pydantic model)
+            return response.models
         except Exception as e:
             logger.error(f"Failed to query Ollama: {e}")
             raise
@@ -204,7 +259,8 @@ class ModelDiscovery:
 
         # Process each model
         for ollama_model in ollama_models:
-            model_name = ollama_model["name"]
+            # SDK returns Pydantic model objects, not dicts
+            model_name = ollama_model.model
             logger.debug(f"Processing model: {model_name}")
 
             # Get detailed info from Ollama
