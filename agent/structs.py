@@ -121,3 +121,33 @@ class ModelConfig:
     provider: str
     context_window: int
     cost_per_token: Optional[float] = None
+
+
+# --- 5. Setup & Discovery Events ---
+
+@dataclass
+class SetupRequiredPayload:
+    """Payload for SETUP_REQUIRED event."""
+    missing_files: List[str]
+
+
+@dataclass
+class LocalContextPromptPayload:
+    """Payload for LOCAL_CONTEXT_PROMPT event."""
+    model_name: str
+    default_suggestion: int
+    family: str
+
+
+@dataclass
+class DiscoveryCompletePayload:
+    """Payload for DISCOVERY_COMPLETE event."""
+    models_discovered: int
+    active_model: str
+
+
+@dataclass
+class MissingModelDataPayload:
+    """Payload for MISSING_MODEL_DATA event."""
+    model_name: str
+    error_details: str

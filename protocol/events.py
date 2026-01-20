@@ -41,3 +41,10 @@ class EventTypes(str, Enum):
     # 6. Context Events
     CONTEXT_OVERFLOW = "context_overflow"
     TASK_COMPLETE = "task_complete"
+
+    # 7. Setup & Discovery Events
+    SETUP_REQUIRED = "setup_required"
+    LOCAL_CONTEXT_PROMPT = "local_context_prompt"
+    SETUP_COMPLETE = "setup_complete"
+    MISSING_MODEL_DATA = "missing_model_data"
+    DISCOVERY_COMPLETE = "discovery_complete"
