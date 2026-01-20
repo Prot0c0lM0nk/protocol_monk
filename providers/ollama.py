@@ -42,7 +42,7 @@ class OllamaProvider(BaseProvider):
         model_name: str,
         tools: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncIterator[ProviderSignal]:
-
+        
         # 1. Prepare Payload
         ollama_messages = [
             {"role": m.role, "content": m.content, "images": m.metadata.get("images")}
@@ -50,35 +50,21 @@ class OllamaProvider(BaseProvider):
         ]
 
         try:
-            # 2. Call SDK
+            # 2. Call SDK with streaming
             stream = await self.client.chat(
                 model=model_name,
                 messages=ollama_messages,
                 tools=tools,
                 stream=True,
-                options={"num_predict": -1},
             )
-
-            # 3. Map Stream
+            
+            # 3. Process the streaming response
             async for chunk in stream:
-                # A. Metrics (Done)
-                if chunk.done:
-                    metrics = {
-                        "total_duration": chunk.total_duration,
-                        "load_duration": chunk.load_duration,
-                        "prompt_eval_count": chunk.prompt_eval_count,
-                        "eval_count": chunk.eval_count,
-                    }
-                    yield ProviderSignal(type="metrics", data=metrics)
-                    continue
-
-                # B. Thinking (Reasoning Trace)
-                if hasattr(chunk.message, "thinking") and chunk.message.thinking:
-                    yield ProviderSignal(type="thinking", data=chunk.message.thinking)
-
-                # C. Tool Calls
-                # Ollama SDK aggregates tools in the final message or streams them.
-                # If we see tool_calls, we assume they are fully formed objects in that chunk
+                # Handle content chunks
+                if chunk.message.content:
+                    yield ProviderSignal(type="content", data=chunk.message.content)
+                
+                # Handle tool calls when they appear
                 if chunk.message.tool_calls:
                     for tc in chunk.message.tool_calls:
                         # Convert Ollama Tool -> Monk ToolRequest
@@ -91,10 +77,16 @@ class OllamaProvider(BaseProvider):
                             requires_confirmation=False,  # Will be checked by registry
                         )
                         yield ProviderSignal(type="tool_call", data=req)
-
-                # D. Content (Standard Text)
-                if chunk.message.content:
-                    yield ProviderSignal(type="content", data=chunk.message.content)
+                        
+                # Handle final metrics when done
+                if chunk.done:
+                    metrics = {
+                        "total_duration": chunk.total_duration,
+                        "load_duration": chunk.load_duration,
+                        "prompt_eval_count": chunk.prompt_eval_count,
+                        "eval_count": chunk.eval_count,
+                    }
+                    yield ProviderSignal(type="metrics", data=metrics)
 
         except Exception as e:
             logger.error(f"Stream Error: {e}", exc_info=True)
