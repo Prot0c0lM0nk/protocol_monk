@@ -27,7 +27,7 @@ current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from scripts.fetch_model_config import ModelConfigFetcher
+from protocol_monk.scripts.fetch_model_config import ModelConfigFetcher
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
