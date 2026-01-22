@@ -71,6 +71,12 @@ async def main():
         registry.register(AppendToFileTool(settings))
 
         logger.info(f"Registered Tools: {registry.list_tool_names()}")
+
+        # PHASE BOUNDARY: Seal the registry - no more tool registration after this point
+        # This encodes the "initialization vs runtime" contract in the code
+        # Future: If dynamic tool registration is needed, add unseal()/reseal() methods
+        registry.seal()
+
         # C. Memory Systems (The Brain)
         context_store = ContextStore()
         file_tracker = FileTracker()
