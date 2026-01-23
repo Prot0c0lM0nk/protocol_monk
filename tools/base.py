@@ -3,6 +3,7 @@ from typing import Dict, Any
 from protocol_monk.config.settings import Settings
 from protocol_monk.tools.path_validator import PathValidator
 
+
 class BaseTool(ABC):
     """
     Abstract parent for all tools.
@@ -10,6 +11,7 @@ class BaseTool(ABC):
     1. settings: The global config.
     2. path_validator: The security fence for file access.
     """
+
     def __init__(self, settings: Settings):
         self.settings = settings
         # ALIGNMENT FIX: Use 'workspace_root' (from settings.py)
@@ -45,6 +47,7 @@ class BaseTool(ABC):
     async def run(self, **kwargs) -> Any:
         """The execution logic."""
         pass
+
     def get_json_schema(self) -> Dict[str, Any]:
         """Standardized export for the LLM API."""
         return {

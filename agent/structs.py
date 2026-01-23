@@ -125,15 +125,18 @@ class ModelConfig:
 
 # --- 5. Setup & Discovery Events ---
 
+
 @dataclass
 class SetupRequiredPayload:
     """Payload for SETUP_REQUIRED event."""
+
     missing_files: List[str]
 
 
 @dataclass
 class LocalContextPromptPayload:
     """Payload for LOCAL_CONTEXT_PROMPT event."""
+
     model_name: str
     default_suggestion: int
     family: str
@@ -142,6 +145,7 @@ class LocalContextPromptPayload:
 @dataclass
 class DiscoveryCompletePayload:
     """Payload for DISCOVERY_COMPLETE event."""
+
     models_discovered: int
     active_model: str
 
@@ -149,5 +153,6 @@ class DiscoveryCompletePayload:
 @dataclass
 class MissingModelDataPayload:
     """Payload for MISSING_MODEL_DATA event."""
+
     model_name: str
     error_details: str

@@ -117,7 +117,7 @@ class Settings(BaseSettings):
             logger.error(f"Model discovery failed: {e}")
             # Fall back to minimal config
             self.models_config = self._create_fallback_model_config()
-            
+
     def _set_active_model(self, model_alias: str) -> None:
         """Set the active model from alias or name."""
         if not self.models_config:
@@ -137,13 +137,13 @@ class Settings(BaseSettings):
                 self._active_model_config = config
                 self.active_model_name = name
                 return
-            
+
         logger.warning(f"Model '{model_alias}' not found. Using default.")
         default = self.models_config.get("default_model")
         if default and default in models:
             self._active_model_config = models[default]
             self.active_model_name = default
-            
+
     def _create_fallback_model_config(self) -> Dict[str, Any]:
         """Create minimal fallback config if discovery fails."""
         return {
@@ -226,15 +226,15 @@ class Settings(BaseSettings):
         Get the active model's parameters, forcing context limit.
         """
         params = self._active_model_config.get("parameters", {}).copy()
-        
+
         # [FIX] Enforce context limit to prevent RAM explosion
         # If models.json has it, use it. If not, default to 4096 (safe).
         # We explicitly set 'num_ctx' because Ollama defaults to max if missing.
         if "num_ctx" not in params:
-             # Use the context_window_limit property (which pulls from json or defaults to 8000)
-             # But let's be safer and cap it at 4096 for local dev if not explicitly set high
-             params["num_ctx"] = self.context_window_limit
-             
+            # Use the context_window_limit property (which pulls from json or defaults to 8000)
+            # But let's be safer and cap it at 4096 for local dev if not explicitly set high
+            params["num_ctx"] = self.context_window_limit
+
         return params
 
 

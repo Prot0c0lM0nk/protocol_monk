@@ -53,7 +53,7 @@ class EventBus:
         for handler in handlers_snapshot:
             # --- NEW: THE DOUBLE-CHECK ---
             # Before running, we quickly verify the handler is STILL in the live list.
-            # This prevents the "Ghost Notification" if it was unsubscribed 
+            # This prevents the "Ghost Notification" if it was unsubscribed
             # while the previous handler was running.
             async with self._lock:
                 current_list = self._subscribers.get(event_type, [])

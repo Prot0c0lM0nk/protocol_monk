@@ -24,7 +24,7 @@ class ContextCoordinator:
         # Use computed values from settings
         self._limit = settings.context_window_limit
         self._pruning_target = int(self._limit * settings.pruning_threshold)
-        
+
         # Initialize token estimator with model family
         from protocol_monk.utils.token_estimation import SmartTokenEstimator
 
@@ -97,26 +97,26 @@ class ContextCoordinator:
 class ContextStore:
     """
     Passive container for conversation history.
-    
+
     THREAD SAFETY:
     - This class is NOT thread-safe by design
     - It's only accessed from async code (no true parallelism)
     - All mutations happen atomically (no await points between operations)
     - Therefore: No race condition in current architecture
-    
+
     FUTURE CONSIDERATION:
     - If threading is added, this WILL need synchronization
     - If await points are added between mutations, this WILL need locking
     """
-    
+
     def __init__(self):
         self._messages: List[Message] = []
         self._system_prompt: Optional[Message] = None
-    
+
     def replace_history(self, new_history: List[Message]) -> None:
         """
         Replaces entire history (used after pruning).
-        
+
         SAFETY: This runs atomically in async code:
         - No await points between clear and rebuild
         - No other coroutine can interleave

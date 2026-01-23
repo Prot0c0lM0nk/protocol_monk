@@ -59,7 +59,7 @@ async def main():
 
         # A. Nervous System
         bus = EventBus()
-        
+
         # Start the EventLogger
         event_logger = EventLogger(bus)
         await event_logger.start()
@@ -77,31 +77,29 @@ async def main():
 
         # D. Scratch Manager (Cleanup)
         with ScratchManager(Path(os.getcwd())) as scratch_manager:
-            
+
             # E. Memory Systems (The Brain)
             context_store = ContextStore()
             file_tracker = FileTracker()
 
             coordinator = ContextCoordinator(
-                store=context_store, 
-                tracker=file_tracker, 
-                settings=settings
+                store=context_store, tracker=file_tracker, settings=settings
             )
 
             # F. Agent Service (The Orchestrator)
             agent_service = AgentService(
-                bus=bus, 
-                coordinator=coordinator, 
+                bus=bus,
+                coordinator=coordinator,
                 registry=registry,
                 provider=provider,
-                settings=settings
+                settings=settings,
             )
 
             logger.info("Phase 3: Starting Services...")
             await agent_service.start()
 
             logger.info("Phase 4: Simulating User Input...")
-            
+
             # [CHANGED] New Prompt to test Read + Append
             simulated_input = UserRequest(
                 text="Append ' - from Protocol Monk' to the file named hello.txt",

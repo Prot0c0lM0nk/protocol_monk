@@ -45,7 +45,7 @@ class OllamaProvider(BaseProvider):
         tools: Optional[List[Dict[str, Any]]] = None,
         options: Optional[Dict[str, Any]] = None,  # [FIX] Accept options
     ) -> AsyncIterator[ProviderSignal]:
-        
+
         # 1. Prepare Payload
         ollama_messages = [
             {"role": m.role, "content": m.content, "images": m.metadata.get("images")}
@@ -62,13 +62,13 @@ class OllamaProvider(BaseProvider):
                 options=options,  # [FIX] Pass options to SDK
                 stream=True,
             )
-            
+
             # 3. Process the streaming response
             async for chunk in stream:
                 # Handle content chunks
                 if chunk.message.content:
                     yield ProviderSignal(type="content", data=chunk.message.content)
-                
+
                 # Handle tool calls when they appear
                 if chunk.message.tool_calls:
                     for tc in chunk.message.tool_calls:
@@ -80,7 +80,7 @@ class OllamaProvider(BaseProvider):
                             requires_confirmation=False,
                         )
                         yield ProviderSignal(type="tool_call", data=req)
-                        
+
                 # Handle final metrics when done
                 if chunk.done:
                     metrics = {

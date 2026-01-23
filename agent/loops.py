@@ -195,7 +195,9 @@ async def run_action_loop(
 
         # WAIT HERE
         try:
-            decision_payload = await confirmation_future # Waiting for user decision indefinitely is ok.
+            decision_payload = (
+                await confirmation_future
+            )  # Waiting for user decision indefinitely is ok.
         except asyncio.CancelledError:
             return ToolResult(
                 tool_req.name, tool_req.call_id, False, None, 0, "Cancelled"

@@ -28,12 +28,12 @@ class AgentService:
     """
 
     def __init__(
-        self, 
-        bus: EventBus, 
-        coordinator: ContextCoordinator, 
+        self,
+        bus: EventBus,
+        coordinator: ContextCoordinator,
         registry: ToolRegistry,
         provider: Any,
-        settings: Settings
+        settings: Settings,
     ):
         self._bus = bus
         self._context = coordinator
@@ -42,10 +42,10 @@ class AgentService:
         self._settings = settings
         self._state = StateMachine()
         self._logger = logging.getLogger("AgentService")
-        
+
         # [FIX] Initialize the Executor (The Hands)
         self._executor = ToolExecutor(timeout_seconds=settings.tool_timeout)
-        
+
         # We hold the confirmation future here so we can cancel it if needed
         self._current_confirmation: Optional[asyncio.Future] = None
 
@@ -53,7 +53,9 @@ class AgentService:
         """
         Bootstraps the agent listeners.
         """
-        await self._bus.subscribe(EventTypes.USER_INPUT_SUBMITTED, self._handle_user_input)
+        await self._bus.subscribe(
+            EventTypes.USER_INPUT_SUBMITTED, self._handle_user_input
+        )
         self._logger.info("Agent Service started and listening.")
 
     async def _handle_user_input(self, payload: UserRequest) -> None:
@@ -82,19 +84,22 @@ class AgentService:
             # 4. Trigger LLM Thinking Loop (THE BRAIN)
             history = self._context._store.get_full_history()
             self._logger.info("Entering Thinking Loop...")
-            
+
             response = await run_thinking_loop(
                 context_history=history,
                 provider=self._provider,
                 bus=self._bus,
                 registry=self._registry,
-                settings=self._settings
+                settings=self._settings,
             )
 
             # 5. [FIX] Trigger Action Loop (THE HANDS)
             if response.tool_calls:
-                await self._set_status(AgentState.EXECUTING, f"Executing {len(response.tool_calls)} tools...")
-                
+                await self._set_status(
+                    AgentState.EXECUTING,
+                    f"Executing {len(response.tool_calls)} tools...",
+                )
+
                 for tool_req in response.tool_calls:
                     # Execute the tool
                     # Note: If we needed confirmation, we would create a Future here.
@@ -104,9 +109,9 @@ class AgentService:
                         registry=self._registry,
                         bus=self._bus,
                         executor=self._executor,
-                        confirmation_future=None # We will add the UI confirmation bridge later
+                        confirmation_future=None,  # We will add the UI confirmation bridge later
                     )
-                    
+
                     # Log the result to context so the agent knows what happened
                     # (Optional: Add tool output back to conversation history?)
                     # self._context.add_tool_result(...) -> Future enhancement

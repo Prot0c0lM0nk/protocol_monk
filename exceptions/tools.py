@@ -13,11 +13,17 @@ class ToolError(MonkBaseError):
 
     pass
 
+
 class ScratchManagerError(ToolError):
     """
     Raised when the ScratchManager fails to read or write temp files.
     """
+
     def __init__(self, message, operation=None, original_error=None, **kwargs):
-        super().__init__(message, user_hint="I had trouble using my scratchpad memory.", details=kwargs)
+        super().__init__(
+            message,
+            user_hint="I had trouble using my scratchpad memory.",
+            details=kwargs,
+        )
         self.operation = operation
         self.original_error = original_error

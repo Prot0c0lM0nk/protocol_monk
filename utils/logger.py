@@ -10,7 +10,7 @@ from protocol_monk.protocol.events import EventTypes
 class EventLogger:
     """
     The Ephemeral Logger.
-    
+
     Adheres to 11_LOGGING_STRATEGY.md:
     - No persistent files.
     - Aggregates stream chunks to avoid noise.
@@ -20,7 +20,7 @@ class EventLogger:
     def __init__(self, bus: EventBus):
         self._bus = bus
         self._buffer: List[str] = []  # The "Stream Aggregator" buffer
-        
+
         # Setup Python Logger
         self._logger = logging.getLogger("ProtocolMonk")
         self._logger.setLevel(logging.DEBUG)
@@ -34,8 +34,8 @@ class EventLogger:
         # 2. SysLog Handler - Visible in Mac Console.app
         # We try to connect to the standard Mac socket.
         try:
-            syslog = logging.handlers.SysLogHandler(address='/var/run/syslog')
-            syslog.setFormatter(logging.Formatter('%(name)s: %(message)s'))
+            syslog = logging.handlers.SysLogHandler(address="/var/run/syslog")
+            syslog.setFormatter(logging.Formatter("%(name)s: %(message)s"))
             self._logger.addHandler(syslog)
         except Exception:
             # Fallback if SysLog socket isn't available (rare on Mac)
@@ -54,11 +54,13 @@ class EventLogger:
 
         # The "Stream Aggregator" Pattern
         await self._bus.subscribe(EventTypes.STREAM_CHUNK, self._handle_chunk)
-        await self._bus.subscribe(EventTypes.RESPONSE_COMPLETE, self._handle_response_end)
-        
+        await self._bus.subscribe(
+            EventTypes.RESPONSE_COMPLETE, self._handle_response_end
+        )
+
         # Context Visibility (Brain State)
         await self._bus.subscribe(EventTypes.CONTEXT_OVERFLOW, self._log_context_event)
-        
+
         # Note: We can also subscribe to 'USER_INPUT_SUBMITTED' to log what user said
         await self._bus.subscribe(EventTypes.USER_INPUT_SUBMITTED, self._log_user_input)
 
@@ -84,7 +86,7 @@ class EventLogger:
         else:
             status = data.get("status")
             msg = data.get("message")
-        
+
         self._logger.info(f"🔄 STATUS: {status} | {msg}")
 
     async def _log_tool(self, data: Dict[str, Any]):

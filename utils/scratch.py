@@ -144,10 +144,10 @@ class ScratchManager:
     def get_scratch_path(self, scratch_id: str) -> Path:
         """
         Get the full file path for a scratch file.
-        
+
         Args:
             scratch_id: The ID of the scratch file
-            
+
         Returns:
             Path: The full path to the scratch file
         """
