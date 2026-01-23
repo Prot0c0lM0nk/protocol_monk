@@ -1,6 +1,6 @@
 import time
 import uuid
-from typing import List
+from typing import List, Optional
 
 from protocol_monk.config.settings import Settings
 from protocol_monk.exceptions.context import ContextError
@@ -92,3 +92,39 @@ class ContextCoordinator:
             message_count=len(history),
             loaded_files_count=0,
         )
+
+
+class ContextStore:
+    """
+    Passive container for conversation history.
+    
+    THREAD SAFETY:
+    - This class is NOT thread-safe by design
+    - It's only accessed from async code (no true parallelism)
+    - All mutations happen atomically (no await points between operations)
+    - Therefore: No race condition in current architecture
+    
+    FUTURE CONSIDERATION:
+    - If threading is added, this WILL need synchronization
+    - If await points are added between mutations, this WILL need locking
+    """
+    
+    def __init__(self):
+        self._messages: List[Message] = []
+        self._system_prompt: Optional[Message] = None
+    
+    def replace_history(self, new_history: List[Message]) -> None:
+        """
+        Replaces entire history (used after pruning).
+        
+        SAFETY: This runs atomically in async code:
+        - No await points between clear and rebuild
+        - No other coroutine can interleave
+        - GIL ensures atomic list operations
+        """
+        self._messages = []  # ← Atomic
+        for msg in new_history:
+            if msg.role == "system":
+                self._system_prompt = msg
+            else:
+                self._messages.append(msg)  # ← Atomic
