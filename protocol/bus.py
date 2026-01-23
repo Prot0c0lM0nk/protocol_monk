@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import Dict, List, Callable, Any, Awaitable
 
 from protocol_monk.exceptions.bus import EventBusError
@@ -13,41 +14,58 @@ class EventBus:
     Asynchronous Event Bus.
 
     Design Philosophy:
-    - No business logic.
-    - Fail-soft: One crashing listener should not crash the whole bus.
-    - Async/Await: All handlers must be async.
+    - Thread-Safe: Uses locks for subscriber registration.
+    - Snapshot Execution: Iterates over a copy of handlers to allow
+      dynamic subscription changes without crashing.
+    - Sequential Consistency: Handlers run in order to preserve state integrity.
     """
 
     def __init__(self):
+        # - Recommended Fix #1 (Add Lock)
+        self._lock = asyncio.Lock()
         self._subscribers: Dict[EventTypes, List[EventHandler]] = {}
         self._logger = logging.getLogger("EventBus")
 
-    def subscribe(self, event_type: EventTypes, handler: EventHandler) -> None:
+    async def subscribe(self, event_type: EventTypes, handler: EventHandler) -> None:
         """
-        Register a callback for a specific event type.
+        Register a callback for a specific event type safely.
         """
-        if event_type not in self._subscribers:
-            self._subscribers[event_type] = []
-        self._subscribers[event_type].append(handler)
+        # We lock here so two parts of the code can't modify the list at the exact same time
+        async with self._lock:
+            if event_type not in self._subscribers:
+                self._subscribers[event_type] = []
+            self._subscribers[event_type].append(handler)
 
     async def emit(self, event_type: EventTypes, data: Any = None) -> None:
         """
         Emit an event to all subscribers.
-
-        We await handlers sequentially to ensure state consistency (e.g.,
-        context must be updated before the next step runs).
         """
+        # 1. SNAPSHOT PHASE
+        # We verify if subscribers exist without locking first to save time
         if event_type not in self._subscribers:
             return
 
-        for handler in self._subscribers[event_type]:
+        # Lock briefly to copy the list.
+        async with self._lock:
+            handlers_snapshot = list(self._subscribers.get(event_type, []))
+
+        # 2. EXECUTION PHASE
+        for handler in handlers_snapshot:
+            # --- NEW: THE DOUBLE-CHECK ---
+            # Before running, we quickly verify the handler is STILL in the live list.
+            # This prevents the "Ghost Notification" if it was unsubscribed 
+            # while the previous handler was running.
+            async with self._lock:
+                current_list = self._subscribers.get(event_type, [])
+                if handler not in current_list:
+                    continue  # Skip! It was removed.
+            # -----------------------------
+
             try:
+                # We keep this sequential as per your requirement for order.
                 await handler(data)
             except Exception as e:
-                # We log the error but do NOT re-raise it,
-                # ensuring other listeners still receive the event.
+                # Log error but keep the bus alive (Fail-soft)
                 self._logger.error(
                     f"Error in handler for {event_type.value}: {e}", exc_info=True
                 )
-                # Note: Critical system failures should be handled by the AgentService
-                # emitting an ERROR event, not by crashing the bus.
