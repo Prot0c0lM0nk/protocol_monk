@@ -16,6 +16,7 @@ class BaseProvider(ABC):
         messages: List[Message],
         model_name: str,
         tools: Optional[List[Dict[str, Any]]] = None,
+        options: Optional[Dict[str, Any]] = None,  # [FIX] Added options to contract
     ) -> AsyncIterator[ProviderSignal]:
         """
         Stream structured signals from the provider.

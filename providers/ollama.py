@@ -26,6 +26,8 @@ class OllamaProvider(BaseProvider):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
+        # SAFETY NOTE: We create ONE client here and reuse it.
+        # This prevents opening thousands of connections.
         self.client = AsyncClient(host=self.host, headers=headers)
 
     async def validate_connection(self) -> bool:
@@ -41,6 +43,7 @@ class OllamaProvider(BaseProvider):
         messages: List[Message],
         model_name: str,
         tools: Optional[List[Dict[str, Any]]] = None,
+        options: Optional[Dict[str, Any]] = None,  # [FIX] Accept options
     ) -> AsyncIterator[ProviderSignal]:
         
         # 1. Prepare Payload
@@ -51,10 +54,12 @@ class OllamaProvider(BaseProvider):
 
         try:
             # 2. Call SDK with streaming
+            # We pass 'options' (temperature, etc.) directly to Ollama
             stream = await self.client.chat(
                 model=model_name,
                 messages=ollama_messages,
                 tools=tools,
+                options=options,  # [FIX] Pass options to SDK
                 stream=True,
             )
             
@@ -71,10 +76,8 @@ class OllamaProvider(BaseProvider):
                         req = ToolRequest(
                             name=tc.function.name,
                             parameters=tc.function.arguments,
-                            call_id=str(
-                                time.time()
-                            ),  # Ollama doesn't always give IDs in stream
-                            requires_confirmation=False,  # Will be checked by registry
+                            call_id=str(time.time()),
+                            requires_confirmation=False,
                         )
                         yield ProviderSignal(type="tool_call", data=req)
                         

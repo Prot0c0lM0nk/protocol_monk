@@ -31,8 +31,10 @@ from protocol_monk.tools.file_operations.append_to_file_tool import AppendToFile
 # 5. Import Agent Layer
 from protocol_monk.agent.core.service import AgentService
 
-# [FIX] Import the ScratchManager for cleanup
+# 6. Import Utils & Providers [NEW]
 from protocol_monk.utils.scratch import ScratchManager
+from protocol_monk.utils.logger import EventLogger
+from protocol_monk.providers.ollama import OllamaProvider
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,6 +59,10 @@ async def main():
 
         # A. Nervous System
         bus = EventBus()
+        
+        # [NEW] Start the EventLogger so we can see what's happening
+        event_logger = EventLogger(bus)
+        await event_logger.start()
 
         # B. Tools (The Hands)
         registry = ToolRegistry()
@@ -66,26 +72,30 @@ async def main():
         logger.info(f"Registered Tools: {registry.list_tool_names()}")
         registry.seal()
 
-        # [FIX] Initialize ScratchManager with Context Manager (Auto-Cleanup)
-        # We use the current working directory so .scratch appears at the project root
+        # [NEW] C. The Provider (The Model Interface)
+        provider = OllamaProvider(settings)
+
+        # D. Scratch Manager (Cleanup)
         with ScratchManager(Path(os.getcwd())) as scratch_manager:
             
-            # C. Memory Systems (The Brain)
+            # E. Memory Systems (The Brain)
             context_store = ContextStore()
             file_tracker = FileTracker()
 
-            # D. Coordinator
-            # Note: We will eventually pass scratch_manager here so the
-            # coordinator can stage large files!
             coordinator = ContextCoordinator(
                 store=context_store, 
                 tracker=file_tracker, 
                 settings=settings
             )
 
-            # E. Agent Service (The Orchestrator)
+            # F. Agent Service (The Orchestrator)
+            # [FIX] Now injecting 'provider' and 'settings' as required
             agent_service = AgentService(
-                bus=bus, coordinator=coordinator, registry=registry
+                bus=bus, 
+                coordinator=coordinator, 
+                registry=registry,
+                provider=provider,
+                settings=settings
             )
 
             logger.info("Phase 3: Starting Services...")
@@ -101,11 +111,10 @@ async def main():
 
             await bus.emit(EventTypes.USER_INPUT_SUBMITTED, simulated_input)
 
-            # Keep alive briefly to allow processing
-            await asyncio.sleep(2.0)
+            # [FIX] Increased wait time to 15s to give the model time to generate
+            # and the tool time to execute.
+            await asyncio.sleep(15.0)
             logger.info("Simulation Complete. Shutting down.")
-            
-        # <-- implicitly calls scratch_manager.cleanup() here
 
     except Exception as e:
         logger.critical(f"Startup Failed: {e}", exc_info=True)

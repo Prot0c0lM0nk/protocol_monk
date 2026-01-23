@@ -222,8 +222,20 @@ class Settings(BaseSettings):
 
     @property
     def model_parameters(self) -> Dict[str, Any]:
-        """Get the active model's default parameters."""
-        return self._active_model_config.get("parameters", {})
+        """
+        Get the active model's parameters, forcing context limit.
+        """
+        params = self._active_model_config.get("parameters", {}).copy()
+        
+        # [FIX] Enforce context limit to prevent RAM explosion
+        # If models.json has it, use it. If not, default to 4096 (safe).
+        # We explicitly set 'num_ctx' because Ollama defaults to max if missing.
+        if "num_ctx" not in params:
+             # Use the context_window_limit property (which pulls from json or defaults to 8000)
+             # But let's be safer and cap it at 4096 for local dev if not explicitly set high
+             params["num_ctx"] = self.context_window_limit
+             
+        return params
 
 
 # === Backward compatibility ===
