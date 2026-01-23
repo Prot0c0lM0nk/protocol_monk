@@ -4,7 +4,22 @@ from typing import Dict, Set
 class FileTracker:
     """
     Tracks which files are currently loaded in the context.
-    Prevents the agent from re-reading the same file 5 times.
+    Prevents the agent from re-reading the same file multiple times.
+
+    --- ARCHITECTURE NOTE: THREAD SAFETY ---
+    CURRENT STATE (Asyncio):
+    - This class is currently SAFE because it is used in a single-threaded 
+      asyncio event loop and methods contain no `await` points.
+    - Operations like dictionary assignment and deletion are atomic within 
+      the main thread.
+
+    FUTURE WARNING (Multi-threading):
+    - If this application is ever refactored to use standard threading 
+      (e.g., `concurrent.futures.ThreadPoolExecutor` accessing this shared state),
+      THIS CLASS WILL BECOME UNSAFE.
+    - FIX: Add `threading.Lock()` or `asyncio.Lock()` around `self._loaded_files`
+      mutations if concurrent access is introduced.
+    ----------------------------------------
     """
 
     def __init__(self):
