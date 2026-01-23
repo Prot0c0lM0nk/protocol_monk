@@ -31,7 +31,7 @@ from protocol_monk.tools.file_operations.append_to_file_tool import AppendToFile
 # 5. Import Agent Layer
 from protocol_monk.agent.core.service import AgentService
 
-# 6. Import Utils & Providers [NEW]
+# 6. Import Utils & Providers
 from protocol_monk.utils.scratch import ScratchManager
 from protocol_monk.utils.logger import EventLogger
 from protocol_monk.providers.ollama import OllamaProvider
@@ -60,7 +60,7 @@ async def main():
         # A. Nervous System
         bus = EventBus()
         
-        # [NEW] Start the EventLogger so we can see what's happening
+        # Start the EventLogger
         event_logger = EventLogger(bus)
         await event_logger.start()
 
@@ -72,7 +72,7 @@ async def main():
         logger.info(f"Registered Tools: {registry.list_tool_names()}")
         registry.seal()
 
-        # [NEW] C. The Provider (The Model Interface)
+        # C. The Provider (The Model Interface)
         provider = OllamaProvider(settings)
 
         # D. Scratch Manager (Cleanup)
@@ -89,7 +89,6 @@ async def main():
             )
 
             # F. Agent Service (The Orchestrator)
-            # [FIX] Now injecting 'provider' and 'settings' as required
             agent_service = AgentService(
                 bus=bus, 
                 coordinator=coordinator, 
@@ -102,8 +101,10 @@ async def main():
             await agent_service.start()
 
             logger.info("Phase 4: Simulating User Input...")
+            
+            # [CHANGED] New Prompt to test Read + Append
             simulated_input = UserRequest(
-                text="Create a file named hello.txt with the content 'Hello World'",
+                text="Append ' - from Protocol Monk' to the file named hello.txt",
                 source="simulation",
                 request_id=str(uuid.uuid4()),
                 timestamp=time.time(),
@@ -111,8 +112,7 @@ async def main():
 
             await bus.emit(EventTypes.USER_INPUT_SUBMITTED, simulated_input)
 
-            # [FIX] Increased wait time to 15s to give the model time to generate
-            # and the tool time to execute.
+            # Keep alive briefly to allow processing
             await asyncio.sleep(15.0)
             logger.info("Simulation Complete. Shutting down.")
 
