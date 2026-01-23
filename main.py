@@ -15,8 +15,6 @@ from protocol_monk.config.settings import load_settings
 # 3. Import Protocol Layer
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
-
-# FIXED: Import from agent.structs, not protocol.objects
 from protocol_monk.agent.structs import UserRequest
 
 # 4. Import Context & Tools
@@ -25,15 +23,16 @@ from protocol_monk.agent.context.file_tracker import FileTracker
 from protocol_monk.agent.context.coordinator import ContextCoordinator
 from protocol_monk.tools.registry import ToolRegistry
 
-# Import Tools to Register
+# Import Tools
 from protocol_monk.tools.file_operations.read_file_tool import ReadFileTool
 from protocol_monk.tools.file_operations.create_file_tool import CreateFileTool
 from protocol_monk.tools.file_operations.append_to_file_tool import AppendToFileTool
 
-# (Import other tools as needed)
-
 # 5. Import Agent Layer
 from protocol_monk.agent.core.service import AgentService
+
+# [FIX] Import the ScratchManager for cleanup
+from protocol_monk.utils.scratch import ScratchManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,12 +48,10 @@ async def main():
         app_root = Path(os.getcwd()) / "protocol_monk"
         settings = load_settings(app_root)
 
-        # NEW: Initialize model discovery (async)
+        # Initialize model discovery (async)
         await settings.initialize()
 
         logger.info(f"Active model: {settings.active_model_name}")
-        logger.info(f"Model family: {settings.model_family}")
-        logger.info(f"Context window: {settings.context_window_limit}")
 
         logger.info("Phase 2: Wiring Components...")
 
@@ -62,52 +59,53 @@ async def main():
         bus = EventBus()
 
         # B. Tools (The Hands)
-        # Initialize Registry and Load Tools
         registry = ToolRegistry()
-
-        # Register File Ops (Injecting settings so they know the workspace)
         registry.register(ReadFileTool(settings))
         registry.register(CreateFileTool(settings))
         registry.register(AppendToFileTool(settings))
-
         logger.info(f"Registered Tools: {registry.list_tool_names()}")
-
-        # PHASE BOUNDARY: Seal the registry - no more tool registration after this point
-        # This encodes the "initialization vs runtime" contract in the code
-        # Future: If dynamic tool registration is needed, add unseal()/reseal() methods
         registry.seal()
 
-        # C. Memory Systems (The Brain)
-        context_store = ContextStore()
-        file_tracker = FileTracker()
+        # [FIX] Initialize ScratchManager with Context Manager (Auto-Cleanup)
+        # We use the current working directory so .scratch appears at the project root
+        with ScratchManager(Path(os.getcwd())) as scratch_manager:
+            
+            # C. Memory Systems (The Brain)
+            context_store = ContextStore()
+            file_tracker = FileTracker()
 
-        # D. Coordinator
-        coordinator = ContextCoordinator(
-            store=context_store, tracker=file_tracker, settings=settings
-        )
+            # D. Coordinator
+            # Note: We will eventually pass scratch_manager here so the
+            # coordinator can stage large files!
+            coordinator = ContextCoordinator(
+                store=context_store, 
+                tracker=file_tracker, 
+                settings=settings
+            )
 
-        # E. Agent Service (The Orchestrator)
-        # NOW: We inject the registry so the Service can find tools
-        agent_service = AgentService(
-            bus=bus, coordinator=coordinator, registry=registry
-        )
+            # E. Agent Service (The Orchestrator)
+            agent_service = AgentService(
+                bus=bus, coordinator=coordinator, registry=registry
+            )
 
-        logger.info("Phase 3: Starting Services...")
-        await agent_service.start()
+            logger.info("Phase 3: Starting Services...")
+            await agent_service.start()
 
-        logger.info("Phase 4: Simulating User Input...")
-        simulated_input = UserRequest(
-            text="Create a file named hello.txt with the content 'Hello World'",
-            source="simulation",
-            request_id=str(uuid.uuid4()),
-            timestamp=time.time(),
-        )
+            logger.info("Phase 4: Simulating User Input...")
+            simulated_input = UserRequest(
+                text="Create a file named hello.txt with the content 'Hello World'",
+                source="simulation",
+                request_id=str(uuid.uuid4()),
+                timestamp=time.time(),
+            )
 
-        await bus.emit(EventTypes.USER_INPUT_SUBMITTED, simulated_input)
+            await bus.emit(EventTypes.USER_INPUT_SUBMITTED, simulated_input)
 
-        # Keep alive briefly to allow processing
-        await asyncio.sleep(2.0)
-        logger.info("Simulation Complete. Shutting down.")
+            # Keep alive briefly to allow processing
+            await asyncio.sleep(2.0)
+            logger.info("Simulation Complete. Shutting down.")
+            
+        # <-- implicitly calls scratch_manager.cleanup() here
 
     except Exception as e:
         logger.critical(f"Startup Failed: {e}", exc_info=True)

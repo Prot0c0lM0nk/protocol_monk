@@ -27,6 +27,20 @@ class ScratchManager:
         # Ensure directory exists for this session
         self.scratch_dir.mkdir(exist_ok=True)
 
+    def __enter__(self):
+        """Allows use in 'with' statements."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Automatically cleanup when leaving the 'with' block.
+        This runs even if the code crashes or is interrupted.
+        """
+        try:
+            self.cleanup()
+        except Exception as e:
+            self.logger.warning(f"Cleanup on exit failed: {e}")
+
     def cleanup(self):
         """
         Delete all files in the scratch directory.
@@ -126,6 +140,8 @@ class ScratchManager:
                 scratch_id=scratch_id,
                 original_error=e,
             ) from e
+
+    def get_scratch_path(self, scratch_id: str) -> Path:
         """
         Get the full file path for a scratch file.
         
