@@ -5,19 +5,15 @@ import time
 import os
 from pathlib import Path
 
-# 1. Import Exceptions
-from protocol_monk.exceptions.config import ConfigError
-from protocol_monk.exceptions.base import MonkBaseError
-
-# 2. Import Config
+# 1. Import Config
 from protocol_monk.config.settings import load_settings
 
-# 3. Import Protocol Layer
+# 2. Import Protocol Layer
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
 from protocol_monk.agent.structs import UserRequest
 
-# 4. Import Context & Tools
+# 3. Import Context & Tools
 from protocol_monk.agent.context.store import ContextStore
 from protocol_monk.agent.context.file_tracker import FileTracker
 from protocol_monk.agent.context.coordinator import ContextCoordinator
@@ -28,10 +24,10 @@ from protocol_monk.tools.file_operations.read_file_tool import ReadFileTool
 from protocol_monk.tools.file_operations.create_file_tool import CreateFileTool
 from protocol_monk.tools.file_operations.append_to_file_tool import AppendToFileTool
 
-# 5. Import Agent Layer
+# 4. Import Agent Layer
 from protocol_monk.agent.core.service import AgentService
 
-# 6. Import Utils & Providers
+# 5. Import Utils & Providers
 from protocol_monk.utils.scratch import ScratchManager
 from protocol_monk.utils.logger import EventLogger
 from protocol_monk.providers.ollama import OllamaProvider
@@ -45,6 +41,7 @@ logger = logging.getLogger("Bootstrap")
 
 
 async def main():
+    """Main entry point for Protocol Monk."""
     try:
         logger.info("Phase 1: Loading Configuration...")
         app_root = Path(os.getcwd()) / "protocol_monk"
@@ -53,7 +50,8 @@ async def main():
         # Initialize model discovery (async)
         await settings.initialize()
 
-        logger.info(f"Active model: {settings.active_model_name}")
+        # [FIX] Lazy logging
+        logger.info("Active model: %s", settings.active_model_name)
 
         logger.info("Phase 2: Wiring Components...")
 
@@ -69,14 +67,18 @@ async def main():
         registry.register(ReadFileTool(settings))
         registry.register(CreateFileTool(settings))
         registry.register(AppendToFileTool(settings))
-        logger.info(f"Registered Tools: {registry.list_tool_names()}")
+
+        # [FIX] Lazy logging
+        logger.info("Registered Tools: %s", registry.list_tool_names())
         registry.seal()
 
         # C. The Provider (The Model Interface)
         provider = OllamaProvider(settings)
 
         # D. Scratch Manager (Cleanup)
-        with ScratchManager(Path(os.getcwd())) as scratch_manager:
+        # [FIX] Removed unused 'scratch_manager' variable (using _ instead)
+        # unless we pass it to coordinator later.
+        with ScratchManager(Path(os.getcwd())) as _:
 
             # E. Memory Systems (The Brain)
             context_store = ContextStore()
@@ -100,7 +102,6 @@ async def main():
 
             logger.info("Phase 4: Simulating User Input...")
 
-            # [CHANGED] New Prompt to test Read + Append
             simulated_input = UserRequest(
                 text="Append ' - from Protocol Monk' to the file named hello.txt",
                 source="simulation",
@@ -115,7 +116,8 @@ async def main():
             logger.info("Simulation Complete. Shutting down.")
 
     except Exception as e:
-        logger.critical(f"Startup Failed: {e}", exc_info=True)
+        # [FIX] Lazy logging for exceptions
+        logger.critical("Startup Failed: %s", e, exc_info=True)
         exit(1)
 
 
