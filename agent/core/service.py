@@ -33,9 +33,10 @@ class AgentService:
         """
         Bootstraps the agent listeners.
         """
-        # Subscribe to the specific "USER_INPUT_SUBMITTED" event
-        # Note: subscribe is synchronous, so no await here
-        self._bus.subscribe(EventTypes.USER_INPUT_SUBMITTED, self._handle_user_input)
+        # [FIX] Added 'await' because subscribe() now uses a lock for thread safety.
+        # This fixes the RuntimeWarning where the subscription was being ignored.
+        await self._bus.subscribe(EventTypes.USER_INPUT_SUBMITTED, self._handle_user_input)
+        
         self._logger.info("Agent Service started and listening.")
 
     async def _handle_user_input(self, payload: UserRequest) -> None:
@@ -44,7 +45,6 @@ class AgentService:
         """
         try:
             # 1. State: IDLE -> THINKING
-            # MUST AWAIT: This emits an event!
             await self._set_status(AgentState.THINKING, "Processing user input...")
 
             # 2. Logic: Update Context (The "Brain")
@@ -67,12 +67,10 @@ class AgentService:
             # For Phase 1, we just acknowledge and finish.
 
             # 5. State: THINKING -> IDLE
-            # MUST AWAIT: This emits an event!
             await self._set_status(AgentState.IDLE, "Ready")
 
         except Exception as e:
             self._logger.error(f"Error in main loop: {e}", exc_info=True)
-            # MUST AWAIT here too
             await self._set_status(AgentState.ERROR, f"System Error: {str(e)}")
 
     async def _set_status(self, state: AgentState, message: str) -> None:
