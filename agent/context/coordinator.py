@@ -93,6 +93,18 @@ class ContextCoordinator:
             loaded_files_count=0,
         )
 
+    async def reset(self) -> None:
+        """
+        Reset the context by clearing all messages except the system prompt.
+        """
+        # Clear all messages except system prompt
+        self._store._messages.clear()
+
+        # Reset file tracker
+        self._tracker._loaded_files.clear()
+
+        # Note: System prompt remains intact
+
 
 class ContextStore:
     """
