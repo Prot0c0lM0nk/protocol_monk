@@ -3,6 +3,7 @@ ui/plain/interface.py
 """
 
 import asyncio
+import sys
 from typing import Any, Dict, List
 from ui.base import UI, ToolResult
 from agent.events import AgentEvents, get_event_bus
@@ -84,6 +85,11 @@ class PlainUI(UI):
     async def run_loop(self):
         """The main blocking loop for the application."""
         self.running = True
+
+        # Check if we're in a proper terminal
+        if not sys.stdin.isatty():
+            self.renderer.print_warning("Not running in a terminal. Input may not work properly.")
+            self.renderer.print_warning("Please run this application in a terminal emulator.")
         
         # Initial prompt
         # We don't print anything, just wait for input
@@ -119,7 +125,16 @@ class PlainUI(UI):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.renderer.print_error(f"UI Loop Error: {e}")
+                # Check if this is a terminal-related error
+                if "Invalid argument" in str(e) and not sys.stdin.isatty():
+                    self.renderer.print_error(f"UI Error: Not running in a proper terminal. Please run in a terminal emulator.")
+                    self.renderer.print_error(f"Current environment: stdin.isatty() = {sys.stdin.isatty()}")
+                    break
+                else:
+                    self.renderer.print_error(f"UI Loop Error: {e}")
+                    # For terminal errors, give a moment before retrying
+                    import time
+                    time.sleep(0.1)
 
         # Cleanup after loop ends
         await self.stop()

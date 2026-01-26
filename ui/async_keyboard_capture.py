@@ -15,6 +15,8 @@ from typing import AsyncIterator, Optional, Dict, Any, List
 from dataclasses import dataclass
 from enum import Enum
 
+from .terminal_utils import TerminalState
+
 
 class KeyType(Enum):
     """Types of keyboard events."""
@@ -42,9 +44,22 @@ class AsyncKeyboardCapture(ABC):
         self._event_queue = asyncio.Queue()
         self._capture_task: Optional[asyncio.Task] = None
 
+    def _is_terminal(self) -> bool:
+        """Check if we're running in a terminal."""
+        try:
+            # Check if stdin is a tty
+            return sys.stdin.isatty() and sys.stdout.isatty()
+        except:
+            return False
+
     async def start_capture(self) -> None:
         """Start capturing keyboard events."""
         if self._running:
+            return
+
+        # Safety check: Only capture if we're in a terminal
+        if not self._is_terminal():
+            print("Warning: Keyboard capture requested but not in a terminal. Skipping.")
             return
 
         self._running = True
@@ -92,18 +107,22 @@ class LinuxAsyncKeyboardCapture(AsyncKeyboardCapture):
 
     def __init__(self):
         super().__init__()
-        self._old_settings: Optional[termios.struct_termios] = None
+        self._terminal_state = TerminalState()
         self._stdin_fd = sys.stdin.fileno()
 
     async def _capture_loop(self) -> None:
         """Linux capture loop using file descriptor monitoring."""
-        # Save old terminal settings
-        self._old_settings = termios.tcgetattr(self._stdin_fd)
+        # Safety: Only proceed if we have a proper terminal
+        if not self._terminal_state.is_terminal():
+            print("Warning: Linux keyboard capture requested but not in a terminal.")
+            return
+
+        # Enter raw mode safely
+        if not self._terminal_state.enter_raw_mode():
+            print("Warning: Could not enter raw mode for keyboard capture.")
+            return
 
         try:
-            # Set terminal to raw mode
-            tty.setraw(self._stdin_fd)
-
             # Get event loop and add reader
             loop = asyncio.get_event_loop()
             loop.add_reader(self._stdin_fd, self._on_stdin_ready)
@@ -115,15 +134,14 @@ class LinuxAsyncKeyboardCapture(AsyncKeyboardCapture):
         except Exception as e:
             print(f"Error in Linux keyboard capture: {e}")
         finally:
-            # Restore terminal settings
-            if self._old_settings:
-                termios.tcsetattr(self._stdin_fd, termios.TCSADRAIN, self._old_settings)
-
             # Remove reader
             try:
                 loop.remove_reader(self._stdin_fd)
             except:
                 pass
+
+            # Always restore terminal state
+            self._terminal_state.restore_mode()
 
     def _on_stdin_ready(self) -> None:
         """Handle stdin readiness."""

@@ -109,7 +109,7 @@ class BootstrapConfig:
 def bootstrap_application() -> tuple[Path, str, bool]:
     try:
         bootstrap = BootstrapConfig()
-        working_dir, ui_mode = bootstrap.bootstrap()
+        working_dir, ui_mode, disable_async_input = bootstrap.bootstrap()
 
         test_file = working_dir / ".protocol_bootstrap_test"
         try:
@@ -120,7 +120,7 @@ def bootstrap_application() -> tuple[Path, str, bool]:
                 f"Working directory not writable: {working_dir}"
             ) from e
 
-        return working_dir, ui_mode
+        return working_dir, ui_mode, bootstrap.disable_async_input
 
     except Exception as e:
         if isinstance(e, BootstrapError):

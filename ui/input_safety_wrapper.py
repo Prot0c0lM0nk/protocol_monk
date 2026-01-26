@@ -10,6 +10,7 @@ This module provides safety mechanisms that:
 import asyncio
 from typing import Optional, AsyncIterator
 from config.static import settings
+from .async_input_interface import InputEventType
 
 
 class SafeInputManager:
@@ -28,6 +29,14 @@ class SafeInputManager:
         self._traditional_manager = None
         self._using_async = False
 
+    def _is_terminal(self) -> bool:
+        """Check if we're running in a terminal."""
+        try:
+            # Check if stdin is a tty
+            return sys.stdin.isatty() and sys.stdout.isatty()
+        except:
+            return False
+
     def _initialize_managers(self):
         """Initialize both async and traditional managers."""
         from .plain.input import InputManager as PlainInputManager
@@ -38,7 +47,8 @@ class SafeInputManager:
         # Add other UI types as needed
 
         # Initialize async manager only if feature flag is enabled
-        if settings.ui.use_async_input:
+        # AND we're in a terminal (security check)
+        if settings.ui.use_async_input and self._is_terminal():
             try:
                 from .async_input_interface import AsyncInputManager
                 from .plain.async_input import PlainAsyncInput
@@ -51,6 +61,9 @@ class SafeInputManager:
                 # Log error but don't fail - safety first
                 print(f"Warning: Failed to initialize async input: {e}")
                 self._async_manager = None
+        elif settings.ui.use_async_input:
+            print("Warning: Async input requested but not in a terminal. Using traditional input.")
+            self._async_manager = None
 
     async def read_input_safe(self, prompt_text: str = "", is_main_loop: bool = False) -> Optional[str]:
         """
@@ -75,9 +88,9 @@ class SafeInputManager:
 
                 # Read with timeout to prevent blocking
                 async for event in self._async_manager.get_current_events():
-                    if event.event_type == "text_submitted":
+                    if event.event_type == InputEventType.TEXT_SUBMITTED:
                         return event.data
-                    elif event.event_type == "interrupt":
+                    elif event.event_type == InputEventType.INTERRUPT:
                         return None
 
                 # If we get here, no event was received

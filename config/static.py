@@ -488,7 +488,13 @@ class UIConfig:
         if disable_async_input:
             self.use_async_input = False
         else:
+            # Default to false for security until focus control is implemented
             self.use_async_input = os.getenv("USE_ASYNC_INPUT", "false").lower() == "true"
+
+            # Add security warning if enabled
+            if self.use_async_input:
+                print("⚠️  WARNING: Async input is enabled. This feature is under development and may have focus control issues.")
+                print("   To disable, use: --no-async-input or set USE_ASYNC_INPUT=false")
 
         # Fallback mechanism - always enabled by default
         self.async_input_fallback = os.getenv("ASYNC_INPUT_FALLBACK", "true").lower() == "true"

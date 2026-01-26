@@ -30,6 +30,36 @@ class PlainAsyncInput(AsyncInputInterface):
         self._capture_task: Optional[asyncio.Task] = None
         self._echo_enabled = True
 
+    def _has_terminal_focus(self) -> bool:
+        """Check if this terminal has focus."""
+        # Simple check: verify stdin is a tty
+        try:
+            return sys.stdin.isatty()
+        except:
+            return False
+
+    async def get_input_events(self) -> AsyncIterator[InputEvent]:
+        """Get input events as they occur with focus control."""
+        # Safety: Only yield events if we have terminal focus
+        if not self._has_terminal_focus():
+            # No focus, wait a bit and check again
+            await asyncio.sleep(0.5)
+            return
+
+        while self._running:
+            try:
+                event = await asyncio.wait_for(
+                    self._event_queue.get(),
+                    timeout=0.1
+                )
+                yield event
+            except asyncio.TimeoutError:
+                # Check if we still have focus
+                if not self._has_terminal_focus():
+                    # Lost focus, stop capturing
+                    break
+                continue
+
     async def start_capture(self) -> None:
         """Start async input capture."""
         if self._running:
@@ -53,7 +83,10 @@ class PlainAsyncInput(AsyncInputInterface):
                 pass
 
     async def _capture_loop(self) -> None:
-        """Main capture loop."""
+        """Main capture loop with focus control."""
+        # Safety: Only start capture when actively waiting for input
+        print(f"Starting input capture... (pid: {import os; os.getpid()})", flush=True)
+
         # Start keyboard capture
         await self._keyboard_capture.start_capture()
 
@@ -66,21 +99,26 @@ class PlainAsyncInput(AsyncInputInterface):
                 if not self._running:
                     break
 
-                # Process key event
-                input_event = self._process_key_event(key_event)
-                if input_event:
-                    await self._emit_event(input_event)
+                # Safety: Process only if we have terminal focus
+                if self._has_terminal_focus():
+                    # Process key event
+                    input_event = self._process_key_event(key_event)
+                    if input_event:
+                        await self._emit_event(input_event)
 
-                    # Handle special events
-                    if input_event.event_type == InputEventType.TEXT_SUBMITTED:
-                        # Reset buffer for next input
-                        self._input_buffer = InputBuffer()
-                        self._display_prompt()
-                    elif input_event.event_type == InputEventType.INTERRUPT:
-                        # Clear buffer and show new prompt
-                        self._input_buffer = InputBuffer()
-                        print("^C", flush=True)
-                        self._display_prompt()
+                        # Handle special events
+                        if input_event.event_type == InputEventType.TEXT_SUBMITTED:
+                            # Reset buffer for next input
+                            self._input_buffer = InputBuffer()
+                            self._display_prompt()
+                        elif input_event.event_type == InputEventType.INTERRUPT:
+                            # Clear buffer and show new prompt
+                            self._input_buffer = InputBuffer()
+                            print("^C", flush=True)
+                            self._display_prompt()
+                else:
+                    # Lost focus, ignore input
+                    print("Ignoring input - no terminal focus", flush=True)
 
         except Exception as e:
             print(f"\nError in input capture: {e}", flush=True)
