@@ -475,6 +475,36 @@ class EnvironmentConfig:
 
 
 # =============================================================================
+# UI CONFIGURATION
+# =============================================================================
+
+
+class UIConfig:
+    """UI-related configuration settings."""
+
+    def __init__(self, disable_async_input: bool = False):
+        # Async input feature flag - defaults to False for safety
+        # Command-line flag takes precedence over environment variable
+        if disable_async_input:
+            self.use_async_input = False
+        else:
+            self.use_async_input = os.getenv("USE_ASYNC_INPUT", "false").lower() == "true"
+
+        # Fallback mechanism - always enabled by default
+        self.async_input_fallback = os.getenv("ASYNC_INPUT_FALLBACK", "true").lower() == "true"
+
+        # Performance targets
+        self.input_latency_target_ms = int(os.getenv("INPUT_LATENCY_TARGET_MS", "5"))
+
+        # Platform-specific optimizations
+        self.platform_optimizations = {
+            "linux": os.getenv("LINUX_INPUT_OPTIMIZATION", "true").lower() == "true",
+            "darwin": os.getenv("MACOS_INPUT_OPTIMIZATION", "true").lower() == "true",
+            "win32": os.getenv("WINDOWS_INPUT_OPTIMIZATION", "true").lower() == "true",
+        }
+
+
+# =============================================================================
 # MAIN CONFIGURATION CLASS
 # =============================================================================
 
@@ -484,14 +514,18 @@ class ProtocolConfig:
 
     _instance = None
 
-    def __new__(cls):
+    def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self):
+    def __init__(self, disable_async_input: bool = False):
+        # Always reinitialize UI config to allow flag changes
+        # Other configs can remain cached for performance
         if self._initialized:
+            # Only reinitialize UI config
+            self.ui = UIConfig(disable_async_input)
             return
 
         # Initialize configuration sections in dependency order
@@ -502,6 +536,7 @@ class ProtocolConfig:
         self.security = SecurityConfig()
         self.debug = DebugConfig(self.filesystem)
         self.environment = EnvironmentConfig()
+        self.ui = UIConfig(disable_async_input)
 
         # Update model options with context window
         # Ensure num_ctx doesn't exceed the model's context window
@@ -551,5 +586,12 @@ class ProtocolConfig:
 
 
 # Create global configuration instance
+# Global settings instance - will be initialized with bootstrap parameters
+def initialize_settings(disable_async_input: bool = False):
+    """Initialize global settings with bootstrap parameters."""
+    global settings
+    settings = ProtocolConfig(disable_async_input)
+
+# Initialize with default values for backward compatibility
 settings = ProtocolConfig()
 # Validation will be called explicitly in main.py after initialization

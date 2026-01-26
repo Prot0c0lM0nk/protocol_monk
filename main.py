@@ -47,6 +47,7 @@ class Application:
     def __init__(self):
         self.working_dir = None
         self.ui_mode = None
+        self.disable_async_input = False
         self.event_bus = None
         self.agent_service = None
         self.ui = None
@@ -57,7 +58,11 @@ class Application:
         """Start the application."""
         try:
             # 1. Bootstrap Configuration
-            self.working_dir, self.ui_mode = bootstrap_application()
+            self.working_dir, self.ui_mode, self.disable_async_input = bootstrap_application()
+
+            # Initialize settings with bootstrap parameters
+            from config.static import initialize_settings
+            initialize_settings(self.disable_async_input)
             setup_logging()
 
             # 2. Initialize Infrastructure (The Spine)

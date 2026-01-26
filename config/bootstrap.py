@@ -20,6 +20,7 @@ class BootstrapConfig:
         self.working_dir: Optional[Path] = None
         self.ui_mode: str = "plain"
         self.config_file = Path(".protocol_config.json")
+        self.disable_async_input: bool = False
 
     def parse_command_line_args(self) -> str:
         """
@@ -42,8 +43,17 @@ class BootstrapConfig:
             "--tui", action="store_true", help="Use Textual TUI interface"
         )
 
+        parser.add_argument(
+            "--no-async-input",
+            action="store_true",
+            help="Disable async input system and use traditional blocking input"
+        )
+
         # Parse only known args to avoid conflicts
         args, _ = parser.parse_known_args()
+
+        # Store async input preference
+        self.disable_async_input = args.no_async_input
 
         if args.tui:
             return "textual"
@@ -81,22 +91,22 @@ class BootstrapConfig:
         workspace_dir.mkdir(parents=True, exist_ok=True)
         return workspace_dir
 
-    def bootstrap(self) -> tuple[Path, str]:
+    def bootstrap(self) -> tuple[Path, str, bool]:
         self.ui_mode = self.parse_command_line_args()
 
         self.working_dir = self.get_working_dir_from_env()
         if self.working_dir:
-            return self.working_dir, self.ui_mode
+            return self.working_dir, self.ui_mode, self.disable_async_input
 
         self.working_dir = self.get_working_dir_from_config()
         if self.working_dir:
-            return self.working_dir, self.ui_mode
+            return self.working_dir, self.ui_mode, self.disable_async_input
 
         self.working_dir = self.get_default_working_dir()
-        return self.working_dir, self.ui_mode
+        return self.working_dir, self.ui_mode, self.disable_async_input
 
 
-def bootstrap_application() -> tuple[Path, str]:
+def bootstrap_application() -> tuple[Path, str, bool]:
     try:
         bootstrap = BootstrapConfig()
         working_dir, ui_mode = bootstrap.bootstrap()

@@ -8,6 +8,8 @@ from ui.base import UI, ToolResult
 from agent.events import AgentEvents, get_event_bus
 from .renderer import PlainRenderer
 from .input import InputManager
+from ..input_safety_wrapper import create_safe_input_manager
+from config.static import settings
 
 
 class PlainUI(UI):
@@ -15,7 +17,14 @@ class PlainUI(UI):
         super().__init__()
         # 1. Initialize Infrastructure FIRST
         self.renderer = PlainRenderer()
-        self.input = InputManager()
+
+        # Use safety wrapper for input handling
+        if settings.ui.use_async_input:
+            # Use safe input manager that handles both async and fallback
+            self.input = create_safe_input_manager("plain")
+        else:
+            # Use traditional input manager
+            self.input = InputManager()
         
         # CRITICAL: Define event_bus before calling setup_listeners
         self._event_bus = event_bus or get_event_bus()
@@ -64,6 +73,14 @@ class PlainUI(UI):
         self.renderer.print_system("Type '/help' for commands, '/quit' to exit.")
 
     # --- MAIN LOOP ---
+    async def stop(self):
+        """Stop the UI and cleanup resources."""
+        self.running = False
+
+        # Cleanup input manager
+        if settings.ui.use_async_input and hasattr(self.input, 'cleanup'):
+            await self.input.cleanup()
+
     async def run_loop(self):
         """The main blocking loop for the application."""
         self.running = True
@@ -73,9 +90,13 @@ class PlainUI(UI):
         
         while self.running:
             try:
-                # 1. Get Input (Blocking Console)
-                # We assume InputManager.read_input is properly async or run_in_executor
-                user_input = await self.input.read_input(is_main_loop=True)
+                # 1. Get Input (with safety wrapper)
+                if settings.ui.use_async_input:
+                    # Use safety wrapper method
+                    user_input = await self.input.read_input_safe(is_main_loop=True)
+                else:
+                    # Use traditional method
+                    user_input = await self.input.read_input(is_main_loop=True)
                 
                 if user_input is None: # EOF/Interrupt
                     break
@@ -99,6 +120,9 @@ class PlainUI(UI):
                 break
             except Exception as e:
                 self.renderer.print_error(f"UI Loop Error: {e}")
+
+        # Cleanup after loop ends
+        await self.stop()
 
     # --- INTERACTIVE HANDLERS (The New Logic) ---
     

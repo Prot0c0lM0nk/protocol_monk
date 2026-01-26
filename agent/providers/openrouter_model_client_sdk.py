@@ -3,15 +3,16 @@
 OpenRouter Model Client Provider (Official SDK Version)
 ======================================================
 
-OpenRouter-specific implementation using the official OpenAI SDK.
-OpenRouter is fully compatible with the OpenAI API format.
+OpenRouter-specific implementation using the official OpenRouter SDK.
+This provides native OpenRouter API access with full feature support.
 """
 
 import asyncio
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
-from openai import AsyncOpenAI
+# Import the official OpenRouter SDK
+from openrouter import OpenRouter
 
 from agent.base_model_client import BaseModelClient
 from config.static import settings
@@ -25,10 +26,10 @@ from exceptions import (
 
 class OpenRouterModelClient(BaseModelClient):
     """
-    OpenRouter-specific implementation using the official OpenAI SDK.
+    OpenRouter-specific implementation using the official OpenRouter SDK.
 
-    This provider allows access to multiple LLM models through the OpenRouter API,
-    supporting both streaming and non-streaming responses.
+    This provider allows access to multiple LLM models through the OpenRouter API
+    using the native SDK for better reliability and feature support.
     """
 
     def __init__(self, model_name: str, provider_config: Optional[Dict] = None):
@@ -49,19 +50,19 @@ class OpenRouterModelClient(BaseModelClient):
 
         super().__init__(model_name, provider_config)
 
-        # Get OpenRouter API key from settings (it's in environment.openrouter_api_key)
+        # Get OpenRouter API key from settings
         self.api_key = settings.environment.openrouter_api_key
         if not self.api_key:
             raise ProviderAuthenticationError(
                 "OpenRouter API key not found in settings. Set OPENROUTER_API_KEY environment variable.",
                 provider_name="openrouter",
             )
-        # Initialize the OpenAI client with OpenRouter's base URL
-        self.client = AsyncOpenAI(
+
+        # Initialize the OpenRouter client
+        self.client = OpenRouter(
             api_key=self.api_key,
-            base_url="https://openrouter.ai/api/v1",
-            timeout=self.timeout,
-            max_retries=self.max_retries,
+            # The OpenRouter SDK doesn't accept timeout in constructor
+            # We'll handle timeout at the request level instead
         )
 
         # Model options (temperature, etc.)
@@ -82,11 +83,22 @@ class OpenRouterModelClient(BaseModelClient):
         """
         Get response from OpenRouter using the official SDK.
 
-        Note: This version assumes the conversation_context is strictly valid
-        (Assistant Tool Calls MUST be followed by Tool Results).
+        Args:
+            conversation_context: List of conversation messages
+            stream: Whether to stream the response (default: True)
+            tools: Optional list of tool definitions
+
+        Yields:
+            str: Content chunks from the response
+            Dict: Tool call responses (when tools are invoked)
+
+        Raises:
+            ModelError: For provider errors
+            ModelTimeoutError: For timeouts
+            EmptyResponseError: For empty responses
         """
         try:
-            # Prepare the request using OpenAI SDK format
+            # Prepare messages
             messages = conversation_context
 
             # Build request parameters
@@ -101,76 +113,77 @@ class OpenRouterModelClient(BaseModelClient):
             if tools:
                 request_params["tools"] = tools
 
-            # DEBUG: Log the actual messages being sent
-            self.logger.debug(f"DEBUG: Sending {len(messages)} messages to OpenRouter:")
-            for i, msg in enumerate(messages):
-                self.logger.debug(
-                    f"  messages[{i}]: role={msg.get('role')}, content={repr(msg.get('content'))}, tool_calls={'yes' if msg.get('tool_calls') else 'no'}"
-                )
-
             self.logger.info(
                 "Making OpenRouter request to model: %s (stream=%s)",
                 self.model_name,
                 stream,
             )
 
-            # Make the request
             if stream:
-                # Streaming response
-                stream_response = await self.client.chat.completions.create(
-                    **request_params
-                )
-
-                self.logger.debug(f"Stream started for model: {self.model_name}")
-
-                async for chunk in stream_response:
-                    # Parse the Delta
-                    if not chunk.choices:
+                # Streaming response using official SDK
+                # The SDK doesn't have native async streaming, so we'll use a hybrid approach
+                # We'll process the stream synchronously but yield results asynchronously
+                
+                response = self.client.chat.send(**request_params)
+                
+                # Process streaming in small batches to avoid blocking
+                loop = asyncio.get_event_loop()
+                
+                def get_next_event(iterator):
+                    """Get next event from iterator"""
+                    try:
+                        return next(iterator), False
+                    except StopIteration:
+                        return None, True
+                
+                # Create iterator from response
+                response_iter = iter(response)
+                
+                # Process events asynchronously
+                while True:
+                    # Get next event in thread pool to avoid blocking
+                    event, done = await loop.run_in_executor(None, get_next_event, response_iter)
+                    
+                    if done:
+                        break
+                    
+                    if not event.choices:
                         continue
 
-                    delta = chunk.choices[0].delta
+                    delta = event.choices[0].delta
 
-                    # DEBUG: Log the raw chunk structure for visibility
-                    self.logger.debug(
-                        f"Chunk ID: {chunk.id} | Content: {repr(delta.content)} | ToolCalls: {len(delta.tool_calls) if delta.tool_calls else 0}"
-                    )
-
-                    # 1. Check for content (INDEPENDENT CHECK)
+                    # Check for content
                     if delta.content:
                         self.logger.debug(f"Yielding content: {delta.content[:50]}...")
                         yield delta.content
 
-                    # 2. Check for tool calls (INDEPENDENT CHECK - NOT ELIF)
+                    # Check for tool calls
                     if delta.tool_calls:
                         # Convert tool calls to our format
                         tool_calls = []
                         for tc in delta.tool_calls:
-                            # Safe extraction handling None values
                             tc_data = {
-                                "index": tc.index,
-                                "id": tc.id,
+                                "index": getattr(tc, 'index', 0),
+                                "id": getattr(tc, 'id', ''),
                                 "type": "function",
                                 "function": {},
                             }
 
                             # Handle function fields if present
-                            if tc.function:
-                                if tc.function.name:
+                            if hasattr(tc, 'function') and tc.function:
+                                if hasattr(tc.function, 'name') and tc.function.name:
                                     tc_data["function"]["name"] = tc.function.name
-                                if tc.function.arguments:
-                                    tc_data["function"][
-                                        "arguments"
-                                    ] = tc.function.arguments
+                                if hasattr(tc.function, 'arguments') and tc.function.arguments:
+                                    tc_data["function"]["arguments"] = tc.function.arguments
 
                             tool_calls.append(tc_data)
 
                         self.logger.debug(f"Yielding tool_calls: {tool_calls}")
                         yield {"tool_calls": tool_calls}
-
             else:
-                # Non-streaming response
-                response = await self.client.chat.completions.create(**request_params)
-
+                # Non-streaming response using official SDK
+                response = await self.client.chat.send_async(**request_params)
+                
                 # Extract content
                 content = response.choices[0].message.content
                 if content:
@@ -178,27 +191,24 @@ class OpenRouterModelClient(BaseModelClient):
 
                 # Extract tool calls (non-streaming)
                 message = response.choices[0].message
-                if message.tool_calls:
+                if hasattr(message, 'tool_calls') and message.tool_calls:
                     tool_calls = []
                     for tc in message.tool_calls:
-                        tool_calls.append(
-                            {
-                                "id": tc.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tc.function.name,
-                                    "arguments": tc.function.arguments,
-                                },
-                            }
-                        )
+                        tool_calls.append({
+                            "id": getattr(tc, 'id', ''),
+                            "type": "function",
+                            "function": {
+                                "name": getattr(tc.function, 'name', ''),
+                                "arguments": getattr(tc.function, 'arguments', ''),
+                            },
+                        })
                     yield {"tool_calls": tool_calls}
 
-                if not content and not message.tool_calls:
+                if not content and (not hasattr(message, 'tool_calls') or not message.tool_calls):
                     raise EmptyResponseError(
                         message="Model returned an empty response",
                         details={"provider": "openrouter", "model": self.model_name},
                     )
-
         except asyncio.TimeoutError as exc:
             raise ModelTimeoutError(
                 message="Model request timed out",
@@ -206,22 +216,24 @@ class OpenRouterModelClient(BaseModelClient):
                 details={"provider": "openrouter", "model": self.model_name},
             ) from exc
         except Exception as e:
-            # DEBUG: Log the full error details
-            self.logger.error(f"DEBUG: OpenRouter error type: {type(e).__name__}")
-            self.logger.error(f"DEBUG: OpenRouter error message: {str(e)}")
-
             # Check for authentication errors
-            if "authentication" in str(e).lower() or "unauthorized" in str(e).lower():
+            error_msg = str(e).lower()
+            if "authentication" in error_msg or "unauthorized" in error_msg or "api key" in error_msg:
                 raise ProviderAuthenticationError(
                     f"OpenRouter authentication failed: {str(e)}",
                     provider_name="openrouter",
                 ) from e
 
+            # Check for rate limiting
+            if "rate limit" in error_msg or "too many requests" in error_msg:
+                raise ModelError(
+                    message=f"OpenRouter rate limit exceeded: {str(e)}",
+                    details={"provider": "openrouter", "model": self.model_name},
+                ) from e
+
             # Check for content errors
-            if "messages" in str(e).lower() and "content" in str(e).lower():
-                self.logger.error(
-                    f"DEBUG: Content format error detected. Full error: {str(e)}"
-                )
+            if "content" in error_msg and "messages" in error_msg:
+                self.logger.error(f"Content format error: {str(e)}")
 
             # Generic error
             raise ModelError(
@@ -231,9 +243,12 @@ class OpenRouterModelClient(BaseModelClient):
 
     async def close(self) -> None:
         """
-        Clean up resources (close the OpenAI client).
+        Clean up resources (close the OpenRouter client).
         """
-        await self.client.close()
+        # The OpenRouter SDK handles cleanup automatically when used as context manager
+        # But we can explicitly close if needed
+        if hasattr(self.client, 'close'):
+            await self.client.close()
 
     def _prepare_payload(
         self,
@@ -245,7 +260,7 @@ class OpenRouterModelClient(BaseModelClient):
         Prepare request payload for OpenRouter.
 
         Note: This method is kept for compatibility with BaseModelClient,
-        but the actual request is made using the OpenAI SDK.
+        but the actual request is made using the OpenRouter SDK.
 
         Args:
             conversation_context: List of conversation messages
@@ -270,7 +285,7 @@ class OpenRouterModelClient(BaseModelClient):
         Extract content from response data.
 
         Note: This method is kept for compatibility with BaseModelClient,
-        but the actual content extraction is done by the OpenAI SDK.
+        but the actual content extraction is done by the OpenRouter SDK.
 
         Args:
             response_data: Response data dictionary
