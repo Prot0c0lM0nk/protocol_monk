@@ -47,8 +47,9 @@ class AsyncKeyboardCapture(ABC):
     def _is_terminal(self) -> bool:
         """Check if we're running in a terminal."""
         try:
-            # Check if stdin is a tty
-            return sys.stdin.isatty() and sys.stdout.isatty()
+            # Focus on input capability - stdin is what matters for keyboard capture
+            # Many environments redirect stdout/stderr but still have functional stdin
+            return sys.stdin.isatty()
         except:
             return False
 
@@ -243,115 +244,145 @@ class LinuxAsyncKeyboardCapture(AsyncKeyboardCapture):
 
 
 class MacOSAsyncKeyboardCapture(AsyncKeyboardCapture):
-    """macOS-specific async keyboard capture."""
+    """macOS-specific async keyboard capture using safe termios approach."""
 
     def __init__(self):
         super().__init__()
-        self._monitor = None
+        self._terminal_state = TerminalState()
+        self._stdin_fd = sys.stdin.fileno()
 
     async def _capture_loop(self) -> None:
-        """macOS capture loop using Quartz event taps."""
+        """macOS capture loop using safe termios approach."""
+        print("Using safe terminal-scoped keyboard capture (termios)")
+        
+        # Safety: Only proceed if we have a proper terminal
+        if not self._terminal_state.is_terminal():
+            print("Warning: macOS keyboard capture requested but not in a terminal.")
+            return
+
+        # Enter raw mode safely
+        if not self._terminal_state.enter_raw_mode():
+            print("Warning: Could not enter raw mode for keyboard capture.")
+            return
+
         try:
-            import Quartz
+            # Get event loop and add reader
+            loop = asyncio.get_event_loop()
+            loop.add_reader(self._stdin_fd, self._on_stdin_ready)
 
-            # Create event tap for keyboard events
-            event_mask = Quartz.CGEventMaskBit(Quartz.kCGEventKeyDown)
-
-            self._tap = Quartz.CGEventTapCreate(
-                Quartz.kCGSessionEventTap,
-                Quartz.kCGHeadInsertEventTap,
-                Quartz.kCGEventTapOptionDefault,
-                event_mask,
-                self._keyboard_callback,
-                None
-            )
-
-            if not self._tap:
-                print("Failed to create event tap. Requires accessibility permissions.")
-                return
-
-            # Create run loop source
-            run_loop_source = Quartz.CFMachPortCreateRunLoopSource(None, self._tap, 0)
-            run_loop = Quartz.CFRunLoopGetCurrent()
-            Quartz.CFRunLoopAddSource(run_loop, run_loop_source, Quartz.kCFRunLoopDefaultMode)
-
-            # Enable the event tap
-            Quartz.CGEventTapEnable(self._tap, True)
-
-            # Run until stopped
+            # Keep running until stopped
             while self._running:
-                Quartz.CFRunLoopRunInMode(
-                    Quartz.kCFRunLoopDefaultMode,
-                    0.1,
-                    False
-                )
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.1)
 
-        except ImportError:
-            print("Quartz not available. Falling back to termios.")
-            # Fallback to Linux-style implementation
-            fallback = LinuxAsyncKeyboardCapture()
-            await fallback._capture_loop()
         except Exception as e:
             print(f"Error in macOS keyboard capture: {e}")
+        finally:
+            # Remove reader
+            try:
+                loop.remove_reader(self._stdin_fd)
+            except:
+                pass
 
-    def _keyboard_callback(self, proxy, event_type, event, refcon) -> Optional[int]:
-        """Callback for keyboard events."""
+            # Always restore terminal state
+            self._terminal_state.restore_mode()
+
+    def _on_stdin_ready(self) -> None:
+        """Handle stdin readiness."""
         try:
-            import Quartz
-
-            # Get key code
-            key_code = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
-
-            # Convert to KeyEvent
-            key_event = self._process_key_code(key_code)
-            if key_event:
-                asyncio.create_task(self._emit_event(key_event))
-
-            # Allow event to pass through
-            return event
-
+            # Read available data
+            raw_data = sys.stdin.read(1)
+            if raw_data:
+                event = self._process_raw_data(raw_data.encode())
+                if event:
+                    asyncio.create_task(self._emit_event(event))
         except Exception as e:
-            print(f"Error in keyboard callback: {e}")
-            return event
-
-    def _process_key_code(self, key_code: int) -> Optional[KeyEvent]:
-        """Process macOS key code to KeyEvent."""
-        import time
-
-        # Map common key codes
-        key_map = {
-            36: ("enter", KeyType.SPECIAL),
-            51: ("backspace", KeyType.SPECIAL),
-            48: ("tab", KeyType.SPECIAL),
-            53: ("escape", KeyType.SPECIAL),
-            123: ("left", KeyType.SPECIAL),
-            124: ("right", KeyType.SPECIAL),
-            125: ("down", KeyType.SPECIAL),
-            126: ("up", KeyType.SPECIAL),
-        }
-
-        if key_code in key_map:
-            key, key_type = key_map[key_code]
-            return KeyEvent(key, key_type, [], time.time())
-
-        # Check for character keys (with proper mapping)
-        if 0 <= key_code <= 127:
-            # Simple mapping for ASCII characters
-            if key_code >= 29 and key_code <= 41:  # a-z
-                char = chr(key_code - 29 + ord('a'))
-                return KeyEvent(char, KeyType.CHARACTER, [], time.time())
-            elif key_code >= 82 and key_code <= 89:  # 0-9
-                char = chr(key_code - 82 + ord('0'))
-                return KeyEvent(char, KeyType.CHARACTER, [], time.time())
-
-        return None
+            print(f"Error reading stdin: {e}")
 
     def _process_raw_data(self, raw_data: bytes) -> Optional[KeyEvent]:
-        """Process raw data (fallback method)."""
-        # Not used in macOS implementation
-        return None
+        """Process raw macOS keyboard data using termios."""
+        import time
 
+        # Handle escape sequences
+        if raw_data == b'\x1b':
+            # Start of escape sequence
+            return self._handle_escape_sequence()
+        elif raw_data == b'\r' or raw_data == b'\n':
+            return KeyEvent(
+                key="enter",
+                key_type=KeyType.SPECIAL,
+                modifiers=[],
+                timestamp=time.time(),
+                raw_data=raw_data
+            )
+        elif raw_data == b'\x7f':
+            return KeyEvent(
+                key="backspace",
+                key_type=KeyType.SPECIAL,
+                modifiers=[],
+                timestamp=time.time(),
+                raw_data=raw_data
+            )
+        elif raw_data == b'\t':
+            return KeyEvent(
+                key="tab",
+                key_type=KeyType.SPECIAL,
+                modifiers=[],
+                timestamp=time.time(),
+                raw_data=raw_data
+            )
+        elif raw_data == b'\x03':
+            return KeyEvent(
+                key="ctrl+c",
+                key_type=KeyType.COMBINATION,
+                modifiers=["ctrl"],
+                timestamp=time.time(),
+                raw_data=raw_data
+            )
+        elif raw_data[0] < 32 and raw_data[0] != 0:
+            # Control character
+            return KeyEvent(
+                key=f"ctrl+{chr(raw_data[0] + 96)}",
+                key_type=KeyType.COMBINATION,
+                modifiers=["ctrl"],
+                timestamp=time.time(),
+                raw_data=raw_data
+            )
+        else:
+            # Regular character
+            return KeyEvent(
+                key=raw_data.decode('utf-8', errors='ignore'),
+                key_type=KeyType.CHARACTER,
+                modifiers=[],
+                timestamp=time.time(),
+                raw_data=raw_data
+            )
+
+    def _handle_escape_sequence(self) -> Optional[KeyEvent]:
+        """Handle escape sequences (arrow keys, function keys, etc.)."""
+        import time
+
+        # Try to read more characters for escape sequence
+        try:
+            # Use non-blocking read for escape sequence
+            import select
+            if select.select([sys.stdin], [], [], 0.1)[0]:
+                seq = sys.stdin.read(2)
+                if seq == '[A':
+                    return KeyEvent("up", KeyType.SPECIAL, [], time.time())
+                elif seq == '[B':
+                    return KeyEvent("down", KeyType.SPECIAL, [], time.time())
+                elif seq == '[C':
+                    return KeyEvent("right", KeyType.SPECIAL, [], time.time())
+                elif seq == '[D':
+                    return KeyEvent("left", KeyType.SPECIAL, [], time.time())
+                elif seq.startswith('[F'):
+                    # Function key
+                    return KeyEvent(f"f{seq[2:]}", KeyType.SPECIAL, [], time.time())
+        except:
+            pass
+
+        # Just escape key
+        return KeyEvent("escape", KeyType.SPECIAL, [], time.time())
 
 class WindowsAsyncKeyboardCapture(AsyncKeyboardCapture):
     """Windows-specific async keyboard capture."""

@@ -7,6 +7,7 @@ This module provides safety mechanisms that:
 3. Ensure original functionality is preserved
 """
 
+import sys
 import asyncio
 from typing import Optional, AsyncIterator
 from config.static import settings
@@ -32,8 +33,9 @@ class SafeInputManager:
     def _is_terminal(self) -> bool:
         """Check if we're running in a terminal."""
         try:
-            # Check if stdin is a tty
-            return sys.stdin.isatty() and sys.stdout.isatty()
+            # Focus on input capability - stdin is what matters for keyboard capture
+            # Many environments redirect stdout/stderr but still have functional stdin
+            return sys.stdin.isatty()
         except:
             return False
 

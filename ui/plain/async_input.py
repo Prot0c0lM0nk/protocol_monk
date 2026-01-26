@@ -84,9 +84,11 @@ class PlainAsyncInput(AsyncInputInterface):
 
     async def _capture_loop(self) -> None:
         """Main capture loop with focus control."""
+    async def _capture_loop(self) -> None:
+        """Main capture loop with focus control."""
         # Safety: Only start capture when actively waiting for input
-        print(f"Starting input capture... (pid: {import os; os.getpid()})", flush=True)
-
+        import os
+        print(f"Starting input capture... (pid: {os.getpid()})", flush=True)
         # Start keyboard capture
         await self._keyboard_capture.start_capture()
 
