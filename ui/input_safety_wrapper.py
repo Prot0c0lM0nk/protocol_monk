@@ -124,6 +124,22 @@ class SafeInputManager:
 
         return None
 
+    async def read_input(self, prompt_text: str = "", is_main_loop: bool = False) -> Optional[str]:
+        """
+        Read input - wrapper for compatibility with existing code.
+
+        This provides the same interface as InputManager.read_input() but uses
+        the async input mechanism when enabled.
+
+        Args:
+            prompt_text: The prompt text to display
+            is_main_loop: Whether this is the main loop input (affects prompt style)
+
+        Returns:
+            The user's input, or None if interrupted
+        """
+        return await self.read_input_safe(prompt_text, is_main_loop)
+
     async def cleanup(self):
         """Cleanup resources."""
         if self._using_async and self._async_manager is not None:
