@@ -84,11 +84,7 @@ class PlainAsyncInput(AsyncInputInterface):
 
     async def _capture_loop(self) -> None:
         """Main capture loop with focus control."""
-    async def _capture_loop(self) -> None:
-        """Main capture loop with focus control."""
         # Safety: Only start capture when actively waiting for input
-        import os
-        print(f"Starting input capture... (pid: {os.getpid()})", flush=True)
         # Start keyboard capture
         await self._keyboard_capture.start_capture()
 
@@ -110,17 +106,25 @@ class PlainAsyncInput(AsyncInputInterface):
 
                         # Handle special events
                         if input_event.event_type == InputEventType.TEXT_SUBMITTED:
-                            # Reset buffer for next input
+                            # Stop capture to restore terminal mode for output
+                            await self._keyboard_capture.stop_capture()
+                            # Buffer will be reset and capture resumed when next prompt is displayed
                             self._input_buffer = InputBuffer()
-                            self._display_prompt()
                         elif input_event.event_type == InputEventType.INTERRUPT:
-                            # Clear buffer and show new prompt
+                            # Handle Ctrl+C interrupt
+                            had_text = bool(self._input_buffer.text.strip())
+
+                            # Clear buffer
                             self._input_buffer = InputBuffer()
-                            print("^C", flush=True)
+                            print("\r\033[K^C", flush=True)  # Clear line and show ^C
+
+                            # Always show new prompt after interrupt
                             self._display_prompt()
-                else:
-                    # Lost focus, ignore input
-                    print("Ignoring input - no terminal focus", flush=True)
+
+                            # Note: The INTERRUPT event is already emitted above,
+                            # so the event bus and UI listeners can handle it
+                            # (e.g., for graceful shutdown on repeated Ctrl+C)
+                # No need to log focus loss - it's normal behavior
 
         except Exception as e:
             print(f"\nError in input capture: {e}", flush=True)
@@ -152,12 +156,14 @@ class PlainAsyncInput(AsyncInputInterface):
                     )
                     self._input_buffer.cursor_pos = pos
                     self._redisplay_input()
-            elif key_event.key == "ctrl+c":
-                # Interrupt
+            # Handle Ctrl+C combinations
+            elif key_event.key == "ctrl+c" or key_event.key_type == KeyType.COMBINATION and "ctrl" in key_event.modifiers and key_event.key.endswith("+c"):
+                # Interrupt - emit event and clear buffer
                 return InputEvent(
                     event_type=InputEventType.INTERRUPT,
                     data="",
-                    timestamp=key_event.timestamp
+                    timestamp=key_event.timestamp,
+                    metadata={"signal": "SIGINT"}
                 )
             elif key_event.key == "escape":
                 # Clear input
@@ -193,7 +199,7 @@ class PlainAsyncInput(AsyncInputInterface):
 
     def _redisplay_input(self) -> None:
         """Redisplay the current input."""
-        # Clear current line
+        # Clear current line and reposition at start
         sys.stdout.write("\r\033[K")
         # Display prompt and text
         sys.stdout.write(f"{self.prompt_text}{self._input_buffer.text}")
@@ -202,10 +208,23 @@ class PlainAsyncInput(AsyncInputInterface):
 
     def _position_cursor(self) -> None:
         """Position cursor at correct location."""
-        # Move cursor to position after prompt
+        # Calculate total position from start of line
         prompt_len = len(self.prompt_text)
-        cursor_pos = prompt_len + self._input_buffer.cursor_pos
-        sys.stdout.write(f"\r\033[{cursor_pos + 1}G")
+        target_pos = prompt_len + self._input_buffer.cursor_pos
+
+        # Move cursor to absolute column position (1-indexed)
+        # First go to start of line, then move right
+        if target_pos > 0:
+            sys.stdout.write(f"\r\033[{target_pos}C")
+        else:
+            sys.stdout.write("\r")
+
+    async def resume_capture_for_input(self) -> None:
+        """Resume keyboard capture when ready for new input."""
+        if not self._keyboard_capture.is_running and self._running:
+            await self._keyboard_capture.start_capture()
+            # Display prompt for new input
+            self._display_prompt()
 
 
 class PlainAsyncInputWithHistory(PlainAsyncInput):

@@ -59,8 +59,8 @@ class AsyncKeyboardCapture(ABC):
             return
 
         # Safety check: Only capture if we're in a terminal
+        # Note: Platform-specific implementations will also check, so don't warn here
         if not self._is_terminal():
-            print("Warning: Keyboard capture requested but not in a terminal. Skipping.")
             return
 
         self._running = True
@@ -115,12 +115,12 @@ class LinuxAsyncKeyboardCapture(AsyncKeyboardCapture):
         """Linux capture loop using file descriptor monitoring."""
         # Safety: Only proceed if we have a proper terminal
         if not self._terminal_state.is_terminal():
-            print("Warning: Linux keyboard capture requested but not in a terminal.")
+            # Silently return - warning already handled by caller
             return
 
         # Enter raw mode safely
         if not self._terminal_state.enter_raw_mode():
-            print("Warning: Could not enter raw mode for keyboard capture.")
+            # Silently return - warning handled by TerminalState
             return
 
         try:
@@ -253,16 +253,14 @@ class MacOSAsyncKeyboardCapture(AsyncKeyboardCapture):
 
     async def _capture_loop(self) -> None:
         """macOS capture loop using safe termios approach."""
-        print("Using safe terminal-scoped keyboard capture (termios)")
-        
         # Safety: Only proceed if we have a proper terminal
         if not self._terminal_state.is_terminal():
-            print("Warning: macOS keyboard capture requested but not in a terminal.")
+            # Silently return - warning already handled by caller
             return
 
         # Enter raw mode safely
         if not self._terminal_state.enter_raw_mode():
-            print("Warning: Could not enter raw mode for keyboard capture.")
+            # Silently return - warning handled by TerminalState
             return
 
         try:
