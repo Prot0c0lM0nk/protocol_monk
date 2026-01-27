@@ -3,8 +3,11 @@ Safety wrapper for input handling to ensure zero regression.
 
 This module provides safety mechanisms that:
 1. Check USE_ASYNC_INPUT flag before enabling async input
-2. Provide fallback to traditional blocking input
+2. Use async input when enabled, traditional input otherwise
 3. Ensure original functionality is preserved
+
+Note: The previous fallback mechanism (using a new event loop in an executor)
+has been removed as it was fundamentally broken and caused hangups.
 """
 
 import sys
@@ -16,12 +19,12 @@ from .async_input_interface import InputEventType
 
 class SafeInputManager:
     """
-    Safety wrapper that manages input with fallback mechanisms.
+    Safety wrapper that manages input without broken fallback.
 
     This class ensures:
     - Zero regression by preserving original input methods
     - Feature flag controlled async input activation
-    - Automatic fallback on any failure
+    - Traditional input runs in main event loop (not in broken executor)
     """
 
     def __init__(self, ui_type: str = "plain"):
@@ -73,75 +76,50 @@ class SafeInputManager:
 
         This method:
         1. Checks if async input is enabled and available
-        2. Falls back to traditional input if needed
-        3. Ensures no blocking in async context
+        2. Uses async input when enabled, traditional otherwise
+        3. Ensures traditional input runs in main event loop (not in broken executor)
+
+        Note: The broken fallback mechanism (new event loop in executor) has been removed.
         """
         # Initialize on first use
         if self._traditional_manager is None:
             self._initialize_managers()
 
-        # Try async input if enabled and available
+        # Use async input if enabled and available
         if settings.ui.use_async_input and self._async_manager is not None:
             try:
-                # Get the current capture
-                if not self._using_async:
+                # Check if current capture is actually running (not just initialized)
+                # This handles the case where capture was stopped after text submission
+                current_capture = self._async_manager._current_capture
+                print(f"[DEBUG] read_input_safe: current_capture={current_capture}, is_running={current_capture.is_running if current_capture else None}")
+                if not current_capture or not current_capture.is_running:
+                    print(f"[DEBUG] read_input_safe: Starting capture")
                     await self._async_manager.start_capture(self.ui_type)
-                    self._using_async = True
+                self._using_async = True
 
                 # Read with timeout to prevent blocking
+                print(f"[DEBUG] read_input_safe: Waiting for events...")
                 async for event in self._async_manager.get_current_events():
+                    print(f"[DEBUG] read_input_safe: Got event: {event.event_type}")
                     if event.event_type == InputEventType.TEXT_SUBMITTED:
                         return event.data
                     elif event.event_type == InputEventType.INTERRUPT:
                         return None
 
                 # If we get here, no event was received
+                print(f"[DEBUG] read_input_safe: No event received, returning None")
                 return None
 
             except Exception as e:
-                # Fallback to traditional input on any error
-                print(f"Async input failed, falling back: {e}")
-                if settings.ui.async_input_fallback:
-                    return await self._traditional_input(prompt_text, is_main_loop)
+                # Log error but don't fall back - the fallback is broken
+                print(f"Async input error: {e}")
                 return None
 
-        # Use traditional input
-        return await self._traditional_input(prompt_text, is_main_loop)
+        # If async input not available, use traditional directly in main loop
+        if self._traditional_manager:
+            return await self._traditional_manager.read_input(prompt_text, is_main_loop)
 
-    async def _traditional_input(self, prompt_text: str, is_main_loop: bool) -> Optional[str]:
-        """Use traditional blocking input in async-safe way."""
-        if self._traditional_manager is None:
-            return None
-
-        # Run blocking input in executor to avoid blocking event loop
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
-            self._sync_traditional_input,
-            prompt_text,
-            is_main_loop
-        )
-
-    def _sync_traditional_input(self, prompt_text: str, is_main_loop: bool) -> Optional[str]:
-        """Synchronous traditional input method."""
-        try:
-            # Import asyncio here to avoid issues
-            import asyncio
-            # For plain UI, we need to run the async method
-            if hasattr(self._traditional_manager, 'read_input'):
-                # Create new event loop for this thread
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    return loop.run_until_complete(
-                        self._traditional_manager.read_input(prompt_text, is_main_loop)
-                    )
-                finally:
-                    loop.close()
-            return None
-        except Exception as e:
-            print(f"Traditional input error: {e}")
-            return None
+        return None
 
     async def cleanup(self):
         """Cleanup resources."""

@@ -44,6 +44,11 @@ class AsyncKeyboardCapture(ABC):
         self._event_queue = asyncio.Queue()
         self._capture_task: Optional[asyncio.Task] = None
 
+    @property
+    def is_running(self) -> bool:
+        """Check if input capture is running."""
+        return self._running
+
     def _is_terminal(self) -> bool:
         """Check if we're running in a terminal."""
         try:
