@@ -209,6 +209,9 @@ class PlainAsyncInput(AsyncInputInterface):
 
     def _display_prompt(self) -> None:
         """Display the input prompt."""
+        # Clear line first (consistent with _redisplay_input to prevent ghost characters)
+        sys.stdout.write("\r\033[K")
+        # Display prompt and text
         sys.stdout.write(f"\r{self.prompt_text}{self._input_buffer.text}")
         self._position_cursor()
         sys.stdout.flush()
