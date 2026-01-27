@@ -3,11 +3,14 @@ Async input interface for non-blocking user input across all UI systems.
 """
 
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, Optional, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
 import time
+
+logger = logging.getLogger(__name__)
 
 
 class InputEventType(Enum):
@@ -80,18 +83,18 @@ class AsyncInputManager:
 
     async def start_capture(self, name: str) -> None:
         """Start a specific input capture."""
-        print(f"[DEBUG] AsyncInputManager.start_capture: name={name}, current_capture={self._current_capture}")
+        logger.debug(f"AsyncInputManager.start_capture: name={name}, current_capture={self._current_capture}")
         if name not in self._captures:
             raise ValueError(f"Unknown capture: {name}")
 
         # Stop current capture if running
         if self._current_capture:
-            print(f"[DEBUG] AsyncInputManager.start_capture: Stopping current capture")
+            logger.debug("AsyncInputManager.start_capture: Stopping current capture")
             await self._current_capture.stop_capture()
 
         # Start new capture
         self._current_capture = self._captures[name]
-        print(f"[DEBUG] AsyncInputManager.start_capture: Starting new capture")
+        logger.debug("AsyncInputManager.start_capture: Starting new capture")
         await self._current_capture.start_capture()
 
     async def stop_all_captures(self) -> None:

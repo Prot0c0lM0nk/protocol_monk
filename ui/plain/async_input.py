@@ -3,6 +3,7 @@ Async input implementation for Plain UI using keyboard capture.
 """
 
 import asyncio
+import logging
 import sys
 from typing import AsyncIterator, Optional, List
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ import time
 
 from ..async_input_interface import AsyncInputInterface, InputEvent, InputEventType
 from ..async_keyboard_capture import create_keyboard_capture, KeyEvent, KeyType
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -60,42 +63,42 @@ class PlainAsyncInput(AsyncInputInterface):
     async def start_capture(self) -> None:
         """Start async input capture."""
         if self._running:
-            print(f"[DEBUG] start_capture: Already running, returning early")
+            logger.debug("start_capture: Already running, returning early")
             return
 
-        print(f"[DEBUG] start_capture: Starting capture, _running={self._running}, keyboard_running={self._keyboard_capture.is_running}")
+        logger.debug(f"start_capture: Starting capture, _running={self._running}, keyboard_running={self._keyboard_capture.is_running}")
         self._running = True
         self._capture_task = asyncio.create_task(self._capture_loop())
-        print(f"[DEBUG] start_capture: Created capture task")
+        logger.debug("start_capture: Created capture task")
 
     async def stop_capture(self) -> None:
         """Stop async input capture."""
-        print(f"[DEBUG] stop_capture: Called, _running={self._running}")
+        logger.debug(f"stop_capture: Called, _running={self._running}")
         self._running = False
 
         if self._keyboard_capture.is_running:
-            print(f"[DEBUG] stop_capture: Stopping keyboard capture")
+            logger.debug("stop_capture: Stopping keyboard capture")
             await self._keyboard_capture.stop_capture()
 
         if self._capture_task:
-            print(f"[DEBUG] stop_capture: Cancelling capture task")
+            logger.debug("stop_capture: Cancelling capture task")
             self._capture_task.cancel()
             try:
                 await self._capture_task
             except asyncio.CancelledError:
                 pass
-        print(f"[DEBUG] stop_capture: Completed")
+        logger.debug("stop_capture: Completed")
 
     async def _capture_loop(self) -> None:
         """Main capture loop with focus control."""
         # Safety: Only start capture when actively waiting for input
-        print(f"[DEBUG] _capture_loop: Starting, _running={self._running}")
+        logger.debug(f"_capture_loop: Starting, _running={self._running}")
         # Start keyboard capture
         await self._keyboard_capture.start_capture()
 
         # Display initial prompt
         self._display_prompt()
-        print(f"[DEBUG] _capture_loop: Prompt displayed, entering event loop")
+        logger.debug("_capture_loop: Prompt displayed, entering event loop")
 
         try:
             # Process keyboard events
@@ -113,7 +116,7 @@ class PlainAsyncInput(AsyncInputInterface):
                         # Handle special events
                         if input_event.event_type == InputEventType.TEXT_SUBMITTED:
                             # Stop capture to restore terminal mode for output
-                            print(f"[DEBUG] _capture_loop: TEXT_SUBMITTED, stopping capture and breaking")
+                            logger.debug("_capture_loop: TEXT_SUBMITTED, stopping capture and breaking")
                             await self._keyboard_capture.stop_capture()
                             # Buffer will be reset and capture resumed when next prompt is displayed
                             self._input_buffer = InputBuffer()
@@ -140,9 +143,9 @@ class PlainAsyncInput(AsyncInputInterface):
         except Exception as e:
             print(f"\nError in input capture: {e}", flush=True)
         finally:
-            print(f"[DEBUG] _capture_loop: Finally block, stopping keyboard capture")
+            logger.debug("_capture_loop: Finally block, stopping keyboard capture")
             await self._keyboard_capture.stop_capture()
-            print(f"[DEBUG] _capture_loop: Exiting")
+            logger.debug("_capture_loop: Exiting")
 
     def _process_key_event(self, key_event: KeyEvent) -> Optional[InputEvent]:
         """Process a key event into an input event."""

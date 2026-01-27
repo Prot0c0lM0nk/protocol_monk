@@ -10,11 +10,14 @@ Note: The previous fallback mechanism (using a new event loop in an executor)
 has been removed as it was fundamentally broken and caused hangups.
 """
 
+import logging
 import sys
 import asyncio
 from typing import Optional, AsyncIterator
 from config.static import settings
 from .async_input_interface import InputEventType
+
+logger = logging.getLogger(__name__)
 
 
 class SafeInputManager:
@@ -91,28 +94,28 @@ class SafeInputManager:
                 # Check if current capture is actually running (not just initialized)
                 # This handles the case where capture was stopped after text submission
                 current_capture = self._async_manager._current_capture
-                print(f"[DEBUG] read_input_safe: current_capture={current_capture}, is_running={current_capture.is_running if current_capture else None}")
+                logger.debug(f"read_input_safe: current_capture={current_capture}, is_running={current_capture.is_running if current_capture else None}")
                 if not current_capture or not current_capture.is_running:
-                    print(f"[DEBUG] read_input_safe: Starting capture")
+                    logger.debug("read_input_safe: Starting capture")
                     await self._async_manager.start_capture(self.ui_type)
                 self._using_async = True
 
                 # Read with timeout to prevent blocking
-                print(f"[DEBUG] read_input_safe: Waiting for events...")
+                logger.debug("read_input_safe: Waiting for events...")
                 async for event in self._async_manager.get_current_events():
-                    print(f"[DEBUG] read_input_safe: Got event: {event.event_type}")
+                    logger.debug(f"read_input_safe: Got event: {event.event_type}")
                     if event.event_type == InputEventType.TEXT_SUBMITTED:
                         return event.data
                     elif event.event_type == InputEventType.INTERRUPT:
                         return None
 
                 # If we get here, no event was received
-                print(f"[DEBUG] read_input_safe: No event received, returning None")
+                logger.debug("read_input_safe: No event received, returning None")
                 return None
 
             except Exception as e:
                 # Log error but don't fall back - the fallback is broken
-                print(f"Async input error: {e}")
+                logger.error(f"Async input error: {e}")
                 return None
 
         # If async input not available, use traditional directly in main loop

@@ -489,7 +489,7 @@ class UIConfig:
             self.use_async_input = False
         else:
             # Default to false for security until focus control is implemented
-            self.use_async_input = os.getenv("USE_ASYNC_INPUT", "false").lower() == "true"
+            self.use_async_input = os.getenv("USE_ASYNC_INPUT", "true").lower() == "true"
 
             # Add security warning if enabled
             if self.use_async_input:
