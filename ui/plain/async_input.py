@@ -122,6 +122,9 @@ class PlainAsyncInput(AsyncInputInterface):
                             self._input_buffer = InputBuffer()
                             # Mark as not running so next start_capture() will restart it
                             self._running = False
+                            # Move cursor to next line after submission
+                            sys.stdout.write("\n")
+                            sys.stdout.flush()
                             # Exit the capture loop - it will be restarted on next start_capture()
                             break
                         elif input_event.event_type == InputEventType.INTERRUPT:
