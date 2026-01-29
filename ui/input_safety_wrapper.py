@@ -101,6 +101,14 @@ class SafeInputManager:
         # Use async input if enabled and available
         if settings.ui.use_async_input and self._async_manager is not None:
             try:
+                # Start capture if not already running
+                if not self._using_async:
+                    logger.debug("read_input_safe: Starting capture...")
+                    await self.start_capture()
+
+                # Display prompt before waiting for input
+                await self.display_prompt()
+
                 # Read with timeout to prevent blocking
                 logger.debug("read_input_safe: Waiting for events...")
                 async for event in self._async_manager.get_current_events():

@@ -199,40 +199,33 @@ class PlainUI(UI):
         async with self._terminal_lock:
             thinking_chunk = data.get("thinking")
             answer_chunk = data.get("chunk", "")
-            
+
             if thinking_chunk:
-                self._in_thinking_block = True
-                self._stream_line_buffer += thinking_chunk
+                # Strip trailing whitespace to prevent indentation accumulation
+                self._stream_line_buffer += thinking_chunk.rstrip()
                 while "\n" in self._stream_line_buffer:
                     line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
                     self.renderer.render_line(line, is_thinking=True)
                 return
 
             if answer_chunk:
-                if self._in_thinking_block:
-                    if self._stream_line_buffer:
-                        self.renderer.render_line(self._stream_line_buffer, is_thinking=True)
-                        self._stream_line_buffer = ""
-                    self.renderer.console.print()
-                    self._in_thinking_block = False
-
-                if "```" in answer_chunk or getattr(self.renderer, "_in_code_block", False):
-                    self._stream_line_buffer += answer_chunk
-                    while "\n" in self._stream_line_buffer:
-                        line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
-                        self.renderer.render_line(line, is_thinking=False)
-                else:
-                    if self._stream_line_buffer:
-                        self.renderer.print_stream(self._stream_line_buffer)
-                        self._stream_line_buffer = ""
-                    self.renderer.print_stream(answer_chunk)
+                # Strip trailing whitespace to prevent indentation accumulation
+                self._stream_line_buffer += answer_chunk.rstrip()
+                while "\n" in self._stream_line_buffer:
+                    line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
+                    self.renderer.render_line(line, is_thinking=False)
     async def _on_response_complete(self, data: Dict[str, Any]):
         async with self._terminal_lock:
-            await self._flush_stream_buffer()
-            self.renderer.console.print()
-            self.renderer.reset_thinking_state()
-        await self.input.display_prompt()
-        self.turn_complete.set() # Unblock run_loop
+            # Flush any remaining buffer
+            if self._stream_line_buffer:
+                self.renderer.render_line(self._stream_line_buffer, is_thinking=False)
+                self._stream_line_buffer = ""
+            # Print newline using stdout for consistency
+            import sys
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+        # Signal completion AFTER releasing the lock
+        self.turn_complete.set()
 
     async def _on_tool_result(self, data: Dict[str, Any]):
         async with self._terminal_lock:
@@ -291,10 +284,15 @@ class PlainUI(UI):
 
     # --- HELPER ---
     async def _flush_stream_buffer(self):
-        # This is a helper and assumes the caller holds the terminal lock
+        """Flush the stream buffer. Must be called with terminal_lock held."""
         if self._stream_line_buffer:
             self.renderer.render_line(self._stream_line_buffer, is_thinking=self._in_thinking_block)
             self._stream_line_buffer = ""
+
+    async def _flush_stream_buffer_with_lock(self):
+        """Flush the stream buffer with lock acquisition for standalone use."""
+        async with self._terminal_lock:
+            await self._flush_stream_buffer()
 
     # --- LEGACY/COMPAT ---
     async def get_input(self) -> str:

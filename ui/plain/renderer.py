@@ -34,8 +34,10 @@ class PlainRenderer:
         self._has_printed_thinking_header = False
 
     def print_system(self, message: str):
-        """Print [SYS] tag in blue/grey"""
-        self.console.print(f"[bold blue][SYS] {message}[/bold blue]")
+        """Print [SYS] tag"""
+        import sys
+        sys.stdout.write(f"[SYS] {message}\n")
+        sys.stdout.flush()
 
     def print_error(self, message: str):
         """Use shared utility for clear red text."""
@@ -46,80 +48,27 @@ class PlainRenderer:
         self.console.print(f"[bold yellow][WARN] {message}[/bold yellow]")
 
     def start_thinking(self, message: str = "Thinking..."):
-        """
-        Start ephemeral thinking indicator.
-        Prints [MONK] tag in green with no newline (uses \r).
-        """
+        """Start thinking indicator."""
+        import sys
         self._thinking_active = True
-        # Print newline first to ensure clean start
-        self.console.print(f"\n[bold green][MONK][/bold green] {message}", end="\r")
+        sys.stdout.write(f"[MONK] {message}\n")
+        sys.stdout.flush()
 
     def stop_thinking(self):
-        """Clear the ephemeral thinking line if active"""
-        if self._thinking_active:
-            self.console.print("\x1b[2K\r", end="")
-            self._thinking_active = False
+        """No-op - thinking indicator is a normal line now"""
+        self._thinking_active = False
 
     def print_stream(self, text: str):
-        """
-        Stream text with thinking state handling.
-        Clears ephemeral thinking line if active before printing.
-        """
-        if self._thinking_active:
-            self.console.print("\x1b[2K\r", end="")
-            self._thinking_active = False
-            self.console.print("[bold green][MONK][/bold green] ", end="")
-
-        # Normalize whitespace to fix model's formatting
-        cleaned_text = re.sub(r'\n\s+', '\n', text)
-        self.console.print(cleaned_text, end="", highlight=False)
+        """Stream text directly without any formatting magic."""
+        self.console.print(text, end="", highlight=False)
 
     def render_line(self, line: str, is_thinking: bool = False):
-        """
-        Render a single line with appropriate formatting.
-        Handles thinking blocks, code blocks, and markdown.
-        """
-        # 1. Cleanup old spinner if active
-        if self._thinking_active:
-            self.console.print("\x1b[2K\r", end="")
-            self._thinking_active = False
+        """Render a line. Simple, no fancy formatting."""
+        import sys
 
-        # 2. Thinking Block Rendering
-        if is_thinking:
-            # Handle the Header for the very first line of thinking
-            if not self._has_printed_thinking_header:
-                self.console.print("[bold green][MONK][/bold green] ", end="")
-                self._has_printed_thinking_header = True
-
-            # Print the line dimmed
-            self.console.print(line, style="dim italic")
-            return
-
-        # 3. Code Block Toggles
-        if line.strip().startswith("```"):
-            if self._in_code_block:
-                self._in_code_block = False
-                self.console.print(line, style="dim")
-            else:
-                self._in_code_block = True
-                lang = line.strip().lstrip("`")
-                self._code_lang = lang if lang else "text"
-                self.console.print(line, style="dim")
-            return
-
-        # 4. Content Rendering
-        if self._in_code_block:
-            syntax = Syntax(
-                line,
-                self._code_lang,
-                theme="ansi_dark",
-                word_wrap=False,
-                padding=0,
-                background_color="default",
-            )
-            self.console.print(syntax)
-        else:
-            self.console.print(line)
+        # Always use [MONK] prefix for all content
+        sys.stdout.write(f"[MONK] {line}\n")
+        sys.stdout.flush()
 
     def render_tool_confirmation(self, tool_name: str, params: Dict[str, Any]):
         """

@@ -110,8 +110,8 @@ class PlainAsyncInput(AsyncInputInterface):
                         if input_event.event_type == InputEventType.TEXT_SUBMITTED:
                             # Instead of stopping, just reset buffer and prepare for next input
                             logger.debug("_capture_loop: TEXT_SUBMITTED, resetting for next input")
-                            sys.stdout.write("\n")
-                            sys.stdout.flush()
+                            # Note: We do NOT print newline here - the UI layer handles all terminal output.
+                            # This prevents race conditions with renderer output.
                             self._input_buffer = InputBuffer()
                             # The prompt will be displayed by the UI layer after the turn is complete.
                         elif input_event.event_type == InputEventType.INTERRUPT:
