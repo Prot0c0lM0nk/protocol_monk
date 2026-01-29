@@ -138,6 +138,11 @@ class SafeInputManager:
         """
         return await self.read_input_safe(prompt_text, is_main_loop)
 
+    def display_prompt(self):
+        """Display the prompt for the current input method."""
+        if self._using_async and self._async_manager:
+            self._async_manager.display_current_prompt()
+
     async def cleanup(self):
         """Cleanup resources."""
         if self._using_async and self._async_manager is not None:

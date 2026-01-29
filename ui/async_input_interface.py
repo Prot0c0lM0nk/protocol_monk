@@ -48,6 +48,11 @@ class AsyncInputInterface(ABC):
         """Stop capturing input events."""
         pass
 
+    @abstractmethod
+    def display_prompt(self) -> None:
+        """Display or redisplay the input prompt."""
+        pass
+
     async def get_input_events(self) -> AsyncIterator[InputEvent]:
         """Get input events as they occur."""
         while self._running:
@@ -96,6 +101,11 @@ class AsyncInputManager:
         self._current_capture = self._captures[name]
         logger.debug("AsyncInputManager.start_capture: Starting new capture")
         await self._current_capture.start_capture()
+
+    def display_current_prompt(self) -> None:
+        """Display the prompt for the currently active capture."""
+        if self._current_capture:
+            self._current_capture.display_prompt()
 
     async def stop_all_captures(self) -> None:
         """Stop all input captures."""

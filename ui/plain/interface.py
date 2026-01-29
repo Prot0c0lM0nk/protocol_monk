@@ -223,6 +223,7 @@ class PlainUI(UI):
         await self._flush_stream_buffer()
         self.renderer.console.print()
         self.renderer.reset_thinking_state()
+        self.input.display_prompt()
         self.turn_complete.set() # Unblock run_loop
 
     async def _on_tool_result(self, data: Dict[str, Any]):

@@ -8,6 +8,8 @@ import sys
 from typing import AsyncIterator, Optional, List
 from dataclasses import dataclass
 import time
+import shutil
+import math
 
 from ..async_input_interface import AsyncInputInterface, InputEvent, InputEventType
 from ..async_keyboard_capture import create_keyboard_capture, KeyEvent, KeyType
@@ -87,7 +89,7 @@ class PlainAsyncInput(AsyncInputInterface):
         await self._keyboard_capture.start_capture()
 
         # Display initial prompt
-        self._display_prompt()
+        self.display_prompt()
         logger.debug("_capture_loop: Prompt displayed, entering event loop")
 
         try:
@@ -111,7 +113,7 @@ class PlainAsyncInput(AsyncInputInterface):
                             sys.stdout.flush()
                             self._input_buffer = InputBuffer()
                             # Display a new prompt for the next input
-                            self._display_prompt()
+                            self.display_prompt()
                         elif input_event.event_type == InputEventType.INTERRUPT:
                             # Handle Ctrl+C interrupt
                             had_text = bool(self._input_buffer.text.strip())
@@ -121,7 +123,7 @@ class PlainAsyncInput(AsyncInputInterface):
                             print("\r\033[K^C", flush=True)  # Clear line and show ^C
 
                             # Always show new prompt after interrupt
-                            self._display_prompt()
+                            self.display_prompt()
 
                             # Note: The INTERRUPT event is already emitted above,
                             # so the event bus and UI listeners can handle it
@@ -195,7 +197,7 @@ class PlainAsyncInput(AsyncInputInterface):
 
         return None
 
-    def _display_prompt(self) -> None:
+    def display_prompt(self) -> None:
         """Display the input prompt."""
         # Clear line first (consistent with _redisplay_input to prevent ghost characters)
         sys.stdout.write("\r\033[K")
@@ -204,27 +206,62 @@ class PlainAsyncInput(AsyncInputInterface):
         self._position_cursor()
         sys.stdout.flush()
 
+    def _get_occupied_lines(self) -> int:
+        """Calculate how many terminal lines the current prompt + text occupies."""
+        try:
+            term_width = shutil.get_terminal_size().columns
+        except OSError:
+            term_width = 80
+        
+        total_len = len(self.prompt_text) + len(self._input_buffer.text)
+        # Simple ceiling division
+        return math.ceil(total_len / term_width) if term_width > 0 else 1
+
     def _redisplay_input(self) -> None:
-        """Redisplay the current input."""
-        # Clear current line and reposition at start
-        sys.stdout.write("\r\033[K")
+        """Redisplay the current input, handling multiline wrapping."""
+        lines_occupied = self._get_occupied_lines()
+        
+        # Move cursor up to the starting line
+        if lines_occupied > 1:
+            sys.stdout.write(f"\033[{lines_occupied - 1}A")
+            
+        # Go to start of line and clear from cursor down
+        sys.stdout.write("\r\033[J")
+        
         # Display prompt and text
         sys.stdout.write(f"{self.prompt_text}{self._input_buffer.text}")
+        
+        # Position cursor correctly
         self._position_cursor()
         sys.stdout.flush()
 
     def _position_cursor(self) -> None:
-        """Position cursor at correct location."""
-        # Calculate total position from start of line
-        prompt_len = len(self.prompt_text)
-        target_pos = prompt_len + self._input_buffer.cursor_pos
+        """Position cursor at correct location, handling multiline."""
+        try:
+            term_width = shutil.get_terminal_size().columns
+        except OSError:
+            term_width = 80
 
-        # Move cursor to absolute column position (1-indexed)
-        # First go to start of line, then move right
-        if target_pos > 0:
-            sys.stdout.write(f"\r\033[{target_pos}C")
-        else:
-            sys.stdout.write("\r")
+        # Calculate absolute character position from the start of the line
+        abs_pos = len(self.prompt_text) + self._input_buffer.cursor_pos
+        
+        # Calculate target row and column (0-indexed)
+        target_row = (abs_pos // term_width) if term_width > 0 else 0
+        target_col = (abs_pos % term_width) if term_width > 0 else 0
+
+        # To position, we first go to the start of the entire prompt area
+        lines_occupied = self._get_occupied_lines()
+        if lines_occupied > 1:
+            sys.stdout.write(f"\033[{lines_occupied - 1}A")
+        sys.stdout.write("\r")
+        
+        # Now move to the target row and column
+        if target_row > 0:
+            sys.stdout.write(f"\033[{target_row}B")
+        if target_col > 0:
+            sys.stdout.write(f"\033[{target_col}C")
+        
+        sys.stdout.flush()
 
     async def resume_capture_for_input(self) -> None:
         """DEPRECATED: Capture now runs continuously."""
