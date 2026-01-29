@@ -5,6 +5,7 @@ Responsible for all Rich console operations and formatting.
 Never handles input - only rendering.
 """
 
+import re
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.syntax import Syntax
@@ -69,7 +70,9 @@ class PlainRenderer:
             self._thinking_active = False
             self.console.print("[bold green][MONK][/bold green] ", end="")
 
-        self.console.print(text, end="", highlight=False)
+        # Normalize whitespace to fix model's formatting
+        cleaned_text = re.sub(r'\n\s+', '\n', text)
+        self.console.print(cleaned_text, end="", highlight=False)
 
     def render_line(self, line: str, is_thinking: bool = False):
         """

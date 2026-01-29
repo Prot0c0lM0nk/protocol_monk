@@ -222,14 +222,10 @@ class PlainUI(UI):
                         line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
                         self.renderer.render_line(line, is_thinking=False)
                 else:
-                    self._stream_line_buffer += answer_chunk
-                    while "\n" in self._stream_line_buffer:
-                        line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
-                        if line.strip():
-                            self.renderer.console.print(line.lstrip())
-                        else:
-                            self.renderer.console.print()
-
+                    if self._stream_line_buffer:
+                        self.renderer.print_stream(self._stream_line_buffer)
+                        self._stream_line_buffer = ""
+                    self.renderer.print_stream(answer_chunk)
     async def _on_response_complete(self, data: Dict[str, Any]):
         async with self._terminal_lock:
             await self._flush_stream_buffer()
