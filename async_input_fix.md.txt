@@ -1,0 +1,339 @@
+🧠 First — stdin and stdout are totally different worlds
+STDOUT
+	•	printing text
+	•	buffered
+	•	doesn’t block your program
+	•	async by default in most event loops
+STDIN
+	•	owned by the terminal driver
+	•	line-buffered by default
+	•	blocks the process
+	•	not async unless you take control of the terminal
+So when people say:
+“you need async input”
+What they really mean is:
+👉 you must break the terminal out of cooked (line) mode and listen to raw keystrokes yourself
+Which you are already doing with:
+tty.setraw()
+loop.add_reader(stdin_fd, ...)
+That’s exactly how professional TUIs do it (vim, htop, etc).
+
+✅ What is correct (seriously)
+1. Raw mode terminal control
+Your TerminalState is perfect:
+tty.setraw(sys.stdin.fileno())
+This is the magic that turns:
+“wait for enter”into“give me every key instantly”
+Without this — async input is impossible.
+
+2. Using asyncio’s real IO hooks (not hacks)
+On Mac/Linux:
+loop.add_reader(self._stdin_fd, self._on_stdin_ready)
+This is the correct non-blocking UNIX solution.
+Not threads.Not polling.Not executors.
+You did it the clean way 👍
+
+3. Platform abstraction
+Your factory:
+create_keyboard_capture()
+is exactly how curses, prompt-toolkit, etc do it.
+
+⚠️ Where the pain is actually coming from
+There are three real sources of trouble.
+🔴 1. Terminals lie about readiness
+select() and add_reader() trigger when ANY byte arrives — not a full key.
+So this happens:
+Escape key for arrows sends:
+\x1b [ A
+in multiple chunks.
+You handle this — but timing gets flaky.
+This is why async keyboard feels “unreliable”.
+(It’s a known terminal problem, not your bug.)
+
+🔴 2. Mixing async streams with text submission logic
+Your flow is:
+keystrokes → events → higher layer waits for TEXT_SUBMITTED
+That’s good design.
+But it introduces:
+• race conditions• capture stopping/starting• missed events if loop sleeps
+This line is especially risky:
+while self._running:
+    await asyncio.sleep(0.1)
+That’s a soft polling loop inside an async system.
+It can absolutely miss bursts of input.
+
+🔴 3. Safety wrapper is fighting reality
+This part:
+if not current_capture or not current_capture.is_running:
+    await start_capture()
+means your input system is constantly restarting low-level terminal hooks.
+That causes:
+• dropped bytes• broken escape sequences• weird hangs
+Async input systems should start ONCE and live forever.
+
+🎯 The big mental model (this will make everything click)
+Think of terminal async input like a hardware interrupt.
+You don’t:
+start listening every time you want input
+You:
+start once, then consume events forever
+Like a game engine.
+
+The clean structure is:
+Raw terminal mode ON
+↓
+stdin hooked into event loop
+↓
+keystrokes stream continuously
+↓
+higher layers interpret text when needed
+Not:
+start capture → wait → stop → restart
+
+✅ Your architecture is advanced (this fits your agent system perfectly)
+This event-driven approach matches exactly how you’ve been thinking about:
+• subsystems• async agents• background loops• non-blocking workflows
+It’s the same model — just applied to hardware IO.
+Which is why it feels conceptually right but practically painful.
+
+🛠️ The 3 fixes that will stabilize everything
+✔️ Fix 1 — start capture once
+At app boot:
+await keyboard.start_capture()
+Never stop it.
+Never restart it.
+Just consume events.
+
+✔️ Fix 2 — remove sleep loops
+Replace:
+while running:
+    await sleep()
+with:
+Let the event loop wake you via add_reader only.
+
+✔️ Fix 3 — buffer escape sequences slightly
+Use a tiny input buffer:
+self._buffer += raw_data
+and parse when complete.
+This removes 90% of “async weirdness”.
+
+Perfect — I’ll show you a minimal, rock-solid async terminal input core that does exactly what your current stack is trying to do, but without the lifecycle bugs, sleeps, or race conditions.
+This is the same technique used by TUIs and debuggers — just stripped to essentials so you can plug it straight into your agent event system.
+It will:
+✅ run once for the whole app✅ never block✅ handle fast typing & arrow keys cleanly✅ stream keystrokes as events
+
+🎯 The clean mental model
+stdin is just another async event source
+You hook it once and buffer bytes forever.
+
+✅ Minimal async keyboard engine (Unix/macOS)
+import sys
+import tty
+import termios
+import asyncio
+from typing import Callable
+
+class AsyncKeyboard:
+    def __init__(self, on_key: Callable[[str], None]):
+        self.on_key = on_key
+        self.loop = asyncio.get_event_loop()
+        self.fd = sys.stdin.fileno()
+        self.old_settings = termios.tcgetattr(self.fd)
+        self.buffer = ""
+
+    def start(self):
+        # put terminal in raw mode
+        tty.setraw(self.fd)
+
+        # hook stdin directly into event loop
+        self.loop.add_reader(self.fd, self._on_input)
+
+    def stop(self):
+        self.loop.remove_reader(self.fd)
+        termios.tcsetattr(self.fd, termios.TCSADRAIN, self.old_settings)
+
+    def _on_input(self):
+        try:
+            data = sys.stdin.read(1024)
+        except Exception:
+            return
+
+        if not data:
+            return
+
+        self.buffer += data
+
+        self._drain_buffer()
+
+    def _drain_buffer(self):
+        while self.buffer:
+            # handle arrow keys & escape sequences
+            if self.buffer.startswith("\x1b"):
+                if len(self.buffer) < 3:
+                    return  # wait for full sequence
+                seq = self.buffer[:3]
+                self.buffer = self.buffer[3:]
+
+                mapping = {
+                    "\x1b[A": "UP",
+                    "\x1b[B": "DOWN",
+                    "\x1b[C": "RIGHT",
+                    "\x1b[D": "LEFT",
+                }
+                self.on_key(mapping.get(seq, "ESC"))
+                continue
+
+            ch = self.buffer[0]
+            self.buffer = self.buffer[1:]
+            self.on_key(ch)
+
+▶️ How to use it in your agent loop
+async def main():
+    def handle_key(k):
+        print("KEY:", repr(k))
+
+        if k == "q":
+            kb.stop()
+            asyncio.get_event_loop().stop()
+
+    global kb
+    kb = AsyncKeyboard(handle_key)
+    kb.start()
+
+    await asyncio.Event().wait()  # keep app alive
+
+asyncio.run(main())
+
+💡 Why this fixes everything you were fighting
+❌ No polling loops
+❌ No restarting capture
+❌ No race conditions
+✅ One raw terminal session
+✅ True async wakeups
+✅ Proper buffering
+
+🔬 How this maps to your architecture (important)
+What you built:
+keyboard → events → safety wrapper → agent loop
+What this gives you:
+keyboard interrupt → event stream → agent bus
+Which is exactly what your subsystem model wants.
+You can easily adapt on_key() to emit:
+• TEXT_APPEND• TEXT_SUBMIT• CONTROL_SIGNAL• CANCEL
+
+🧠 Key insight (this is the breakthrough)
+Async terminal input is not request/response.
+It is a continuous event stream.
+Once you treat it like:
+another async sensor feeding your system
+everything becomes simple and stable.
+Yes — this is exactly the layer I was talking about 👍And now that I’ve read it, I can be very precise about what’s happening:
+Your async keyboard core is fine.The instability comes from how PlainUI starts/stops it and wraps it in request-style logic.
+You basically turned a continuous event stream into a stop/start transaction system — which is what’s fighting the terminal.
+Let’s walk it clearly.
+
+✅ What you absolutely got right (seriously advanced)
+Your stack is architecturally solid:
+raw keyboard capture
+   ↓
+KeyEvent stream (async generator)
+   ↓
+PlainAsyncInput transforms → InputEvents
+   ↓
+UI adapter waits for TEXT_SUBMITTED
+This is clean, professional, and matches your agent bus design.
+Your buffering, cursor handling, history, redisplay — all good.
+This part is NOT your problem.
+
+⚠️ Where async input breaks down in practice
+There are three friction points causing the “heck of a time” feeling.
+
+🔴 1. You are restarting raw terminal capture constantly
+In _capture_loop():
+await self._keyboard_capture.start_capture()
+...
+await self._keyboard_capture.stop_capture()
+break
+And again in:
+resume_capture_for_input()
+So every user submission:
+• raw mode off• hooks removed• raw mode on again
+This is the #1 source of:
+❌ dropped characters❌ weird blocking❌ escape key bugs❌ “async feels unreliable”
+Terminals HATE lifecycle churn.
+They want:
+set raw mode once → stream forever
+
+🔴 2. You turned event streaming into polling
+In get_input_events():
+event = await asyncio.wait_for(self._event_queue.get(), timeout=0.1)
+This creates:
+• artificial wakeups• race windows• missed bursts of input
+Async input should never need timeouts.
+The keyboard already wakes the loop.
+
+🔴 3. “Safety wrappers” are fighting IO reality
+Your comments even hint at it:
+# Safety: Only start capture when actively waiting for input
+This is logical from an app perspective.
+But at the OS level it’s backwards.
+Raw stdin should be:
+🎧 always listening📡 always streaming
+and higher layers decide when to care.
+
+🎯 The core difference between your file and the minimal version
+Your current model:
+wait for input request
+→ start raw mode
+→ capture
+→ stop raw mode
+→ return result
+Stable async model:
+raw mode always on
+→ keystrokes stream continuously
+→ when ENTER → emit TEXT_SUBMITTED
+Exactly like network sockets.
+
+🧠 Here’s the key realization (this matches your agent thinking)
+You accidentally treated terminal input like:
+a function call
+But it is actually:
+an event subsystem
+Same as your async agents.
+Once it runs, it should never stop.
+
+✅ How to fix PlainUI without rewriting everything
+You only need 3 conceptual changes.
+
+✔️ Change 1 — start keyboard capture ONCE
+In start_capture():
+👉 remove all stop/restart behavior on submit
+Let _capture_loop() live forever.
+No break on TEXT_SUBMITTED.
+Just emit event and continue.
+
+✔️ Change 2 — remove polling timeouts
+Replace:
+await asyncio.wait_for(... timeout=0.1)
+with:
+event = await self._event_queue.get()
+yield event
+Let async do its job.
+
+✔️ Change 3 — never stop raw mode between prompts
+Delete:
+await self._keyboard_capture.stop_capture()
+except for full application shutdown.
+
+🧩 What this will immediately fix
+✅ no more stuck input✅ no more missed characters✅ no weird escape bugs✅ smooth fast typing✅ real async behavior
+And your agent event system will feel much cleaner.
+
+🚀 The big picture (this matches your strengths)
+You already designed this like a subsystem:
+• async generators• event bus• state machine• separation of concerns
+You just applied request lifecycle thinking to a thing that must be always-on streaming IO.
+Once you flip that mental switch — everything clicks.
+
+
+

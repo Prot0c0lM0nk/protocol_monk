@@ -112,6 +112,7 @@ class Application:
         self.ui = PlainUI(event_bus=self.event_bus)
         
         # === ARCHITECTURAL FIX: Emit pure data packet ===
+        # This event will be handled by the UI to print the banner
         await self.event_bus.emit(
             AgentEvents.APP_STARTED.value,
             {
@@ -121,7 +122,10 @@ class Application:
                 "version": "1.0.0" # Example metadata
             }
         )
-        # ===============================================
+        
+        # Start async input capture if enabled, AFTER the banner has been printed.
+        if settings.ui.use_async_input:
+            await self.ui.input.start_capture()
         
         self.running = True
         await self.ui.run_loop()
@@ -172,6 +176,8 @@ class Application:
         self.running = False
         
         # Stop UI
+        if self.ui and hasattr(self.ui, 'stop'):
+            await self.ui.stop()
         if self.tui_app:
             await self.tui_app.exit()
             
@@ -194,7 +200,14 @@ def signal_handler(app, signum, frame):
 
 async def main():
     app = Application()
-    signal.signal(signal.SIGTERM, lambda s, f: asyncio.create_task(app.stop()))
+
+    def handle_signal():
+        asyncio.create_task(app.stop())
+
+    loop = asyncio.get_event_loop()
+    loop.add_signal_handler(signal.SIGINT, handle_signal)
+    loop.add_signal_handler(signal.SIGTERM, handle_signal)
+
     await app.start()
 
 
@@ -202,7 +215,9 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
+        # User-initiated exit. Suppress traceback.
         sys.exit(0)
     except Exception as e:
-        print(f"Fatal: {e}", file=sys.stderr)
+        print(f"Fatal Error: {e}", file=sys.stderr)
+        logging.getLogger().critical("Fatal application error", exc_info=True)
         sys.exit(1)

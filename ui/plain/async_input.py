@@ -42,23 +42,13 @@ class PlainAsyncInput(AsyncInputInterface):
             return False
 
     async def get_input_events(self) -> AsyncIterator[InputEvent]:
-        """Get input events as they occur with focus control."""
+        """Get input events as they occur."""
         while self._running:
-            # Check focus, but don't return - just wait and retry
-            if not self._has_terminal_focus():
-                await asyncio.sleep(0.1)
-                continue
-
             try:
-                event = await asyncio.wait_for(
-                    self._event_queue.get(),
-                    timeout=0.1
-                )
+                event = await self._event_queue.get()
                 yield event
-            except asyncio.TimeoutError:
-                # Check if we still have focus
-                if not self._has_terminal_focus():
-                    continue
+            except asyncio.CancelledError:
+                break
 
     async def start_capture(self) -> None:
         """Start async input capture."""
@@ -115,18 +105,13 @@ class PlainAsyncInput(AsyncInputInterface):
 
                         # Handle special events
                         if input_event.event_type == InputEventType.TEXT_SUBMITTED:
-                            # Stop capture to restore terminal mode for output
-                            logger.debug("_capture_loop: TEXT_SUBMITTED, stopping capture and breaking")
-                            await self._keyboard_capture.stop_capture()
-                            # Buffer will be reset and capture resumed when next prompt is displayed
-                            self._input_buffer = InputBuffer()
-                            # Mark as not running so next start_capture() will restart it
-                            self._running = False
-                            # Move cursor to next line after submission
+                            # Instead of stopping, just reset buffer and prepare for next input
+                            logger.debug("_capture_loop: TEXT_SUBMITTED, resetting for next input")
                             sys.stdout.write("\n")
                             sys.stdout.flush()
-                            # Exit the capture loop - it will be restarted on next start_capture()
-                            break
+                            self._input_buffer = InputBuffer()
+                            # Display a new prompt for the next input
+                            self._display_prompt()
                         elif input_event.event_type == InputEventType.INTERRUPT:
                             # Handle Ctrl+C interrupt
                             had_text = bool(self._input_buffer.text.strip())
@@ -242,11 +227,8 @@ class PlainAsyncInput(AsyncInputInterface):
             sys.stdout.write("\r")
 
     async def resume_capture_for_input(self) -> None:
-        """Resume keyboard capture when ready for new input."""
-        if not self._keyboard_capture.is_running and self._running:
-            await self._keyboard_capture.start_capture()
-            # Display prompt for new input
-            self._display_prompt()
+        """DEPRECATED: Capture now runs continuously."""
+        pass
 
 
 class PlainAsyncInputWithHistory(PlainAsyncInput):
@@ -336,11 +318,7 @@ class PlainUIAsyncAdapter:
 
     async def get_input_async(self) -> Optional[str]:
         """Get input asynchronously."""
-        # Start capture if not running
-        if not self.async_input.is_running:
-            await self.async_input.start_capture()
-
-        # Wait for next text submission
+        # Capture is now started and managed externally.
         self._input_future = asyncio.Future()
 
         # Monitor events

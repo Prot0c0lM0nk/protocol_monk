@@ -116,9 +116,7 @@ class PlainRenderer:
             )
             self.console.print(syntax)
         else:
-            safe_line = line.replace("<", "\\<")
-            md = Markdown(safe_line)
-            self.console.print(md)
+            self.console.print(line)
 
     def render_tool_confirmation(self, tool_name: str, params: Dict[str, Any]):
         """

@@ -59,11 +59,11 @@ class SafeInputManager:
         if settings.ui.use_async_input and self._is_terminal():
             try:
                 from .async_input_interface import AsyncInputManager
-                from .plain.async_input import PlainAsyncInput
+                from .plain.async_input import PlainAsyncInputWithHistory
 
                 self._async_manager = AsyncInputManager()
                 self._async_manager.register_capture(
-                    "plain", PlainAsyncInput()
+                    "plain", PlainAsyncInputWithHistory()
                 )
             except Exception as e:
                 # Log error but don't fail - safety first
@@ -72,6 +72,15 @@ class SafeInputManager:
         elif settings.ui.use_async_input:
             print("Warning: Async input requested but not in a terminal. Using traditional input.")
             self._async_manager = None
+            
+    async def start_capture(self):
+        """Initialize and start the async input capture."""
+        if self._traditional_manager is None:
+            self._initialize_managers()
+
+        if settings.ui.use_async_input and self._async_manager is not None:
+            await self._async_manager.start_capture(self.ui_type)
+            self._using_async = True
 
     async def read_input_safe(self, prompt_text: str = "", is_main_loop: bool = False) -> Optional[str]:
         """
@@ -91,15 +100,6 @@ class SafeInputManager:
         # Use async input if enabled and available
         if settings.ui.use_async_input and self._async_manager is not None:
             try:
-                # Check if current capture is actually running (not just initialized)
-                # This handles the case where capture was stopped after text submission
-                current_capture = self._async_manager._current_capture
-                logger.debug(f"read_input_safe: current_capture={current_capture}, is_running={current_capture.is_running if current_capture else None}")
-                if not current_capture or not current_capture.is_running:
-                    logger.debug("read_input_safe: Starting capture")
-                    await self._async_manager.start_capture(self.ui_type)
-                self._using_async = True
-
                 # Read with timeout to prevent blocking
                 logger.debug("read_input_safe: Waiting for events...")
                 async for event in self._async_manager.get_current_events():
@@ -107,12 +107,10 @@ class SafeInputManager:
                     if event.event_type == InputEventType.TEXT_SUBMITTED:
                         return event.data
                     elif event.event_type == InputEventType.INTERRUPT:
+                        # On interrupt, we want to break the input loop.
+                        # We need to signal this up to the main loop.
+                        # Returning None is the established contract for this.
                         return None
-
-                # If we get here, no event was received
-                logger.debug("read_input_safe: No event received, returning None")
-                return None
-
             except Exception as e:
                 # Log error but don't fall back - the fallback is broken
                 logger.error(f"Async input error: {e}")
