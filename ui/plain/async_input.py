@@ -27,9 +27,10 @@ class InputBuffer:
 class PlainAsyncInput(AsyncInputInterface):
     """Async input handler for Plain UI."""
 
-    def __init__(self, prompt_text: str = "USER > "):
+    def __init__(self, prompt_text: str = "USER > ", lock: Optional[asyncio.Lock] = None):
         super().__init__()
         self.prompt_text = prompt_text
+        self._terminal_lock = lock
         self._keyboard_capture = create_keyboard_capture()
         self._input_buffer = InputBuffer()
         self._capture_task: Optional[asyncio.Task] = None
@@ -89,7 +90,7 @@ class PlainAsyncInput(AsyncInputInterface):
         await self._keyboard_capture.start_capture()
 
         # Display initial prompt
-        self.display_prompt()
+        await self.display_prompt()
         logger.debug("_capture_loop: Prompt displayed, entering event loop")
 
         try:
@@ -101,7 +102,7 @@ class PlainAsyncInput(AsyncInputInterface):
                 # Safety: Process only if we have terminal focus
                 if self._has_terminal_focus():
                     # Process key event
-                    input_event = self._process_key_event(key_event)
+                    input_event = await self._process_key_event(key_event)
                     if input_event:
                         await self._emit_event(input_event)
 
@@ -112,8 +113,7 @@ class PlainAsyncInput(AsyncInputInterface):
                             sys.stdout.write("\n")
                             sys.stdout.flush()
                             self._input_buffer = InputBuffer()
-                            # Display a new prompt for the next input
-                            self.display_prompt()
+                            # The prompt will be displayed by the UI layer after the turn is complete.
                         elif input_event.event_type == InputEventType.INTERRUPT:
                             # Handle Ctrl+C interrupt
                             had_text = bool(self._input_buffer.text.strip())
@@ -123,7 +123,7 @@ class PlainAsyncInput(AsyncInputInterface):
                             print("\r\033[K^C", flush=True)  # Clear line and show ^C
 
                             # Always show new prompt after interrupt
-                            self.display_prompt()
+                            await self.display_prompt()
 
                             # Note: The INTERRUPT event is already emitted above,
                             # so the event bus and UI listeners can handle it
@@ -137,7 +137,7 @@ class PlainAsyncInput(AsyncInputInterface):
             await self._keyboard_capture.stop_capture()
             logger.debug("_capture_loop: Exiting")
 
-    def _process_key_event(self, key_event: KeyEvent) -> Optional[InputEvent]:
+    async def _process_key_event(self, key_event: KeyEvent) -> Optional[InputEvent]:
         """Process a key event into an input event."""
         # Handle special keys
         if key_event.key_type == KeyType.SPECIAL:
@@ -145,6 +145,9 @@ class PlainAsyncInput(AsyncInputInterface):
                 # Submit current text
                 text = self._input_buffer.text
                 if text:
+                    # Final redisplay before submission is tricky with async.
+                    # For now, we assume submission clears the line.
+                    # A lock would be needed if we printed here.
                     print(flush=True)  # New line after prompt
                     return InputEvent(
                         event_type=InputEventType.TEXT_SUBMITTED,
@@ -161,7 +164,7 @@ class PlainAsyncInput(AsyncInputInterface):
                         self._input_buffer.text[pos + 1:]
                     )
                     self._input_buffer.cursor_pos = pos
-                    self._redisplay_input()
+                    await self._redisplay_input()
             # Handle Ctrl+C combinations
             elif key_event.key == "ctrl+c" or key_event.key_type == KeyType.COMBINATION and "ctrl" in key_event.modifiers and key_event.key.endswith("+c"):
                 # Interrupt - emit event and clear buffer
@@ -174,7 +177,7 @@ class PlainAsyncInput(AsyncInputInterface):
             elif key_event.key == "escape":
                 # Clear input
                 self._input_buffer = InputBuffer()
-                self._redisplay_input()
+                await self._redisplay_input()
 
         # Handle character input
         elif key_event.key_type == KeyType.CHARACTER:
@@ -186,7 +189,7 @@ class PlainAsyncInput(AsyncInputInterface):
                 self._input_buffer.text[pos:]
             )
             self._input_buffer.cursor_pos += 1
-            self._redisplay_input()
+            await self._redisplay_input()
 
         # Handle arrow keys for cursor movement
         elif key_event.key in ["left", "right"]:
@@ -197,7 +200,7 @@ class PlainAsyncInput(AsyncInputInterface):
 
         return None
 
-    def display_prompt(self) -> None:
+    def _unsafe_display_prompt(self) -> None:
         """Display the input prompt."""
         # Clear line first (consistent with _redisplay_input to prevent ghost characters)
         sys.stdout.write("\r\033[K")
@@ -205,6 +208,13 @@ class PlainAsyncInput(AsyncInputInterface):
         sys.stdout.write(f"\r{self.prompt_text}{self._input_buffer.text}")
         self._position_cursor()
         sys.stdout.flush()
+
+    async def display_prompt(self) -> None:
+        if self._terminal_lock:
+            async with self._terminal_lock:
+                self._unsafe_display_prompt()
+        else:
+            self._unsafe_display_prompt()
 
     def _get_occupied_lines(self) -> int:
         """Calculate how many terminal lines the current prompt + text occupies."""
@@ -217,7 +227,7 @@ class PlainAsyncInput(AsyncInputInterface):
         # Simple ceiling division
         return math.ceil(total_len / term_width) if term_width > 0 else 1
 
-    def _redisplay_input(self) -> None:
+    def _unsafe_redisplay_input(self) -> None:
         """Redisplay the current input, handling multiline wrapping."""
         lines_occupied = self._get_occupied_lines()
         
@@ -234,6 +244,13 @@ class PlainAsyncInput(AsyncInputInterface):
         # Position cursor correctly
         self._position_cursor()
         sys.stdout.flush()
+
+    async def _redisplay_input(self) -> None:
+        if self._terminal_lock:
+            async with self._terminal_lock:
+                self._unsafe_redisplay_input()
+        else:
+            self._unsafe_redisplay_input()
 
     def _position_cursor(self) -> None:
         """Position cursor at correct location, handling multiline."""
@@ -271,25 +288,25 @@ class PlainAsyncInput(AsyncInputInterface):
 class PlainAsyncInputWithHistory(PlainAsyncInput):
     """Async input with history support."""
 
-    def __init__(self, prompt_text: str = "USER > ", history_size: int = 100):
-        super().__init__(prompt_text)
+    def __init__(self, prompt_text: str = "USER > ", history_size: int = 100, lock: Optional[asyncio.Lock] = None):
+        super().__init__(prompt_text, lock=lock)
         self.history: List[str] = []
         self.history_size = history_size
         self.history_index = -1
         self._saved_input = ""
 
-    def _process_key_event(self, key_event: KeyEvent) -> Optional[InputEvent]:
+    async def _process_key_event(self, key_event: KeyEvent) -> Optional[InputEvent]:
         """Process key event with history navigation."""
         # Handle up/down for history
         if key_event.key == "up":
-            self._navigate_history(-1)
+            await self._navigate_history(-1)
             return None
         elif key_event.key == "down":
-            self._navigate_history(1)
+            await self._navigate_history(1)
             return None
 
         # Let parent handle other keys
-        result = super()._process_key_event(key_event)
+        result = await super()._process_key_event(key_event)
 
         # Add to history on submit
         if result and result.event_type == InputEventType.TEXT_SUBMITTED:
@@ -297,7 +314,7 @@ class PlainAsyncInputWithHistory(PlainAsyncInput):
 
         return result
 
-    def _navigate_history(self, direction: int) -> None:
+    async def _navigate_history(self, direction: int) -> None:
         """Navigate through command history."""
         if not self.history:
             return
@@ -327,7 +344,7 @@ class PlainAsyncInputWithHistory(PlainAsyncInput):
                 self._input_buffer.text = self.history[self.history_index]
 
             self._input_buffer.cursor_pos = len(self._input_buffer.text)
-            self._redisplay_input()
+            await self._redisplay_input()
 
     def _add_to_history(self, text: str) -> None:
         """Add text to history."""

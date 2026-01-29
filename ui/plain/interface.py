@@ -18,11 +18,12 @@ class PlainUI(UI):
         super().__init__()
         # 1. Initialize Infrastructure FIRST
         self.renderer = PlainRenderer()
+        self._terminal_lock = asyncio.Lock()
 
         # Use safety wrapper for input handling
         if settings.ui.use_async_input:
             # Use safe input manager that handles both async and fallback
-            self.input = create_safe_input_manager("plain")
+            self.input = create_safe_input_manager("plain", lock=self._terminal_lock)
         else:
             # Use traditional input manager
             self.input = InputManager()
@@ -64,14 +65,15 @@ class PlainUI(UI):
 
     async def _on_app_started(self, data: Dict[str, Any]):
         """Render the startup banner from the data packet."""
-        wd = data.get("working_dir", ".")
-        model = data.get("model", "Unknown")
-        provider = data.get("provider", "Unknown")
+        async with self._terminal_lock:
+            wd = data.get("working_dir", ".")
+            model = data.get("model", "Unknown")
+            provider = data.get("provider", "Unknown")
 
-        # The UI controls the formatting (Colors, Layout, Text)
-        self.renderer.print_system(f"✠ Protocol Monk started in {wd}")
-        self.renderer.print_system(f"Model: {model} ({provider})")
-        self.renderer.print_system("Type '/help' for commands, '/quit' to exit.")
+            # The UI controls the formatting (Colors, Layout, Text)
+            self.renderer.print_system(f"✠ Protocol Monk started in {wd}")
+            self.renderer.print_system(f"Model: {model} ({provider})")
+            self.renderer.print_system("Type '/help' for commands, '/quit' to exit.")
 
     # --- MAIN LOOP ---
     async def stop(self):
@@ -148,9 +150,10 @@ class PlainUI(UI):
         params = tool_call.get("parameters", {})
         tool_id = data.get("tool_call_id")
         
-        # Render
-        await self._flush_stream_buffer()
-        self.renderer.render_tool_confirmation(tool_name, params)
+        # Render under lock
+        async with self._terminal_lock:
+            await self._flush_stream_buffer()
+            self.renderer.render_tool_confirmation(tool_name, params)
         
         # Block for Input
         # Note: input.read_input must handle re-entrancy if needed, 
@@ -160,9 +163,12 @@ class PlainUI(UI):
         approved = False
         if user_ans and user_ans.lower().startswith("y"):
             approved = True
-            self.renderer.print_system(f"✓ Approved {tool_name}")
+            # This print should also be locked
+            async with self._terminal_lock:
+                self.renderer.print_system(f"✓ Approved {tool_name}")
         else:
-            self.renderer.print_error(f"✗ Rejected {tool_name}")
+            async with self._terminal_lock:
+                self.renderer.print_error(f"✗ Rejected {tool_name}")
 
         # Respond
         await self._event_bus.emit(
@@ -177,7 +183,8 @@ class PlainUI(UI):
     async def _on_input_requested(self, data: Dict[str, Any]):
         """Handle generic input request (e.g. for filename)."""
         prompt = data.get("prompt", "> ")
-        await self._flush_stream_buffer()
+        async with self._terminal_lock:
+            await self._flush_stream_buffer()
         
         user_input = await self.input.read_input(prompt)
         
@@ -189,94 +196,109 @@ class PlainUI(UI):
     # --- EVENT HANDLERS (Passive Output) ---
     # (These remain largely the same, just keeping them clean)
     async def _on_stream_chunk(self, data: Dict[str, Any]):
-        thinking_chunk = data.get("thinking")
-        answer_chunk = data.get("chunk", "")
-        
-        if thinking_chunk:
-            self._in_thinking_block = True
-            self._stream_line_buffer += thinking_chunk
-            while "\n" in self._stream_line_buffer:
-                line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
-                self.renderer.render_line(line, is_thinking=True)
-            return
-
-        if answer_chunk:
-            if self._in_thinking_block:
-                if self._stream_line_buffer:
-                    self.renderer.render_line(self._stream_line_buffer, is_thinking=True)
-                    self._stream_line_buffer = ""
-                self.renderer.console.print()
-                self._in_thinking_block = False
-
-            if "```" in answer_chunk or getattr(self.renderer, "_in_code_block", False):
-                self._stream_line_buffer += answer_chunk
+        async with self._terminal_lock:
+            thinking_chunk = data.get("thinking")
+            answer_chunk = data.get("chunk", "")
+            
+            if thinking_chunk:
+                self._in_thinking_block = True
+                self._stream_line_buffer += thinking_chunk
                 while "\n" in self._stream_line_buffer:
                     line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
-                    self.renderer.render_line(line, is_thinking=False)
-            else:
-                if self._stream_line_buffer:
-                    self.renderer.print_stream(self._stream_line_buffer)
-                    self._stream_line_buffer = ""
-                self.renderer.print_stream(answer_chunk)
+                    self.renderer.render_line(line, is_thinking=True)
+                return
+
+            if answer_chunk:
+                if self._in_thinking_block:
+                    if self._stream_line_buffer:
+                        self.renderer.render_line(self._stream_line_buffer, is_thinking=True)
+                        self._stream_line_buffer = ""
+                    self.renderer.console.print()
+                    self._in_thinking_block = False
+
+                if "```" in answer_chunk or getattr(self.renderer, "_in_code_block", False):
+                    self._stream_line_buffer += answer_chunk
+                    while "\n" in self._stream_line_buffer:
+                        line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
+                        self.renderer.render_line(line, is_thinking=False)
+                else:
+                    self._stream_line_buffer += answer_chunk
+                    while "\n" in self._stream_line_buffer:
+                        line, self._stream_line_buffer = self._stream_line_buffer.split("\n", 1)
+                        if line.strip():
+                            self.renderer.console.print(line.lstrip())
+                        else:
+                            self.renderer.console.print()
 
     async def _on_response_complete(self, data: Dict[str, Any]):
-        await self._flush_stream_buffer()
-        self.renderer.console.print()
-        self.renderer.reset_thinking_state()
-        self.input.display_prompt()
+        async with self._terminal_lock:
+            await self._flush_stream_buffer()
+            self.renderer.console.print()
+            self.renderer.reset_thinking_state()
+        await self.input.display_prompt()
         self.turn_complete.set() # Unblock run_loop
 
     async def _on_tool_result(self, data: Dict[str, Any]):
-        result = data.get("result")
-        tool_name = data.get("tool_name", "Unknown")
-        if result:
-            output = result.output if hasattr(result, "output") else str(result)
-            self.renderer.render_tool_result(tool_name, ToolResult(True, output, tool_name))
+        async with self._terminal_lock:
+            result = data.get("result")
+            tool_name = data.get("tool_name", "Unknown")
+            if result:
+                output = result.output if hasattr(result, "output") else str(result)
+                self.renderer.render_tool_result(tool_name, ToolResult(True, output, tool_name))
 
     async def _on_agent_error(self, data: Dict[str, Any]):
-        self.renderer.print_error(data.get("message", "Unknown error"))
+        async with self._terminal_lock:
+            self.renderer.print_error(data.get("message", "Unknown error"))
 
     async def _on_agent_warning(self, data: Dict[str, Any]):
-        self.renderer.print_warning(data.get("message", "Unknown warning"))
+        async with self._terminal_lock:
+            self.renderer.print_warning(data.get("message", "Unknown warning"))
 
     async def _on_agent_info(self, data: Dict[str, Any]):
-        msg = data.get("message", "")
-        context = data.get("context", "")
-        items = data.get("data", [])
+        async with self._terminal_lock:
+            msg = data.get("message", "")
+            context = data.get("context", "")
+            items = data.get("data", [])
 
-        if context in ["model_selection", "provider_selection"] and items:
-            self.renderer.render_selection_list(msg, items)
-        elif msg.strip():
-            self.renderer.print_system(msg)
+            if context in ["model_selection", "provider_selection"] and items:
+                self.renderer.render_selection_list(msg, items)
+            elif msg.strip():
+                self.renderer.print_system(msg)
 
     async def _on_thinking_started(self, data: Dict[str, Any]):
-        self.renderer.start_thinking(data.get("message", "Thinking..."))
+        async with self._terminal_lock:
+            self.renderer.start_thinking(data.get("message", "Thinking..."))
 
     async def _on_thinking_stopped(self, data: Dict[str, Any]):
-        self.renderer.stop_thinking()
+        async with self._terminal_lock:
+            self.renderer.stop_thinking()
 
     async def _on_context_overflow(self, data: Dict[str, Any]):
-        self.renderer.print_warning(f"Context: {data.get('current_tokens')}/{data.get('max_tokens')}")
+        async with self._terminal_lock:
+            self.renderer.print_warning(f"Context: {data.get('current_tokens')}/{data.get('max_tokens')}")
 
     async def _on_model_switched(self, data: Dict[str, Any]):
-        self.renderer.print_system(f"Model: {data.get('old_model')} → {data.get('new_model')}")
+        async with self._terminal_lock:
+            self.renderer.print_system(f"Model: {data.get('old_model')} → {data.get('new_model')}")
 
     async def _on_provider_switched(self, data: Dict[str, Any]):
-        self.renderer.print_system(f"Provider: {data.get('old_provider')} → {data.get('new_provider')}")
+        async with self._terminal_lock:
+            self.renderer.print_system(f"Provider: {data.get('old_provider')} → {data.get('new_provider')}")
 
     async def _on_command_result(self, data: Dict[str, Any]):
-        success = data.get("success", True)
-        message = data.get("message", "")
-        if message:
-            if success: await self.print_info(message)
-            else: await self.print_error(message)
+        async with self._terminal_lock:
+            success = data.get("success", True)
+            message = data.get("message", "")
+            if message:
+                if success: await self.print_info(message)
+                else: await self.print_error(message)
 
     # --- HELPER ---
     async def _flush_stream_buffer(self):
-        async with self._lock:
-            if self._stream_line_buffer:
-                self.renderer.render_line(self._stream_line_buffer, is_thinking=self._in_thinking_block)
-                self._stream_line_buffer = ""
+        # This is a helper and assumes the caller holds the terminal lock
+        if self._stream_line_buffer:
+            self.renderer.render_line(self._stream_line_buffer, is_thinking=self._in_thinking_block)
+            self._stream_line_buffer = ""
 
     # --- LEGACY/COMPAT ---
     async def get_input(self) -> str:

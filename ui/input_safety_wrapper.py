@@ -30,8 +30,9 @@ class SafeInputManager:
     - Traditional input runs in main event loop (not in broken executor)
     """
 
-    def __init__(self, ui_type: str = "plain"):
+    def __init__(self, ui_type: str = "plain", lock: Optional[asyncio.Lock] = None):
         self.ui_type = ui_type
+        self._lock = lock
         self._async_manager = None
         self._traditional_manager = None
         self._using_async = False
@@ -63,7 +64,7 @@ class SafeInputManager:
 
                 self._async_manager = AsyncInputManager()
                 self._async_manager.register_capture(
-                    "plain", PlainAsyncInputWithHistory()
+                    "plain", PlainAsyncInputWithHistory(lock=self._lock)
                 )
             except Exception as e:
                 # Log error but don't fail - safety first
@@ -138,10 +139,10 @@ class SafeInputManager:
         """
         return await self.read_input_safe(prompt_text, is_main_loop)
 
-    def display_prompt(self):
+    async def display_prompt(self):
         """Display the prompt for the current input method."""
         if self._using_async and self._async_manager:
-            self._async_manager.display_current_prompt()
+            await self._async_manager.display_current_prompt()
 
     async def cleanup(self):
         """Cleanup resources."""
@@ -153,6 +154,6 @@ class SafeInputManager:
         self._using_async = False
 
 
-def create_safe_input_manager(ui_type: str = "plain") -> SafeInputManager:
+def create_safe_input_manager(ui_type: str = "plain", lock: Optional[asyncio.Lock] = None) -> SafeInputManager:
     """Factory function to create a safe input manager."""
-    return SafeInputManager(ui_type)
+    return SafeInputManager(ui_type, lock=lock)
