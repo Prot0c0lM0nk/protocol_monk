@@ -1,11 +1,18 @@
+"""
+PlainRenderer - Simple terminal output for PlainUI.
+Colors can be added later.
+"""
+
 import sys
-from typing import Optional, Dict, Any
+from typing import Dict, Any
+
 
 class PlainRenderer:
     """
-    Handles formatting and writing to stdout/stderr.
+    Simple terminal output without complex formatting.
+    Colors can be added later.
     """
-    
+
     def __init__(self):
         self._last_was_stream = False
 
@@ -23,26 +30,30 @@ class PlainRenderer:
             self._last_was_stream = False
 
     def print_system(self, text: str):
+        """System info message."""
         self.new_line()
-        print(f"\033[94m[SYSTEM]\033[0m {text}")  # Blue text if terminal supports it, else mostly harmless
+        print(f"[SYSTEM] {text}")
 
     def print_error(self, text: str):
+        """Error message."""
         self.new_line()
-        print(f"\033[91m[ERROR]\033[0m {text}")   # Red
+        print(f"[ERROR] {text}")
 
     def print_warning(self, text: str):
+        """Warning message."""
         self.new_line()
-        print(f"\033[93m[WARN]\033[0m {text}")    # Yellow
+        print(f"[WARN] {text}")
 
     def print_tool_call(self, tool_name: str, params: Dict[str, Any]):
+        """Tool call display."""
         self.new_line()
-        # Truncate params if they are huge for display purposes
         param_str = str(params)
         if len(param_str) > 150:
             param_str = param_str[:147] + "..."
-        print(f"\033[95m[TOOL CALL]\033[0m {tool_name}({param_str})") # Magenta
+        print(f"[TOOL CALL] {tool_name}({param_str})")
 
     def print_tool_result(self, tool_name: str, output: str):
+        """Tool result display."""
         self.new_line()
         preview = output[:200] + "..." if len(output) > 200 else output
-        print(f"\033[92m[TOOL RESULT]\033[0m {tool_name}: {preview}") # Green
+        print(f"[TOOL RESULT] {tool_name}: {preview}")
