@@ -186,12 +186,34 @@ class RichRenderer:
 
     def end_streaming(self):
         if self._live_display:
+            # Final flush: render any buffered content that was throttled
+            # This fixes the truncation bug where the last chunk(s) were
+            # throttled and never rendered before the display stopped.
+            if self._reasoning_text or self._response_text:
+                renderables = []
+                clean_reasoning = self._clean_think_tags(self._reasoning_text)
+                clean_response = self._clean_think_tags(self._response_text)
+
+                if clean_reasoning.strip():
+                    renderables.append(Text(clean_reasoning, style="dim italic"))
+                    if clean_response.strip():
+                        renderables.append(Text(""))
+
+                if clean_response.strip():
+                    if any(c in clean_response for c in ["`", "#", "*", "_", ">"]):
+                        renderables.append(Markdown(clean_response))
+                    else:
+                        renderables.append(Text(clean_response, style="monk.text"))
+
+                if renderables:
+                    self._live_display.update(create_monk_panel(Group(*renderables)))
+
             try:
                 self._live_display.stop()
             except Exception:
                 pass
             self._live_display = None
-            # We do NOT print() here automatically anymore, 
+            # We do NOT print() here automatically anymore,
             # allowing the input loop to control the spacing.
 
     # --- CONCURRENCY LOCKS ---
@@ -300,3 +322,7 @@ class RichRenderer:
 
     def print_system(self, msg):
         console.print(f"[monk.text]System: {msg}[/]")
+
+    def print_warning(self, msg):
+        """Print a warning message with themed styling."""
+        console.print(f"[warning]Warning:[/] [monk.text]{msg}[/]")

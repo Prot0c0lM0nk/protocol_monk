@@ -1,446 +1,345 @@
 """
-ui/rich/interface.py
-The Rich UI Controller.
-Updated for Full Event-Driven Architecture (Bidirectional).
+RichInterface - Rich-styled CLI interface with prompt_toolkit integration.
+Preserves all Orthodox Matrix visual styling.
 """
 
 import asyncio
-import sys
-from typing import Dict, Any, List, Tuple
+from typing import Optional, Dict, Any
 
 from ui.base import UI, ToolResult
-from ui.prompts import AsyncPrompt
-from agent.events import AgentEvents, get_event_bus
-from .renderer import RichRenderer
-from .input import RichInput
-from .styles import console
+from ui.rich.renderer import RichRenderer
+from ui.rich.input_handler import RichInputHandler
+from agent.events import EventBus, AgentEvents
+
+
+class _InputAdapter:
+    """Adapter for backward compatibility with main.py."""
+
+    def __init__(self, input_handler: RichInputHandler):
+        self._input_handler = input_handler
+
+    async def start_capture(self):
+        """No-op for prompt_toolkit - input is handled in get_input()"""
+        pass
+
+    async def stop_capture(self):
+        """No-op for prompt_toolkit - sessions clean up automatically"""
+        pass
 
 
 class RichUI(UI):
-    def __init__(self, event_bus=None):
+    """
+    Rich CLI interface using prompt_toolkit for async input.
+    Preserves Orthodox Matrix visual styling.
+
+    Turn Coordination:
+    - User can type "  › " only when _turn_complete is set
+    - Agent clears the flag when processing
+    - Agent sets the flag via RESPONSE_COMPLETE when done
+
+    Shutdown:
+    - Ctrl+D (EOF) triggers graceful shutdown
+    """
+
+    def __init__(self, event_bus: Optional[EventBus] = None, **kwargs):
         super().__init__()
+
+        # Input & Output
+        self.input_handler = RichInputHandler()
         self.renderer = RichRenderer()
-        self.input = RichInput()
-        
-        # FIX: Accept injected event_bus from main.py
-        self._event_bus = event_bus or get_event_bus()
-        
-        # Stream buffer for handling updates during input
-        self._stream_buffer = ""
-        
-        # State Management
-        self.turn_complete = asyncio.Event()
-        self.running = False
-        
-        self._setup_event_listeners()
+        self.event_bus = event_bus
 
-    def _setup_event_listeners(self):
-        # --- PASSIVE OUTPUT (Agent Speaking) ---
-        self._event_bus.subscribe(AgentEvents.STREAM_CHUNK.value, self._on_stream_chunk)
-        self._event_bus.subscribe(
-            AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete
-        )
-        self._event_bus.subscribe(
-            AgentEvents.THINKING_STARTED.value, self._on_thinking_started
-        )
-        self._event_bus.subscribe(
-            AgentEvents.THINKING_STOPPED.value, self._on_thinking_stopped
-        )
-        self._event_bus.subscribe(AgentEvents.TOOL_RESULT.value, self._on_tool_result)
+        # Alias for main.py compatibility
+        self.input = _InputAdapter(self.input_handler)
 
-        # --- ACTIVE INPUT REQUESTS (Agent Asking) ---
-        self._event_bus.subscribe(
-            AgentEvents.INPUT_REQUESTED.value, self._on_input_requested
-        )
-        self._event_bus.subscribe(
-            AgentEvents.TOOL_CONFIRMATION_REQUESTED.value, self._on_tool_confirmation_requested
-        )
+        # Turn coordination: Controls when user can type
+        # Start 'set' so first prompt appears immediately
+        self._turn_complete = asyncio.Event()
+        self._turn_complete.set()
 
-        # --- SYSTEM STATUS ---
-        self._event_bus.subscribe(AgentEvents.ERROR.value, self._on_error)
-        self._event_bus.subscribe(AgentEvents.WARNING.value, self._on_warning)
-        self._event_bus.subscribe(AgentEvents.INFO.value, self._on_info)
-        self._event_bus.subscribe(
-            AgentEvents.COMMAND_RESULT.value, self._on_command_result
-        )
+        # Track last user input for error recovery resend
+        self._last_user_input: Optional[str] = None
 
-        # --- LIFECYCLE ---
-        self._event_bus.subscribe(
-            AgentEvents.TASK_COMPLETE.value, self._on_task_complete
-        )
-        self._event_bus.subscribe(
-            AgentEvents.MODEL_SWITCHED.value, self._on_model_switched
-        )
-        self._event_bus.subscribe(
-            AgentEvents.PROVIDER_SWITCHED.value, self._on_provider_switched
-        )
+        if self.event_bus:
+            self._subscribe_to_events()
+        else:
+            self.renderer.print_system("UI initialized without Event Bus.")
 
-    # === MAIN LOOP ===
-    
+    def _subscribe_to_events(self):
+        """Subscribe to all agent events."""
+        # Streaming & Content
+        self.event_bus.subscribe(AgentEvents.STREAM_CHUNK.value, self._on_stream_chunk)
+        self.event_bus.subscribe(AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete)
+        self.event_bus.subscribe(AgentEvents.THINKING_STARTED.value, self._on_thinking_started)
+        self.event_bus.subscribe(AgentEvents.THINKING_STOPPED.value, self._on_thinking_stopped)
+
+        # Tool Lifecycle
+        self.event_bus.subscribe(AgentEvents.TOOL_CONFIRMATION_REQUESTED.value, self._on_tool_confirmation_request)
+        self.event_bus.subscribe(AgentEvents.TOOL_EXECUTION_START.value, self._on_tool_start)
+        self.event_bus.subscribe(AgentEvents.TOOL_RESULT.value, self._on_tool_result)
+        self.event_bus.subscribe(AgentEvents.TOOL_ERROR.value, self._on_tool_error)
+
+        # Command/Input Events (for slash commands that prompt user)
+        self.event_bus.subscribe(AgentEvents.INPUT_REQUESTED.value, self._on_input_requested)
+
+        # System
+        self.event_bus.subscribe(AgentEvents.INFO.value, self._on_info)
+        self.event_bus.subscribe(AgentEvents.ERROR.value, self._on_error)
+        self.event_bus.subscribe(AgentEvents.WARNING.value, self._on_warning)
+        self.event_bus.subscribe(AgentEvents.APP_STARTED.value, self._on_app_started)
+
+    # ========================================
+    # Main Loop
+    # ========================================
+
     async def run_loop(self):
         """
-        The main UI lifecycle.
-        1. Get User Input.
-        2. Send to Agent.
-        3. Wait for Agent to Finish (while handling intermediate events).
+        The main driver loop called by main.py.
+        Coordinates user input and agent processing.
         """
-        self.running = True
-        # Ensure turn_complete is set initially so we can type the first message
-        self.turn_complete.set()
+        # Small sleep to let startup banners finish
+        await asyncio.sleep(0.1)
 
-        while self.running:
+        while True:
             try:
-                # 1. Wait for user input
-                user_input = await self.get_input()
-                
-                # FIX: Handle Ctrl+C (RichInput returns empty on interrupt, or we catch it)
-                if user_input is None: # Explicit exit signal
-                    break
-                if not user_input and not self.running: # Shutdown signal received during input
-                    break
-                if not user_input:
-                    continue
-                
-                # 2. Lock UI & Emit Input
-                self.turn_complete.clear()
-                await self._event_bus.emit(
-                    AgentEvents.USER_INPUT.value, 
-                    {"input": user_input}
-                )
+                # 1. Wait for agent to finish its turn (unblocks on RESPONSE_COMPLETE)
+                await self._turn_complete.wait()
 
-                # 3. Wait for Agent to finish thinking/acting
-                # During this wait, active handlers (input_requested, tool_confirmation)
-                # will be triggered by the event bus.
-                await self.turn_complete.wait()
-                
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                print("\n[UI] Interrupted. Exiting...")
-                self.running = False
+                # 2. Get user input (blocking via prompt_toolkit)
+                user_text = await self.get_input()
+
+                # Handle empty/cancelled input (Ctrl+D returns None)
+                if user_text is None:
+                    # Ctrl+D pressed, signal shutdown
+                    self.renderer.print_system("Shutting down...")
+                    break
+
+                # Handle empty input (just Enter)
+                if not user_text.strip():
+                    continue
+
+                # Handle exit command
+                if user_text.lower() in ("/exit", "/quit"):
+                    self.renderer.print_system("Exiting...")
+                    break
+
+                # 3. Store for potential error recovery
+                self._last_user_input = user_text
+
+                # 4. Lock the turn (agent is about to think)
+                self._turn_complete.clear()
+
+                # 5. Dispatch to AgentService
+                await self.event_bus.emit(AgentEvents.USER_INPUT.value, {"input": user_text})
+
+            except asyncio.CancelledError:
+                self.renderer.print_system("Loop cancelled.")
                 break
             except Exception as e:
                 self.renderer.print_error(f"UI Loop Error: {e}")
-                self.turn_complete.set() # Recovery
+                await asyncio.sleep(1)
+                self._turn_complete.set()
 
-    # === ACTIVE LISTENERS (The Missing Link) ===
+    # ========================================
+    # Event Handlers
+    # ========================================
 
-    async def _on_input_requested(self, data: Dict[str, Any]):
-        """
-        Agent needs nested input (e.g. Model Selection).
-        We hijack the input stream momentarily.
-        """
-        prompt = data.get("prompt", "Value needed")
-        
-        # 1. Ask User
-        user_value = await self.get_input(prompt_text=prompt)
-        
-        # 2. Respond to Agent
-        await self._event_bus.emit(
-            AgentEvents.INPUT_RESPONSE.value,
-            {"input": user_value}
-        )
+    async def _on_stream_chunk(self, data: Dict[str, Any]):
+        """Stream model output character by character."""
+        content = data.get("content") or data.get("chunk") or ""
+        thinking = data.get("thinking")
 
-    async def _on_tool_confirmation_requested(self, data: Dict[str, Any]):
+        if content:
+            self.renderer.update_streaming(content, is_thinking=bool(thinking))
+
+    async def _on_response_complete(self, data: Dict[str, Any]):
         """
-        Agent needs approval for a tool.
+        Agent is done processing. Unlock the UI for user input.
+        This is what triggers the "  › " prompt to appear.
+        """
+        self.renderer.end_streaming()
+        self._turn_complete.set()
+
+    async def _on_thinking_started(self, data: Dict[str, Any]):
+        """Agent started thinking."""
+        message = data.get("message", "Contemplating...")
+        self.renderer.start_thinking(message)
+
+    async def _on_thinking_stopped(self, data: Dict[str, Any]):
+        """Agent stopped thinking."""
+        self.renderer.stop_thinking()
+
+    async def _on_tool_confirmation_request(self, data: Dict[str, Any]):
+        """
+        Agent is requesting tool confirmation.
+        Block here, get user input, emit response.
         """
         tool_call = data.get("tool_call", {})
-        tool_call_id = data.get("tool_call_id")
-        
-        # 1. Ask User (using shared Prompt logic)
-        approved = await self.confirm_tool_execution(tool_call)
-        
-        # 2. Respond to Agent
-        await self._event_bus.emit(
+        tool_call_id = data.get("tool_call_id", "")
+        action = tool_call.get("action", "Unknown")
+
+        # Display the tool request (Rich-styled)
+        params = tool_call.get("parameters", {})
+        self.renderer.render_tool_confirmation(action, params)
+
+        # Block for user confirmation
+        approved = await self.input_handler.confirm("Execute this action?", default=False)
+
+        # Emit response
+        await self.event_bus.emit(
             AgentEvents.TOOL_CONFIRMATION_RESPONSE.value,
             {
                 "tool_call_id": tool_call_id,
                 "approved": approved,
-                "edits": None
+                "edits": None,
             }
         )
 
-    # === PASSIVE HANDLERS ===
-
-    async def _on_stream_chunk(self, data: Dict[str, Any]):
-        if self.renderer._is_locked:
-            thinking = data.get("thinking")
-            chunk = data.get("chunk", "")
-            if thinking:
-                self._stream_buffer += f"[THINKING]{thinking}"
-            elif chunk:
-                self._stream_buffer += chunk
-            return
-
-        thinking = data.get("thinking")
-        if thinking:
-            self.renderer.update_streaming(thinking, is_thinking=True)
-            return
-
-        chunk = data.get("chunk", "")
-        if chunk:
-            self.renderer.update_streaming(chunk, is_thinking=False)
-
-    async def _on_response_complete(self, data: Dict[str, Any]):
-        if self.renderer._is_locked:
-            self._stream_buffer += "[COMPLETE]"
-        else:
-            self.renderer.end_streaming()
-        
-        # CRITICAL: Unlock the main loop
-        self.turn_complete.set()
-
-    async def _on_thinking_started(self, data: Dict[str, Any]):
-        if self.renderer._is_locked:
-            self._stream_buffer += "[THINKING_START]"
-            return
-        self.renderer.start_thinking(data.get("message", "Contemplating..."))
-
-    async def _on_thinking_stopped(self, data: Dict[str, Any]):
-        if self.renderer._is_locked:
-            self._stream_buffer += "[THINKING_STOP]"
-            return
-        self.renderer.stop_thinking()
+    async def _on_tool_start(self, data: Dict[str, Any]):
+        """Tool execution starting."""
+        count = data.get("count", 1)
+        tools = data.get("tools", [])
+        self.renderer.print_system(f"Executing {count} tool(s): {', '.join(tools)}")
 
     async def _on_tool_result(self, data: Dict[str, Any]):
-        res = data.get("result")
-        name = data.get("tool_name", "Unknown")
-        if not hasattr(res, "success"):
-            from ui.base import ToolResult
-            res = ToolResult(success=True, output=str(res), tool_name=name)
-        
-        if self.renderer._is_locked:
-            self._stream_buffer += f"[TOOL_RESULT]{name}|{res.success}|{res.output}"
-            return
-        self.renderer.render_tool_result(res, name)
+        """Tool execution complete, display result."""
+        result = data.get("result")
+        tool_name = data.get("tool_name", "Tool")
+        if result:
+            self.renderer.render_tool_result(result, tool_name)
 
-    async def _on_error(self, data: Dict[str, Any]):
-        if self.renderer._is_locked:
-            self._stream_buffer += f"[ERROR]{data.get('message', 'Unknown Error')}"
-            return
-        self.renderer.print_error(data.get("message", "Unknown Error"))
+    async def _on_tool_error(self, data: Dict[str, Any]):
+        """Tool execution failed."""
+        error_msg = data.get("error") or "Unknown tool error"
+        self.renderer.print_error(f"Tool Failure: {error_msg}")
 
-    async def _on_warning(self, data: Dict[str, Any]):
-        if self.renderer._is_locked:
-            self._stream_buffer += f"[WARNING]{data.get('message', '')}"
-            return
-        self.renderer.print_system(f"[warning]Warning:[/] {data.get('message', '')}")
+    async def _on_input_requested(self, data: Dict[str, Any]):
+        """
+        Command dispatcher needs user input (e.g., for /file, /model).
+        Block for input, emit response.
+        """
+        prompt_text = data.get("prompt", "Enter value: ")
+        items = data.get("data")
 
-    async def _on_info(self, data: Dict[str, Any]):
-        msg = data.get("message", "")
-        context = data.get("context", "")
-        items = data.get("data", [])
+        # If items provided, use Rich selection list
+        if items:
+            result = await self.display_selection_list_async(prompt_text, items)
+        else:
+            result = await self.input_handler.get_input(prompt_text)
 
-        # FIX: Check for Shutdown Signal
-        if context == "shutdown":
-            self.renderer.print_system(f"[bold]{msg}[/]")
-            self.running = False
-            self.turn_complete.set() # Unblock loop so it can exit
-            return
-
-        if self.renderer._is_locked:
-            self._stream_buffer += f"[INFO]{msg}|{context}|{len(items) if items else 0}"
-            return
-
-        if context in ["model_selection", "provider_selection"] and items:
-            await self.display_selection_list(msg, items)
-        elif msg.strip():
-            self.renderer.print_system(msg)
-
-    async def _on_command_result(self, data: Dict[str, Any]):
-        success = data.get("success", True)
-        message = data.get("message", "")
-        
-        if self.renderer._is_locked:
-            self._stream_buffer += f"[COMMAND_RESULT]{success}|{message}"
-            return
-            
-        if message:
-            self.renderer.render_command_result(success, message)
-
-    async def _on_task_complete(self, data: Dict[str, Any]):
-        if self.renderer._is_locked:
-            self._stream_buffer += "[TASK_COMPLETE]"
-            return
-        self.renderer.end_streaming()
-
-    async def _on_model_switched(self, data: Dict[str, Any]):
-        if self.renderer._is_locked:
-            self._stream_buffer += f"[MODEL_SWITCHED]{data.get('new_model')}"
-            return
-        self.renderer.print_system(f"Model Switched: {data.get('new_model')}")
-
-    async def _on_provider_switched(self, data: Dict[str, Any]):
-        if self.renderer._is_locked:
-            self._stream_buffer += f"[PROVIDER_SWITCHED]{data.get('new_provider')}"
-            return
-        self.renderer.print_system(f"Provider Switched: {data.get('new_provider')}")
-
-    # --- BUFFER FLUSHING ---
-    def _parse_buffer_content(self, buffer: str) -> List[Tuple[str, str]]:
-        if not buffer:
-            return []
-        
-        results = []
-        i = 0
-        current_content = ""
-        
-        while i < len(buffer):
-            if buffer[i] == '[' and i < len(buffer) - 1:
-                if current_content.strip():
-                    results.append(("", current_content))
-                    current_content = ""
-                
-                end = buffer.find(']', i)
-                if end != -1:
-                    marker = buffer[i+1:end]
-                    content_start = end + 1
-                    next_marker = buffer.find('[', content_start)
-                    
-                    if next_marker == -1:
-                        marker_content = buffer[content_start:]
-                        results.append((marker, marker_content))
-                        break
-                    else:
-                        marker_content = buffer[content_start:next_marker]
-                        results.append((marker, marker_content))
-                        i = next_marker
-                else:
-                    current_content += buffer[i]
-                    i += 1
-            else:
-                current_content += buffer[i]
-                i += 1
-        
-        if current_content.strip():
-            results.append(("", current_content))
-        
-        return results
-
-    async def _flush_buffer(self):
-        if not self._stream_buffer:
-            return
-
-        buffer = self._stream_buffer
-        self._stream_buffer = ""
-
-        matches = self._parse_buffer_content(buffer)
-        thinking_active = False
-        thinking_content = ""
-        response_content = ""
-
-        for marker, content in matches:
-            marker = marker.strip()
-            content = content.strip()
-
-            if marker == "THINKING":
-                thinking_content += content
-                thinking_active = True
-            elif marker == "THINKING_START":
-                thinking_active = True
-            elif marker == "THINKING_STOP":
-                thinking_active = False
-            elif marker == "COMPLETE":
-                pass
-            elif marker == "TOOL_RESULT":
-                parts = content.split("|", 2)
-                if len(parts) == 3:
-                    name, success, output = parts
-                    from ui.base import ToolResult
-                    res = ToolResult(success=success.lower() == "true", output=output, tool_name=name)
-                    self.renderer.render_tool_result(res, name)
-            elif marker == "ERROR":
-                self.renderer.print_error(content)
-            elif marker == "WARNING":
-                self.renderer.print_system(f"[warning]Warning:[/] {content}")
-            elif marker == "INFO":
-                # Check shutdown in buffer too
-                if "context=shutdown" in content: # Simplified check
-                    self.running = False
-                    self.turn_complete.set()
-                
-                parts = content.split("|", 2)
-                if len(parts) >= 1 and parts[0].strip():
-                    self.renderer.print_system(parts[0].strip())
-            elif marker == "COMMAND_RESULT":
-                parts = content.split("|", 1)
-                if len(parts) == 2:
-                    success, message = parts
-                    if message.strip():
-                        self.renderer.render_command_result(success.lower() == "true", message)
-            elif marker == "TASK_COMPLETE":
-                self.renderer.end_streaming()
-            elif marker == "MODEL_SWITCHED":
-                self.renderer.print_system(f"Model Switched: {content}")
-            elif marker == "PROVIDER_SWITCHED":
-                self.renderer.print_system(f"Provider Switched: {content}")
-            elif marker == "" and content:
-                if thinking_active:
-                    thinking_content += content
-                else:
-                    response_content += content
-
-        if thinking_content or response_content:
-            self.renderer.start_streaming()
-            if thinking_content:
-                self.renderer.update_streaming(thinking_content, is_thinking=True)
-            if response_content:
-                self.renderer.update_streaming(response_content, is_thinking=False)
-            self.renderer.end_streaming()
-
-    # --- BLOCKING INTERFACE ---
-    async def get_input(self, prompt_text: str = "") -> str:
-        self.renderer.lock_for_input()
-        console.print()
-
-        try:
-            user_input = await self.input.get_input(prompt_text)
-            return user_input
-        finally:
-            self.renderer.unlock_for_input()
-            await self._flush_buffer()
-
-    async def confirm_tool_execution(self, tool_data: Dict[str, Any]) -> bool:
-        tool_name = tool_data.get("tool_name", "Unknown")
-        if not tool_name and "action" in tool_data:
-            tool_name = tool_data["action"]
-            
-        params = tool_data.get("parameters", {})
-
-        self.renderer.render_tool_confirmation(tool_name, params)
-
-        return await AsyncPrompt.confirm(
-            "[monk.text]Execute this action?[/]", default=False, console=console
+        await self.event_bus.emit(
+            AgentEvents.INPUT_RESPONSE.value,
+            {"input": result or ""}
         )
 
-    # --- VISUALS ---
-    async def display_startup_banner(self, greeting: str):
-        self.renderer.render_banner(greeting)
+    async def _on_info(self, data: Dict[str, Any]):
+        """System/info message."""
+        msg = data.get("message", "")
+        items = data.get("data", [])
+        context = data.get("context", "")
 
-    async def display_selection_list(self, title: str, items: List[Any]):
-        self.renderer.render_selection_list(title, items)
+        if msg:
+            if context in ["model_selection", "provider_selection"] and items:
+                await self.display_selection_list(msg, items)
+            else:
+                self.renderer.print_system(msg)
 
-    async def display_tool_result(self, result: ToolResult, tool_name: str):
-        self.renderer.render_tool_result(result, tool_name)
+    async def _on_error(self, data: Dict[str, Any]):
+        """
+        Agent error - show error and offer recovery options.
+        User can choose: Resend to model OR Return control to user.
+        """
+        msg = data.get("message") or str(data)
+        self.renderer.print_error(msg)
 
-    async def shutdown(self):
-        self.renderer.end_streaming()
-        self.renderer.stop_thinking()
-        console.show_cursor(True)
+        # Offer recovery options
+        recovery_index = await self.input_handler.select_with_arrows(
+            "Agent Error - Choose an action:",
+            ["Resend to model", "Return control to user"],
+            default_index=1  # Default to returning control
+        )
 
-    # --- REQUIRED STUBS ---
+        if recovery_index == 0:
+            # Resend last input to agent
+            if self._last_user_input:
+                self._turn_complete.clear()
+                await self.event_bus.emit(AgentEvents.USER_INPUT.value, {"input": self._last_user_input})
+        else:
+            # Return control to user - unlock turn
+            self._turn_complete.set()
+
+    async def _on_warning(self, data: Dict[str, Any]):
+        """Warning message."""
+        msg = data.get("message") or str(data)
+        self.renderer.print_warning(msg)
+
+    async def _on_app_started(self, data: Dict[str, Any]):
+        """App started, display welcome banner."""
+        model = data.get("model", "Unknown")
+        provider = data.get("provider", "Unknown")
+        working_dir = data.get("working_dir", ".")
+
+        self.renderer.render_banner(
+            f"Model: {model}\nProvider: {provider}\nWorking: {working_dir}"
+        )
+
+    # ========================================
+    # Base Class Methods
+    # ========================================
+
+    async def get_input(self) -> str:
+        """Get input from user (blocking)."""
+        self.renderer.lock_for_input()
+        try:
+            return await self.input_handler.get_input("  › ") or ""
+        finally:
+            self.renderer.unlock_for_input()
+
+    async def confirm_tool_execution(self, tool_call_data: Dict[str, Any]) -> bool:
+        """
+        Legacy method - now handled via TOOL_CONFIRMATION_REQUESTED event.
+        Kept for base class compatibility.
+        """
+        tool_name = tool_call_data.get("name", "Unknown Tool")
+        return await self.input_handler.confirm(f"Execute {tool_name}?", default=False)
+
     async def print_stream(self, text: str):
         self.renderer.update_streaming(text)
 
-    async def print_error(self, msg: str):
-        self.renderer.print_error(msg)
+    async def print_error(self, message: str):
+        self.renderer.print_error(message)
 
-    async def print_info(self, msg: str):
-        self.renderer.print_system(msg)
+    async def print_info(self, message: str):
+        self.renderer.print_system(message)
+
+    async def print_warning(self, message: str):
+        self.renderer.print_warning(message)
 
     async def start_thinking(self):
         self.renderer.start_thinking()
 
     async def stop_thinking(self):
+        self.renderer.stop_thinking()
+
+    async def display_tool_result(self, result: ToolResult, tool_name: str):
+        self.renderer.render_tool_result(result, tool_name)
+
+    async def display_startup_banner(self, greeting: str):
+        self.renderer.render_banner(greeting)
+
+    async def display_selection_list(self, title: str, items):
+        """Display selection list (legacy sync method)."""
+        self.renderer.render_selection_list(title, items)
+
+    async def display_selection_list_async(self, title: str, items) -> str:
+        """Display selection list and get user choice (async method)."""
+        self.renderer.render_selection_list(title, items)
+        # Get selection using input handler
+        return await self.input_handler.select(title, [str(i) for i in items])
+
+    async def shutdown(self):
+        """Shutdown gracefully."""
+        self.renderer.end_streaming()
         self.renderer.stop_thinking()
 
     async def run_async(self):
