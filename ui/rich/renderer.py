@@ -128,10 +128,11 @@ class RichRenderer:
         self._live_display = Live(
             create_monk_panel("", title="✠ Monk"),
             console=console,
-            refresh_per_second=8,
-            vertical_overflow="visible",
+            refresh_per_second=4,  # Reduced from 8 to prevent timing artifacts
+            vertical_overflow="ellipsis",  # Changed from "visible" to prevent panel stacking
             transient=False,
         )
+
         self._live_display.start()
 
     def update_streaming(self, chunk: str, is_thinking: bool = False):
