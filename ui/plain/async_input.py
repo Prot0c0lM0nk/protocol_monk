@@ -13,6 +13,7 @@ import math
 
 from ..async_input_interface import AsyncInputInterface, InputEvent, InputEventType
 from ..async_keyboard_capture import create_keyboard_capture, KeyEvent, KeyType
+from ui.async_prompts import AsyncPrompts
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class PlainAsyncInput(AsyncInputInterface):
         self._input_buffer = InputBuffer()
         self._capture_task: Optional[asyncio.Task] = None
         self._echo_enabled = True
-
+        self.prompts = None  # Will be set by input manager
     def _has_terminal_focus(self) -> bool:
         """Check if this terminal has focus."""
         # Simple check: verify stdin is a tty
@@ -148,7 +149,7 @@ class PlainAsyncInput(AsyncInputInterface):
                     # Final redisplay before submission is tricky with async.
                     # For now, we assume submission clears the line.
                     # A lock would be needed if we printed here.
-                    print(flush=True)  # New line after prompt
+                    # NO newline here - let the UI layer handle all output
                     return InputEvent(
                         event_type=InputEventType.TEXT_SUBMITTED,
                         data=text,

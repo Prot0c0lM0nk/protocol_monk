@@ -1,54 +1,40 @@
-"""
-ui/plain/input.py - Input Abstraction Layer
-"""
-
 import asyncio
-from prompt_toolkit import PromptSession
-from prompt_toolkit.patch_stdout import patch_stdout
-from prompt_toolkit.formatted_text import HTML
-from typing import Optional
+import sys
+from concurrent.futures import ThreadPoolExecutor
 
-
-class InputManager:
+class PlainInputHandler:
     """
-    Manages all user input operations using prompt_toolkit.
-    Ensures single input source and proper stdout patching.
+    Handles reading from stdin without blocking the main asyncio event loop.
     """
-
     def __init__(self):
-        self.session = PromptSession()
-        self._is_prompt_active: bool = False
+        # We keep a dedicated executor for input to ensure we don't starve other pools
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="StdinReader")
 
-    async def read_input(
-        self, prompt_text: str = "", is_main_loop: bool = False
-    ) -> Optional[str]:
+    async def get_input(self, prompt: str = "") -> str:
         """
-        Read user input with proper stdout patching.
-        Returns None on KeyboardInterrupt/EOF to signal exit.
+        Asynchronously prompt the user and wait for a line of text.
         """
-        # 1. Prepare Label
-        if is_main_loop:
-            label = HTML("\nUSER &gt; ")
-        else:
-            clean_prompt = prompt_text.rstrip(" :>")
-            label = HTML(
-                f"\n<style fg='ansibrightblack'>[SYS] {clean_prompt}</style> &gt; "
-            )
+        # Print prompt without newline immediately
+        if prompt:
+            sys.stdout.write(prompt)
+            sys.stdout.flush()
 
-        # 2. Mark prompt active
-        if self._is_prompt_active:
-            # Prompt already active - return None to signal cancellation
-            return None
-        self._is_prompt_active = True
+        loop = asyncio.get_running_loop()
+        # run_in_executor(None, ...) usually uses the default loop executor.
+        # Passing our own executor is safer for specific IO tasks.
+        line = await loop.run_in_executor(self._executor, sys.stdin.readline)
+        
+        return line.strip()
 
-        # 3. Wait for Input
-        try:
-            with patch_stdout():
-                return await self.session.prompt_async(label)
-        except (KeyboardInterrupt, EOFError):
-            return None  # Signal to the controller that we want to quit
-        except asyncio.CancelledError:
-            # Task was cancelled (e.g., by timeout)
-            return None
-        finally:
-            self._is_prompt_active = False
+    async def confirm(self, prompt: str) -> bool:
+        """
+        Simple y/n confirmation.
+        """
+        while True:
+            response = await self.get_input(f"{prompt} [y/n]: ")
+            clean = response.lower()
+            if clean in ('y', 'yes'):
+                return True
+            if clean in ('n', 'no'):
+                return False
+            sys.stdout.write("Please enter 'y' or 'n'.\n")

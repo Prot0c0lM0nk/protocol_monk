@@ -12,10 +12,13 @@ has been removed as it was fundamentally broken and caused hangups.
 
 import logging
 import sys
+import logging
+import sys
 import asyncio
 from typing import Optional, AsyncIterator
 from config.static import settings
 from .async_input_interface import InputEventType
+from .async_prompts import AsyncPrompts
 
 logger = logging.getLogger(__name__)
 
@@ -62,11 +65,11 @@ class SafeInputManager:
                 from .async_input_interface import AsyncInputManager
                 from .plain.async_input import PlainAsyncInputWithHistory
 
+                # Create async manager and set up prompts
                 self._async_manager = AsyncInputManager()
-                self._async_manager.register_capture(
-                    "plain", PlainAsyncInputWithHistory(lock=self._lock)
-                )
-            except Exception as e:
+                plain_input = PlainAsyncInputWithHistory(lock=self._lock)
+                plain_input.prompts = AsyncPrompts(self._async_manager)  # Set prompts reference
+                self._async_manager.register_capture("plain", plain_input)
                 # Log error but don't fail - safety first
                 print(f"Warning: Failed to initialize async input: {e}")
                 self._async_manager = None

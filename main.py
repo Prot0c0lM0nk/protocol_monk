@@ -107,10 +107,10 @@ class Application:
     async def _start_plain_ui(self):
         """Start the Plain CLI."""
         print(f"[Protocol Monk] Starting Plain UI...")
-        from ui.plain.interface import PlainUI
+        from ui.plain.interface import PlainInterface
 
-        self.ui = PlainUI(event_bus=self.event_bus)
-        
+        self.ui = PlainInterface(event_bus=self.event_bus)
+
         # === ARCHITECTURAL FIX: Emit pure data packet ===
         # This event will be handled by the UI to print the banner
         await self.event_bus.emit(

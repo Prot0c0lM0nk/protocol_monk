@@ -175,7 +175,7 @@ async def run_async_main_loop(agent_service: AgentService) -> None:
             await asyncio.sleep(0.1)
 
     except KeyboardInterrupt:
-        await agent.event_bus.emit(
+        await agent_service.event_bus.emit(
             AgentEvents.INFO.value,
             {
                 "message": "\nShutting down gracefully...",
