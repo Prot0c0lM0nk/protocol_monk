@@ -210,27 +210,33 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
 
     async def _prompt_user(self, prompt_text: str) -> str:
         """Event-driven prompt that waits for a response."""
-        # 1. START LISTENING NOW (Before asking)
-        response_future = asyncio.create_task(
-            self.event_bus.wait_for(
-                AgentEvents.INPUT_RESPONSE.value,
-                timeout=None
-            )
-        )
+        # CRITICAL FIX: Create future first, but don't start waiting yet
+        future = asyncio.get_event_loop().create_future()
         
-        # 2. Emit Request
-        await self.event_bus.emit(
-            AgentEvents.INPUT_REQUESTED.value, 
-            {"prompt": prompt_text}
-        )
+        def _listener(data: Dict[str, Any]):
+            if future.done():
+                return
+            future.set_result(data)
         
-        # 3. Wait for the response
+        # Register listener BEFORE emitting - this is the fix
+        self.event_bus.subscribe(AgentEvents.INPUT_RESPONSE.value, _listener)
+        
         try:
-            response_data = await response_future
+            # Emit Request
+            await self.event_bus.emit(
+                AgentEvents.INPUT_REQUESTED.value, 
+                {"prompt": prompt_text}
+            )
+            
+            # Wait for the response (listener is already registered)
+            response_data = await future
             return response_data.get("input", "")
+            
         except asyncio.TimeoutError:
             return ""
-
+        finally:
+            # Always unsubscribe
+            self.event_bus.unsubscribe(AgentEvents.INPUT_RESPONSE.value, _listener)
     def _resolve_selection(self, choice: str, options: List[str]) -> Optional[str]:
         choice = choice.strip()
         if not choice: return None

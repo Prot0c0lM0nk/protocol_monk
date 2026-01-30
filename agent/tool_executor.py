@@ -151,39 +151,38 @@ class ToolExecutor:
     ) -> Tuple[Optional[Dict], Optional[ToolResult]]:
         """
         Handle confirmation via Event Bus.
-        CRITICAL: Must start listening for response BEFORE emitting request,
-        because the UI handles the request synchronously in the event loop.
+        CRITICAL FIX: Ensure listener is registered before emitting request.
         """
         if self.auto_confirm:
             return normalized, None
 
-        # 1. Prepare Filter
-        def match_id(data):
-            return data.get("tool_call_id") == tool_call_id
+        # CRITICAL FIX: Create future first, but don't start waiting yet
+        future = asyncio.get_event_loop().create_future()
+        
+        def _listener(data: Dict[str, Any]):
+            if future.done():
+                return
+            
+            # Match by tool_call_id
+            if data.get("tool_call_id") == tool_call_id:
+                future.set_result(data)
 
-        # 2. START LISTENING NOW (Before asking)
-        # We create a task that subscribes immediately and waits.
-        response_future = asyncio.create_task(
-            self.event_bus.wait_for(
-                AgentEvents.TOOL_CONFIRMATION_RESPONSE.value,
-                timeout=None, # No timeout for humans
-                predicate=match_id
-            )
-        )
-
-        # 3. Emit Request (This blocks until UI finishes user interaction)
-        await self.event_bus.emit(
-            AgentEvents.TOOL_CONFIRMATION_REQUESTED.value,
-            {
-                "tool_call": normalized,
-                "tool_call_id": tool_call_id,
-                "auto_confirm": self.auto_confirm,
-            },
-        )
-
-        # 4. Await the response we are already listening for
+        # Register listener BEFORE emitting - this is the fix
+        self.event_bus.subscribe(AgentEvents.TOOL_CONFIRMATION_RESPONSE.value, _listener)
+        
         try:
-            response_data = await response_future
+            # Now emit the request (UI will handle it)
+            await self.event_bus.emit(
+                AgentEvents.TOOL_CONFIRMATION_REQUESTED.value,
+                {
+                    "tool_call": normalized,
+                    "tool_call_id": tool_call_id,
+                    "auto_confirm": self.auto_confirm,
+                },
+            )
+            
+            # NOW wait for the response (listener is already registered)
+            response_data = await future
             
             approved = response_data.get("approved", False)
             edits = response_data.get("edits")
@@ -202,12 +201,14 @@ class ToolExecutor:
             return normalized, None
 
         except asyncio.TimeoutError:
-            # Should not happen with timeout=None
             await self.event_bus.emit(
                 AgentEvents.TOOL_REJECTED.value,
                 {"tool_call": normalized, "tool_call_id": tool_call_id, "reason": "timeout"},
             )
             raise UserCancellationError("Confirmation timed out")
+        finally:
+            # Always unsubscribe
+            self.event_bus.unsubscribe(AgentEvents.TOOL_CONFIRMATION_RESPONSE.value, _listener)
 
     async def _process_single_tool(
         self, tool_call: Dict
