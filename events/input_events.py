@@ -61,18 +61,3 @@ def parse_command(input_text: str) -> tuple[str, Optional[str]]:
     command = parts[0]
     arguments = parts[1] if len(parts) > 1 else None
     return command, arguments
-
-
-def create_input_event(input_text: str, ui_type: str, ui_context: Optional[Dict[str, Any]] = None) -> Event:
-    """Factory function to create appropriate input event."""
-    if is_command(input_text):
-        command, arguments = parse_command(input_text)
-        return UserCommandIssuedEvent(
-            command=command,
-            arguments=arguments
-        )
-    else:
-        return UserInputSubmittedEvent(
-            input_text=input_text,
-            ui_context=ui_context or {"ui_type": ui_type}
-        )
