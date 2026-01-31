@@ -57,3 +57,23 @@ class PlainRenderer:
         self.new_line()
         preview = output[:200] + "..." if len(output) > 200 else output
         print(f"[TOOL RESULT] {tool_name}: {preview}")
+
+
+
+    def render_selection_list(self, title: str, items):
+        """Render a simple selection list (1-based)."""
+        self.new_line()
+        print(f"\n{title}")
+        print("-" * 40)
+        
+        for idx, item in enumerate(items, 1):
+            if hasattr(item, "name"):
+                name = getattr(item, "name", str(item))
+                extra = ""
+                if hasattr(item, "provider"):
+                    extra = f" ({item.provider})"
+                print(f"  [{idx}] {name}{extra}")
+            else:
+                print(f"  [{idx}] {item}")
+        
+        print("-" * 40)

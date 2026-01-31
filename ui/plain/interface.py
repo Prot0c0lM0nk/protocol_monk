@@ -223,8 +223,14 @@ class PlainInterface(UI):
     async def _on_info(self, data: Dict[str, Any]):
         """System/info message."""
         msg = data.get("message", "")
+        items = data.get("data", [])
+        context = data.get("context", "")
+
         if msg:
-            self.renderer.print_system(msg)
+            if context in ["model_selection", "provider_selection"] and items:
+                await self.display_selection_list(msg, items)
+            else:
+                self.renderer.print_system(msg)
 
     async def _on_error(self, data: Dict[str, Any]):
         """
@@ -317,6 +323,10 @@ class PlainInterface(UI):
     async def display_startup_banner(self, greeting: str):
         # Banner handled via APP_STARTED event
         pass
+
+    async def display_selection_list(self, title: str, items):
+        """Display selection list for model/provider switching."""
+        self.renderer.render_selection_list(title, items)
 
     async def shutdown(self):
         """Shutdown gracefully."""
