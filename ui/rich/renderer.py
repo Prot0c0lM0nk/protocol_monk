@@ -20,6 +20,7 @@ from rich import box
 from ui.base import ToolResult
 from .styles import console, create_monk_panel
 from ui.common import render_shared_error
+from ui.boot import run_boot_sequence
 
 
 class RichRenderer:
@@ -89,28 +90,17 @@ class RichRenderer:
         console.print(panel)
 
     # --- BANNER ---
-    def render_banner(self, greeting: str):
+    def render_banner(self, greeting: str = ""):
         self.end_streaming()
-        ascii_art = """
- ███╗   ███╗ ██████╗ ███╗   ██╗██╗  ██╗
- ████╗ ████║██╔═══██╗████╗  ██║██║ ██╔╝
- ██╔████╔██║██║   ██║██╔██╗ ██║█████╔╝ 
- ██║╚██╔╝██║██║   ██║██║╚██╗██║██╔═██╗ 
- ██║ ╚═╝ ██║╚██████╔╝██║ ╚████║██║  ██╗
- ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝
-        """
-        panel = Panel(
-            Align.center(
-                Group(
-                    Text(ascii_art, style="monk.border", justify="center"),
-                    Text(greeting, style="monk.text", justify="center"),
-                )
-            ),
-            box=box.DOUBLE,
-            border_style="monk.border",
-            subtitle="[dim]v1.0 Orthodox Protocol[/]",
-        )
-        console.print(panel)
+        
+        # Run the animated boot sequence
+        # This will block for about 3-4 seconds while the animation plays
+        run_boot_sequence(console)
+
+        # Optional: Print the greeting below the banner if provided
+        if greeting:
+            console.print(Align.center(f"[monk.text]{greeting}[/]"))
+            console.print()
 
     # --- LIFECYCLE ---
     def start_streaming(self):

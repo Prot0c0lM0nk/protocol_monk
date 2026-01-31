@@ -143,6 +143,6 @@ config/models/*
 .local
 .development
 .dev
-RICH/
+RICH_DOCS/
 TEXTUAL_STUDY_NOTES/
-Textual/
+Textual_Docs/
