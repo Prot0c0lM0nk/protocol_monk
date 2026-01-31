@@ -1,10 +1,13 @@
 import time
+import random
 from rich.live import Live
 from rich.align import Align
 from rich.panel import Panel
 from rich.text import Text
 from rich.console import Console
 from rich import box
+from rich.columns import Columns
+from rich.rule import Rule
 
 # --- ASCII ART ASSETS (Raw Strings) ---
 # I have manually corrected the line wrapping and alignment for each style.
@@ -54,43 +57,213 @@ ART_FINAL = r"""
                  ▐▌                                               
 """
 
-def get_panel(art, style="monk.border", subtitle=""):
-    """Helper to wrap art in a consistent panel."""
-    # Normalize line lengths by padding each line to the maximum length
-    lines = art.strip().split('\n')
+# Glitch characters for corruption effects
+GLITCH_CHARS = "▓▒░█▄▀■□▪▫▲▼◄►◆◇○●◎◐◑★☆☂☀☁☽☾♠♣♥♦♪♫€¥£¢∞§¶†‡"
+SCANLINE_CHARS = "▔▁▄▀█▌▐░▒▓"
+
+
+def corrupt_text(text: str, intensity: float = 0.3) -> str:
+    """Apply glitch corruption to text based on intensity (0.0-1.0)."""
+    result = []
+    for char in text:
+        if char.strip() and random.random() < intensity:
+            result.append(random.choice(GLITCH_CHARS))
+        else:
+            result.append(char)
+    return "".join(result)
+
+
+def apply_scanlines(text: str, intensity: float = 0.2) -> str:
+    """Add CRT scanline effect to text."""
+    lines = text.split('\n')
+    result = []
+    for i, line in enumerate(lines):
+        if i % 2 == 0 and random.random() < intensity:
+            # Dim this line slightly by replacing spaces with dimmer chars
+            line = line.replace(' ', '░')
+        result.append(line)
+    return '\n'.join(result)
+
+
+def progressive_reveal(art: str, progress: float) -> str:
+    """Reveal characters progressively based on progress (0.0-1.0)."""
+    lines = art.split('\n')
+    total_chars = sum(len(line) for line in lines)
+    chars_to_show = int(total_chars * progress)
+    
+    result = []
+    chars_shown = 0
+    for line in lines:
+        if chars_shown >= chars_to_show:
+            # Hide remaining lines with spaces (preserve length)
+            result.append(' ' * len(line))
+        elif chars_shown + len(line) <= chars_to_show:
+            result.append(line)
+            chars_shown += len(line)
+        else:
+            # Partial line reveal
+            reveal_count = chars_to_show - chars_shown
+            revealed = line[:reveal_count]
+            hidden = ' ' * (len(line) - reveal_count)
+            result.append(revealed + hidden)
+            chars_shown = chars_to_show
+    return '\n'.join(result)
+
+
+def get_signal_indicator(strength: float, max_bars: int = 10) -> str:
+    """Generate a signal strength indicator."""
+    filled = int(strength * max_bars)
+    bars = "█" * filled + "░" * (max_bars - filled)
+    percentage = int(strength * 100)
+    color = "green" if strength > 0.7 else "yellow" if strength > 0.4 else "red"
+    return f"[{color}]SIGNAL: [{bars}] {percentage}%[/{color}]"
+
+
+def get_panel(art, style="monk.border", subtitle="", signal_strength=1.0, 
+              corruption=0.0, scanlines=False, flicker=False):
+    """Helper to wrap art in a consistent panel with effects."""
+    # Apply effects
+    display_art = art
+    
+    if corruption > 0:
+        display_art = corrupt_text(display_art, corruption)
+    
+    if scanlines:
+        display_art = apply_scanlines(display_art)
+    
+    # Apply flicker by randomly dimming
+    if flicker and random.random() < 0.3:
+        display_art = display_art.replace('█', '▓').replace('▓', '▒')
+    
+    # Normalize line lengths
+    lines = display_art.strip().split('\n')
     max_length = max(len(line) for line in lines)
     normalized_lines = [line.ljust(max_length) for line in lines]
     normalized_art = '\n'.join(normalized_lines)
     
+    # Build content with signal indicator
+    content_parts = [normalized_art]
+    if signal_strength < 1.0:
+        content_parts.append("")
+        content_parts.append(get_signal_indicator(signal_strength))
+    
+    content = Text('\n'.join(content_parts), style=style)
+    
     return Panel(
-        Align.center(Text(normalized_art, style=style)),
+        Align.center(content),
         box=box.DOUBLE,
         border_style=style,
-        subtitle=f"[dim]{subtitle}[/]",
+        subtitle=f"[dim]{subtitle}[/]" if subtitle else None,
         expand=False,
         padding=(1, 4)
     )
 
+
 def run_boot_sequence(console: Console):
     """
-    Cycles through languages before landing on the main app.
+    Enhanced boot sequence with progressive reveal, glitch effects, and signal decoding.
     """
-    # The sequence: (Art, Duration, Color Style)
+    # The sequence: (Art, Base Style, Decoding Message)
     sequence = [
-        (ART_HEBREW, 1.0, "red"),          # Ancient/Warning
-        (ART_GREEK, 1.0, "yellow"),        # Gold/Byzantine
-        (ART_RUSSIAN, 1.0, "tech.cyan"),        # Cold/Northern
-        (ART_FINAL, 1.0, "monk.border"),   # The Final State
+        (ART_HEBREW, "red", "DECODING ANCIENT PROTOCOLS..."),
+        (ART_GREEK, "yellow", "TRANSMITTING BYZANTINE WISDOM..."),
+        (ART_RUSSIAN, "cyan", "ESTABLISHING MONASTIC LINK..."),
+        (ART_FINAL, "monk.border", "ORTHODOX PROTOCOL v1.0 INITIALIZED"),
     ]
-
-    # Create a Live display that updates in place
-    with Live(console=console, refresh_per_second=10, transient=True) as live:
-        for art, duration, style in sequence:
-            panel = get_panel(art, style=style)
-            live.update(panel)
-            time.sleep(duration)
+    
+    with Live(console=console, refresh_per_second=20, transient=True) as live:
+        for idx, (art, style, message) in enumerate(sequence):
+            is_final = idx == len(sequence) - 1
+            
+            # Phase 1: Signal acquisition (weak signal, high corruption)
+            acquisition_frames = 8 if not is_final else 4
+            for frame in range(acquisition_frames):
+                signal = 0.1 + (frame / acquisition_frames) * 0.3
+                corruption = 0.6 - (frame / acquisition_frames) * 0.3
+                panel = get_panel(
+                    art, 
+                    style=style, 
+                    subtitle=f"[dim]{message}[/]",
+                    signal_strength=signal,
+                    corruption=corruption,
+                    scanlines=True,
+                    flicker=True
+                )
+                live.update(panel)
+                time.sleep(0.08)
+            
+            # Phase 2: Progressive decode (character reveal)
+            reveal_steps = 20 if not is_final else 12
+            for step in range(reveal_steps + 1):
+                progress = step / reveal_steps
+                revealed_art = progressive_reveal(art, progress)
+                
+                # Decreasing corruption as we decode
+                corruption = 0.4 * (1 - progress)
+                signal = 0.4 + progress * 0.5
+                
+                panel = get_panel(
+                    revealed_art,
+                    style=style,
+                    subtitle=f"[dim]{message}[/]",
+                    signal_strength=signal,
+                    corruption=corruption,
+                    scanlines=progress < 0.8,
+                    flicker=progress < 0.6
+                )
+                live.update(panel)
+                # Variable timing: faster as we progress
+                delay = 0.05 + (1 - progress) * 0.08
+                time.sleep(delay)
+            
+            # Phase 3: Lock-on (stable display with subtle effects)
+            if not is_final:
+                lock_frames = 6
+                for frame in range(lock_frames):
+                    # Occasional glitch during lock
+                    glitch_chance = 0.2 * (1 - frame / lock_frames)
+                    corruption = glitch_chance if random.random() < glitch_chance else 0
+                    
+                    panel = get_panel(
+                        art,
+                        style=style,
+                        subtitle=f"[dim]{message} — LOCKED[/]",
+                        signal_strength=0.95,
+                        corruption=corruption,
+                        scanlines=False,
+                        flicker=frame < 2
+                    )
+                    live.update(panel)
+                    time.sleep(0.1)
+            
+            # Phase 4: Transition glitch (except for final frame)
+            if not is_final:
+                transition_frames = 5
+                for frame in range(transition_frames):
+                    # Heavy corruption during transition
+                    corruption = 0.5 + (frame / transition_frames) * 0.4
+                    panel = get_panel(
+                        art,
+                        style=style,
+                        subtitle="[dim]TRANSMISSION INTERRUPTED...[/]",
+                        signal_strength=0.3 - frame * 0.05,
+                        corruption=corruption,
+                        scanlines=True,
+                        flicker=True
+                    )
+                    live.update(panel)
+                    time.sleep(0.06)
+        
+        # Final static display
+        final_panel = get_panel(
+            ART_FINAL, 
+            style="monk.border", 
+            subtitle="ORTHODOX PROTOCOL v1.0 — SYSTEM READY",
+            signal_strength=1.0
+        )
+        live.update(final_panel)
+        time.sleep(0.5)
     
     # Print the final static banner to remain on screen
-    final_panel = get_panel(ART_FINAL, style="monk.border", subtitle="v1.0 Orthodox Protocol")
     console.print(final_panel)
     console.print()
