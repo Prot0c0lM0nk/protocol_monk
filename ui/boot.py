@@ -77,10 +77,10 @@ def run_boot_sequence(console: Console):
     """
     # The sequence: (Art, Duration, Color Style)
     sequence = [
-        (ART_HEBREW, 3.0, "red"),          # Ancient/Warning
-        (ART_GREEK, 3.0, "yellow"),        # Gold/Byzantine
-        (ART_RUSSIAN, 3.0, "blue"),        # Cold/Northern
-        (ART_FINAL, 3.0, "monk.border"),   # The Final State
+        (ART_HEBREW, 1.0, "red"),          # Ancient/Warning
+        (ART_GREEK, 1.0, "yellow"),        # Gold/Byzantine
+        (ART_RUSSIAN, 1.0, "tech.cyan"),        # Cold/Northern
+        (ART_FINAL, 1.0, "monk.border"),   # The Final State
     ]
 
     # Create a Live display that updates in place

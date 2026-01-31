@@ -4,27 +4,9 @@
 .env
 .env.local
 *.local
-xml_tool_test/
+REFACTOR/
 quill_env.txt
-Textual/Actions.txt
-Textual/Animations.txt
-Textual/App Basics.txt
-Textual/Command Palette.txt
-Textual/Content.txt
-Textual/CONTENTS.md
-Textual/CSS.txt
-Textual/Dev Tools.txt
-Textual/DOM.txt
-Textual/Event & MSG.txt
-Textual/Input.txt
-Textual/Layout.txt
-Textual/Reactivity.txt
-Textual/Screens.txt
-Textual/Styles.txt
-Textual/Testing.txt
-Textual/Themes.txt
-Textual/Widgets.txt
-Textual/Workers.txt
+
 
 # Python
 __pycache__/
