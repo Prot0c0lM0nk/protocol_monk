@@ -61,54 +61,78 @@ ART_FINAL = r"""
 GLITCH_CHARS = "▓▒░█▄▀■□▪▫▲▼◄►◆◇○●◎◐◑★☆☂☀☁☽☾♠♣♥♦♪♫€¥£¢∞§¶†‡"
 SCANLINE_CHARS = "▔▁▄▀█▌▐░▒▓"
 
+# Pre-computed art data for performance
+_ART_LINES = {}
+_ART_MAX_LENGTH = {}
+
+
+def _get_art_lines(art: str) -> list:
+    """Cache art lines to avoid repeated splitting."""
+    if art not in _ART_LINES:
+        _ART_LINES[art] = art.strip().split('\n')
+        _ART_MAX_LENGTH[art] = max(len(line) for line in _ART_LINES[art])
+    return _ART_LINES[art]
+
+
+def _get_max_length(art: str) -> int:
+    """Get cached max line length."""
+    if art not in _ART_MAX_LENGTH:
+        _get_art_lines(art)
+    return _ART_MAX_LENGTH[art]
+
 
 def corrupt_text(text: str, intensity: float = 0.3) -> str:
     """Apply glitch corruption to text based on intensity (0.0-1.0)."""
-    result = []
-    for char in text:
-        if char.strip() and random.random() < intensity:
-            result.append(random.choice(GLITCH_CHARS))
-        else:
-            result.append(char)
-    return "".join(result)
+    if intensity <= 0:
+        return text
+    # Use local variables for speed
+    glitch = GLITCH_CHARS
+    rand = random.random
+    choice = random.choice
+    # List comprehension is faster than append loop
+    return "".join(
+        choice(glitch) if char.strip() and rand() < intensity else char
+        for char in text
+    )
 
 
 def apply_scanlines(text: str, intensity: float = 0.2) -> str:
     """Add CRT scanline effect to text."""
+    if intensity <= 0:
+        return text
     lines = text.split('\n')
-    result = []
-    for i, line in enumerate(lines):
-        if i % 2 == 0 and random.random() < intensity:
-            # Dim this line slightly by replacing spaces with dimmer chars
-            line = line.replace(' ', '░')
-        result.append(line)
-    return '\n'.join(result)
+    rand = random.random
+    # Pre-compute threshold check
+    threshold = intensity
+    return '\n'.join(
+        line.replace(' ', '░') if i % 2 == 0 and rand() < threshold else line
+        for i, line in enumerate(lines)
+    )
 
 
 def progressive_reveal(art: str, progress: float) -> str:
     """Reveal characters progressively based on progress (0.0-1.0)."""
-    lines = art.split('\n')
+    lines = _get_art_lines(art)
+    # Pre-computed total chars
     total_chars = sum(len(line) for line in lines)
     chars_to_show = int(total_chars * progress)
     
     result = []
     chars_shown = 0
     for line in lines:
+        line_len = len(line)
         if chars_shown >= chars_to_show:
             # Hide remaining lines with spaces (preserve length)
-            result.append(' ' * len(line))
-        elif chars_shown + len(line) <= chars_to_show:
+            result.append(' ' * line_len)
+        elif chars_shown + line_len <= chars_to_show:
             result.append(line)
-            chars_shown += len(line)
+            chars_shown += line_len
         else:
             # Partial line reveal
             reveal_count = chars_to_show - chars_shown
-            revealed = line[:reveal_count]
-            hidden = ' ' * (len(line) - reveal_count)
-            result.append(revealed + hidden)
+            result.append(line[:reveal_count] + ' ' * (line_len - reveal_count))
             chars_shown = chars_to_show
     return '\n'.join(result)
-
 
 def get_signal_indicator(strength: float, max_bars: int = 10) -> str:
     """Generate a signal strength indicator."""
@@ -122,9 +146,14 @@ def get_signal_indicator(strength: float, max_bars: int = 10) -> str:
 def get_panel(art, style="monk.border", subtitle="", signal_strength=1.0, 
               corruption=0.0, scanlines=False, flicker=False):
     """Helper to wrap art in a consistent panel with effects."""
-    # Apply effects
-    display_art = art
+    # Get cached art lines and max length (avoid repeated splitting)
+    lines = _get_art_lines(art)
+    max_length = _get_max_length(art)
     
+    # Build display art from cached lines
+    display_art = '\n'.join(lines)
+    
+    # Apply effects
     if corruption > 0:
         display_art = corrupt_text(display_art, corruption)
     
@@ -135,19 +164,15 @@ def get_panel(art, style="monk.border", subtitle="", signal_strength=1.0,
     if flicker and random.random() < 0.3:
         display_art = display_art.replace('█', '▓').replace('▓', '▒')
     
-    # Normalize line lengths
-    lines = display_art.strip().split('\n')
-    max_length = max(len(line) for line in lines)
-    normalized_lines = [line.ljust(max_length) for line in lines]
+    # Normalize line lengths using cached max
+    normalized_lines = [line.ljust(max_length) for line in display_art.split('\n')]
     normalized_art = '\n'.join(normalized_lines)
     
     # Build content with signal indicator
-    content_parts = [normalized_art]
     if signal_strength < 1.0:
-        content_parts.append("")
-        content_parts.append(get_signal_indicator(signal_strength))
-    
-    content = Text('\n'.join(content_parts), style=style)
+        content = Text(f"{normalized_art}\n\n{get_signal_indicator(signal_strength)}", style=style)
+    else:
+        content = Text(normalized_art, style=style)
     
     return Panel(
         Align.center(content),
