@@ -179,7 +179,7 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
         )
 
     async def _handle_provider_switch(self):
-        providers = ["ollama", "openrouter"]
+        providers = ["ollama", "openrouter", "mlx_lm"]
         await self.event_bus.emit(
             AgentEvents.INFO.value,
             {"message": "Available Providers", "data": providers, "context": "provider_selection"},

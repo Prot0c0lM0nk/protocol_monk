@@ -199,7 +199,6 @@ class ApiConfig:
         self.provider_timeout = int(os.getenv("PROTOCOL_PROVIDER_TIMEOUT", "420"))
 
         # Provider-specific settings
-        # Provider-specific settings
         self.providers = {
             "ollama": {
                 "timeout": int(os.getenv("PROTOCOL_OLLAMA_TIMEOUT", "420")),
@@ -214,6 +213,14 @@ class ApiConfig:
                     os.getenv("PROTOCOL_OPENROUTER_RETRY_DELAY", "1.0")
                 ),
                 "api_key": os.getenv("OPENROUTER_API_KEY"),
+            },
+            "mlx_lm": {
+                "timeout": int(os.getenv("PROTOCOL_MLX_LM_TIMEOUT", "420")),
+                "max_retries": int(os.getenv("PROTOCOL_MLX_LM_RETRIES", "3")),
+                "retry_delay": float(os.getenv("PROTOCOL_MLX_LM_RETRY_DELAY", "1.0")),
+                "max_tokens": int(os.getenv("PROTOCOL_MLX_LM_MAX_TOKENS", "512")),
+                "temperature": float(os.getenv("PROTOCOL_MLX_LM_TEMPERATURE", "0.1")),
+                "top_p": float(os.getenv("PROTOCOL_MLX_LM_TOP_P", "0.9")),
             },
         }
 

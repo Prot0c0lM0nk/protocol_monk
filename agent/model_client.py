@@ -20,6 +20,7 @@ from agent.base_model_client import BaseModelClient
 from agent.provider_registry import ProviderRegistry
 from agent.providers.ollama_model_client_sdk import OllamaModelClientSDK
 from agent.providers.openrouter_model_client_sdk import OpenRouterModelClient
+from agent.providers.mlx_lm_model_client import MLXLMModelClient
 from config.static import settings
 from exceptions import (
     EmptyResponseError,
@@ -76,6 +77,10 @@ class ModelClient:
         Returns:
             str: Detected provider name
         """
+        # Check for MLX LM patterns (mlx-community, mlx- prefixed models)
+        if model_name.startswith("mlx-") or "mlx" in model_name.lower():
+            return "mlx_lm"
+
         # Check for OpenRouter patterns
         if "/" in model_name or any(
             x in model_name.lower()
@@ -103,9 +108,11 @@ class ModelClient:
             return OllamaModelClientSDK(model_name)
         elif provider == "openrouter":
             return OpenRouterModelClient(model_name)
+        elif provider == "mlx_lm":
+            return MLXLMModelClient(model_name)
         else:
             raise ValueError(
-                f"Unknown provider: {provider}. Available: ollama, openrouter"
+                f"Unknown provider: {provider}. Available: ollama, openrouter, mlx_lm"
             )
 
     def switch_provider(self, provider: str) -> None:
@@ -113,7 +120,7 @@ class ModelClient:
         Switch to a different provider (user-controlled).
 
         Args:
-            provider: New provider name ("ollama" or "openrouter")
+            provider: New provider name ("ollama", "openrouter", or "mlx_lm")
         """
         self.logger.info(
             f"Switching provider from {self.selected_provider} to {provider}"

@@ -38,6 +38,7 @@ class RuntimeModelManager:
         provider_map_files = {
             "ollama": "ollama_map.json",
             "openrouter": "openrouter_map.json",
+            "mlx_lm": "mlx_lm_map.json",
             "default": "ollama_map.json",  # Fallback to original
         }
 
@@ -85,7 +86,7 @@ class RuntimeModelManager:
             SwitchReport: Assessment report with safety status and limits
         """
         return self.selector.assess_switch(current_usage, target_model_name)
-
+    
     def get_models_by_provider(self) -> Dict[str, List[str]]:
         """
         Get models grouped by provider.
@@ -96,6 +97,7 @@ class RuntimeModelManager:
         provider_models = {
             "ollama": [],
             "openrouter": [],
+            "mlx_lm": [],
             "generic": [],  # For models without specific provider
         }
 
@@ -104,9 +106,7 @@ class RuntimeModelManager:
             if provider not in provider_models:
                 provider_models[provider] = []
             provider_models[provider].append(model_name)
-
         return provider_models
-
     def get_provider_for_model(self, model_name: str) -> str:
         """
         Get the provider for a specific model.
@@ -138,11 +138,11 @@ class RuntimeModelManager:
         returns the correct list of models for the selected provider.
 
         Args:
-            new_provider: The new provider name ("ollama" or "openrouter")
+            new_provider: The new provider name ("ollama", "openrouter", or "mlx_lm")
         """
-        if new_provider not in ["ollama", "openrouter"]:
+        if new_provider not in ["ollama", "openrouter", "mlx_lm"]:
             raise ValueError(
-                f"Unknown provider: {new_provider}. Available: ollama, openrouter"
+                f"Unknown provider: {new_provider}. Available: ollama, openrouter, mlx_lm"
             )
 
         self.logger.info(
