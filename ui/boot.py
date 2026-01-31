@@ -6,8 +6,6 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.console import Console
 from rich import box
-from rich.columns import Columns
-from rich.rule import Rule
 
 # --- ASCII ART ASSETS (Raw Strings) ---
 # I have manually corrected the line wrapping and alignment for each style.
@@ -162,7 +160,8 @@ def get_panel(art, style="monk.border", subtitle="", signal_strength=1.0,
     
     # Apply flicker by randomly dimming
     if flicker and random.random() < 0.3:
-        display_art = display_art.replace('█', '▓').replace('▓', '▒')
+        dim_level = random.choice(['▓', '▒', '░'])
+        display_art = display_art.replace('█', dim_level)
     
     # Normalize line lengths using cached max
     normalized_lines = [line.ljust(max_length) for line in display_art.split('\n')]
