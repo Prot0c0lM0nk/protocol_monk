@@ -143,7 +143,7 @@ class Application:
             if hasattr(self.ui, 'event_bus'):
                 self.ui.event_bus = self.event_bus
 
-        await self.ui.display_startup_banner("Protocol Monk Online")
+        await self.ui.display_startup_banner("")
         
         self.running = True
         # Rich UI must also implement run_loop or similar
