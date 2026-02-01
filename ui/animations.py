@@ -41,7 +41,7 @@ def display_logos_intro() -> None:
     try:
         center_row = max(3, console.size.height // 2 - 2)
         width = console.size.width
-    except:
+    except (AttributeError, OSError):
         center_row = 5
         width = 80
 
@@ -79,7 +79,7 @@ def monk_challenge() -> None:
         try:
             center_y = console.size.height // 2
             center_x = console.size.width // 2
-        except:
+        except (AttributeError, OSError):
             center_y = 12
             center_x = 40
 
@@ -149,7 +149,7 @@ def monk_challenge() -> None:
             for _ in range(height):
                 console.print(flash_line, highlight=False)
             time.sleep(0.03)
-        except:
+        except (AttributeError, OSError):
             console.print("█" * 40)
 
         console.clear()
@@ -453,7 +453,7 @@ def display_monks_illumination() -> None:
     try:
         center_row = console.size.height // 2 - len(proclamation_pairs) // 2
         terminal_width = console.size.width
-    except:
+    except (AttributeError, OSError):
         center_row = 8
         terminal_width = 80
 

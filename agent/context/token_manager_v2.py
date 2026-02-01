@@ -6,8 +6,10 @@ Background token estimation with caching and async recalculation.
 No blocking operations in critical paths.
 """
 
+from collections import OrderedDict
 import asyncio
 import logging
+from collections import OrderedDict
 from typing import List, Optional, Dict
 from agent.context.message import Message
 from utils.token_estimation import SmartTokenEstimator
@@ -31,8 +33,8 @@ class AsyncTokenManager:
         self.total_tokens = 0
         self.logger = logging.getLogger(__name__)
 
-        # Token cache for frequently estimated content
-        self._token_cache: Dict[str, int] = {}
+        # Token cache for frequently estimated content (OrderedDict for LRU eviction)
+        self._token_cache: OrderedDict[str, int] = OrderedDict()
         self._cache_hits = 0
         self._cache_misses = 0
 
@@ -94,10 +96,14 @@ class AsyncTokenManager:
         if not text:
             return 0
 
-        # Check cache
-        cache_key = f"{len(text)}:{hash(text[:100])}"  # Simple cache key
+        # Use hash of full text as cache key to reduce collisions
+        cache_key = f"{len(text)}:{hash(text)}"
+
+        # Check cache with LRU behavior
         if use_cache and cache_key in self._token_cache:
             self._cache_hits += 1
+            # Move to end to mark as recently used (LRU)
+            self._token_cache.move_to_end(cache_key)
             return self._token_cache[cache_key]
 
         self._cache_misses += 1
@@ -112,9 +118,14 @@ class AsyncTokenManager:
         else:
             tokens = max(1, len(text) // 4)  # Fallback
 
-        # Cache result (limit cache size)
-        if len(self._token_cache) < 1000:
-            self._token_cache[cache_key] = tokens
+        # Cache result with LRU eviction
+        self._token_cache[cache_key] = tokens
+        # Move to end (newest)
+        self._token_cache.move_to_end(cache_key)
+
+        # Evict oldest if over limit
+        if len(self._token_cache) > 1000:
+            self._token_cache.popitem(last=False)
 
         return tokens
 

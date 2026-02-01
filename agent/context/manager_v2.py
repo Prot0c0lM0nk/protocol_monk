@@ -610,4 +610,6 @@ class ContextManagerV2:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                self.logger.error(f"Error processing operation: {e}")
+                self.logger.error(f"Error processing operation: {e}", exc_info=True)
+                # Increment counter to prevent deadlock for waiting operations
+                self._operations_processed += 1

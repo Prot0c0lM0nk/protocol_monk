@@ -166,7 +166,12 @@ class ToolExecutor:
         def _listener(data: Dict[str, Any]):
             if future.done():
                 return
-            
+
+            # Validate data structure
+            if not isinstance(data, dict):
+                self.logger.warning(f"Received non-dict data in tool confirmation listener: {type(data)}")
+                return
+
             # Match by tool_call_id
             if data.get("tool_call_id") == tool_call_id:
                 future.set_result(data)

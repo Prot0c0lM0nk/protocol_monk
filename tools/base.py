@@ -194,9 +194,13 @@ class BaseTool(ABC):
                         # Standard relative path. Join with CWD.
                         target_path = (self.working_dir / str_path).resolve()
             # 3. Security Boundary Check
-            # The resolved path must start with the working directory.
-            # (We use str() comparison to be safe across python versions)
-            if not str(target_path).startswith(str(self.working_dir)):
+            # The resolved path must be under the working directory.
+            # Use relative_to for proper path traversal detection (catches symlinks)
+            try:
+                resolved_working = self.working_dir.resolve()
+                target_path.relative_to(resolved_working)
+            except ValueError:
+                # Path is outside working directory (traversal attempt)
                 self.logger.warning(
                     "Security: Path traversal blocked: %s -> %s", filepath, target_path
                 )
