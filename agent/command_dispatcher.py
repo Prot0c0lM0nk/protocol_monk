@@ -229,7 +229,7 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
             )
             
             # Wait for the response (listener is already registered)
-            response_data = await future
+            response_data = await asyncio.wait_for(future, timeout=60.0)
             return response_data.get("input", "")
             
         except asyncio.TimeoutError:

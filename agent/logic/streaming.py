@@ -19,10 +19,11 @@ class ResponseStreamHandler:
         self.event_bus = event_bus
 
     async def stream(
-        self, 
-        model_client, 
-        context: List[Dict], 
-        tools_schema: Optional[List[Dict]] = None
+        self,
+        model_client,
+        context: List[Dict],
+        tools_schema: Optional[List[Dict]] = None,
+        retry_count: int = 0
     ) -> Any:
         """
         Yields chunks and returns the final full response object.
@@ -73,13 +74,20 @@ class ResponseStreamHandler:
             return accumulated_text
 
         except ModelRateLimitError as e:
+            MAX_RETRIES = 3
+            if retry_count >= MAX_RETRIES:
+                await self.event_bus.emit(
+                    AgentEvents.ERROR.value,
+                    {"message": "Max retries exceeded for rate limit", "context": "rate_limit"},
+                )
+                return "Rate limit retries exceeded."
             await self.event_bus.emit(
                 AgentEvents.WARNING.value,
                 {"message": e.user_hint, "context": "rate_limit"},
             )
             await asyncio.sleep(e.retry_after)
-            # Recursive retry
-            return await self.stream(model_client, context, tools_schema)
+            # Recursive retry with increment
+            return await self.stream(model_client, context, tools_schema, retry_count + 1)
             
         except Exception as e:
             logger.exception("Stream error")

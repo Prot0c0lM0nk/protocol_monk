@@ -53,6 +53,8 @@ class Application:
         self.ui = None
         self.tui_app = None
         self.running = False
+        self._stop_task = None
+        self._stop_task = None
 
     async def start(self):
         """Start the application."""
@@ -194,15 +196,17 @@ class Application:
             pass
 
 
-def signal_handler(app, signum, frame):
-    asyncio.create_task(app.stop())
+def signal_handler(app):
+    # Check if stop task is already running
+    if app._stop_task is None or app._stop_task.done():
+        app._stop_task = asyncio.create_task(app.stop())
 
 
 async def main():
     app = Application()
 
     def handle_signal():
-        asyncio.create_task(app.stop())
+        signal_handler(app)
 
     loop = asyncio.get_event_loop()
     loop.add_signal_handler(signal.SIGINT, handle_signal)

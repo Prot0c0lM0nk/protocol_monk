@@ -23,8 +23,18 @@ class ModelConfigLoader:
         Returns:
             Dict[str, ModelInfo]: Model map with ModelInfo objects
         """
+        # Validate path before attempting to open
+        if not self.model_map_file or not isinstance(self.model_map_file, (str, Path)):
+            self.logger.warning("Invalid model_map_file path")
+            return {}
+
+        model_path = Path(self.model_map_file)
+        if not model_path.exists():
+            self.logger.warning(f"Model map file not found: {model_path}")
+            return {}
+
         try:
-            with open(self.model_map_file, "r", encoding="utf-8") as f:
+            with open(model_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 models = data.get("models", {})
 

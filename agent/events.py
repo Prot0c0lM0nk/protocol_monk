@@ -69,8 +69,6 @@ class EventBus:
 
     def subscribe(self, event_type: str, callback: Callable) -> None:
         """Subscribe to a specific event type"""
-        # Simple list append doesn't need a lock if we assume single-threaded event loop setup,
-        # but for safety we can keep it strictly synchronous or use the lock only for modification.
         if event_type not in self._listeners:
             self._listeners[event_type] = []
         self._listeners[event_type].append(callback)

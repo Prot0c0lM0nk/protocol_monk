@@ -4,8 +4,10 @@ Tool Executor for Protocol Monk
 ===============================
 Handles execution of tool calls with user confirmation via Event Bus.
 """
+import copy
 import json
 import asyncio
+import copy
 import logging
 from asyncio import Lock
 from dataclasses import dataclass, field
@@ -108,6 +110,8 @@ class ToolExecutor:
 
     def _normalize_tool_call(self, tool_call: Dict) -> Dict:
         """Normalize tool call formats from different providers."""
+        # Create a deep copy to avoid mutating input
+        tool_call = copy.deepcopy(tool_call)
         normalized = {}
 
         # CASE 1: Custom/Ollama format: {"action": "...", "parameters": "..."}
@@ -182,7 +186,7 @@ class ToolExecutor:
             )
             
             # NOW wait for the response (listener is already registered)
-            response_data = await future
+            response_data = await asyncio.wait_for(future, timeout=60.0)
             
             approved = response_data.get("approved", False)
             edits = response_data.get("edits")

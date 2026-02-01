@@ -70,6 +70,7 @@ class SafeInputManager:
                 plain_input = PlainAsyncInputWithHistory(lock=self._lock)
                 plain_input.prompts = AsyncPrompts(self._async_manager)  # Set prompts reference
                 self._async_manager.register_capture("plain", plain_input)
+            except Exception as e:
                 # Log error but don't fail - safety first
                 print(f"Warning: Failed to initialize async input: {e}")
                 self._async_manager = None

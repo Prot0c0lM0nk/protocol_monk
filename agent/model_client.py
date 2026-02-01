@@ -164,15 +164,15 @@ class ModelClient:
             ModelTimeoutError: If request times out
             ModelError: If connection or API error occurs
         """
-        async with self._client_lock:  # NEW: protect client access during stream
+        async with self._client_lock:  # Protect client access during stream
             if not self._client:
                 raise ModelError("Model client not initialized")
 
-        # Direct delegation to provider - no failover, user-controlled
-        async for chunk in self._client.get_response_async(
-            conversation_context, stream, tools
-        ):
-            yield chunk
+            # Direct delegation to provider - no failover, user-controlled
+            async for chunk in self._client.get_response_async(
+                conversation_context, stream, tools
+            ):
+                yield chunk
 
     def set_model(self, model_name: str) -> None:
         """
