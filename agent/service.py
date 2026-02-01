@@ -4,6 +4,7 @@ Protocol Monk Agent Service
 The reactive core of the application.
 Strictly Event-Driven. No UI coupling.
 """
+
 import asyncio
 import logging
 import json
@@ -23,6 +24,7 @@ from config.static import settings
 from exceptions import ContextValidationError
 from utils.enhanced_logger import EnhancedLogger
 from utils.proper_tool_calling import ProperToolCalling
+
 
 class AgentService:
     """
@@ -48,9 +50,11 @@ class AgentService:
         # Components
         self.model_manager = RuntimeModelManager(provider=provider)
         self.model_client = ModelClient(model_name=model_name, provider=provider)
-        
+
         model_info = self.model_manager.get_available_models().get(model_name)
-        window = model_info.context_window if model_info else settings.model.context_window
+        window = (
+            model_info.context_window if model_info else settings.model.context_window
+        )
 
         self.context_manager = ContextManager(
             max_tokens=window,
@@ -59,20 +63,22 @@ class AgentService:
         )
 
         self.scratch_manager = ScratchManager(self.working_dir)
-        self.proper_tool_caller = ProperToolCalling(tool_registry) if tool_registry else None
-        
+        self.proper_tool_caller = (
+            ProperToolCalling(tool_registry) if tool_registry else None
+        )
+
         # NOTE: ToolExecutor is initialized WITHOUT UI
         self.tool_executor = ToolExecutor(
             tool_registry=tool_registry,
             working_dir=self.working_dir,
             auto_confirm=False,
             event_bus=self.event_bus,
-            ui=None # Explicitly None
+            ui=None,  # Explicitly None
         )
 
         self.command_dispatcher = CommandDispatcher(self)
         self.stream_handler = ResponseStreamHandler(self.event_bus)
-        
+
         # State
         self._running = False
         self.max_autonomous_loops = 10
@@ -82,7 +88,7 @@ class AgentService:
         if hasattr(self.tool_executor.tool_registry, "async_initialize"):
             await self.tool_executor.tool_registry.async_initialize()
         await self.context_manager.async_initialize()
-        
+
         # Subscribe to INPUT
         self.event_bus.subscribe(AgentEvents.USER_INPUT.value, self.on_user_input)
         self._running = True
@@ -90,7 +96,7 @@ class AgentService:
 
     async def shutdown(self):
         self._running = False
-        if hasattr(self.context_manager, 'stop'):
+        if hasattr(self.context_manager, "stop"):
             await self.context_manager.stop()
 
     # --- Event Handlers ---
@@ -118,8 +124,8 @@ class AgentService:
             # CRITICAL: Catch crashes so we can unlock the UI
             self.logger.exception("Fatal error in AgentService")
             await self.event_bus.emit(
-                AgentEvents.ERROR.value, 
-                {"message": f"Agent crashed: {e}", "context": "service_crash"}
+                AgentEvents.ERROR.value,
+                {"message": f"Agent crashed: {e}", "context": "service_crash"},
             )
         finally:
             # 3. Finish (Always unlock the UI)
@@ -135,26 +141,34 @@ class AgentService:
         while loop_count < self.max_autonomous_loops:
             loop_count += 1
             self.logger.debug(f"Loop iteration: {loop_count}")
-            
+
             # A. Prepare Context
             self.logger.debug("Getting context...")
             context = await self._get_clean_context()
-            if not context: 
+            if not context:
                 self.logger.error("Context retrieval failed")
                 break
             self.enhanced_logger.log_context_snapshot(context)
 
             # B. Get Response (Stream)
             self.logger.debug("Streaming response from model...")
-            tools_schema = self.proper_tool_caller.get_tools_schema() if self.proper_tool_caller else None
-            
+            tools_schema = (
+                self.proper_tool_caller.get_tools_schema()
+                if self.proper_tool_caller
+                else None
+            )
+
             try:
                 # Add explicit debug log here
-                self.logger.debug(f"Calling stream handler with {len(context)} messages")
+                self.logger.debug(
+                    f"Calling stream handler with {len(context)} messages"
+                )
                 response_obj = await self.stream_handler.stream(
                     self.model_client, context, tools_schema
                 )
-                self.logger.debug(f"Stream complete. Response type: {type(response_obj)}")
+                self.logger.debug(
+                    f"Stream complete. Response type: {type(response_obj)}"
+                )
             except Exception as e:
                 self.logger.exception("Streaming failed!")
                 break
@@ -163,40 +177,40 @@ class AgentService:
             actions, has_actions = ToolCallExtractor.extract(response_obj)
 
             # Use the new safe logger method
-            if hasattr(self.enhanced_logger, 'log_turn'):
+            if hasattr(self.enhanced_logger, "log_turn"):
                 self.enhanced_logger.log_turn(
                     turn_number=loop_count,
                     model_input=context,
                     model_output=response_obj,
-                    parsed_actions=actions
+                    parsed_actions=actions,
                 )
 
             # D. Record Assistant Message
             if has_actions:
-                 # FIX: Extract ONLY the tool_calls list, not the full object
-                 tool_calls_payload = []
-                 
-                 if isinstance(response_obj, dict) and "message" in response_obj:
-                     # Standard Ollama/OpenAI API dict format
-                     tool_calls_payload = response_obj["message"].get("tool_calls", [])
-                 elif hasattr(response_obj, "tool_calls"):
-                     # Pydantic object format
-                     tool_calls_payload = response_obj.tool_calls
-                 elif isinstance(response_obj, dict) and "tool_calls" in response_obj:
-                     # Flattened dict format
-                     tool_calls_payload = response_obj["tool_calls"]
-                 else:
-                     # Fallback: trust the extractor or empty
-                     tool_calls_payload = actions if isinstance(actions, list) else []
-                 
-                 await self.context_manager.add_tool_call_message(tool_calls_payload)
+                # FIX: Extract ONLY the tool_calls list, not the full object
+                tool_calls_payload = []
+
+                if isinstance(response_obj, dict) and "message" in response_obj:
+                    # Standard Ollama/OpenAI API dict format
+                    tool_calls_payload = response_obj["message"].get("tool_calls", [])
+                elif hasattr(response_obj, "tool_calls"):
+                    # Pydantic object format
+                    tool_calls_payload = response_obj.tool_calls
+                elif isinstance(response_obj, dict) and "tool_calls" in response_obj:
+                    # Flattened dict format
+                    tool_calls_payload = response_obj["tool_calls"]
+                else:
+                    # Fallback: trust the extractor or empty
+                    tool_calls_payload = actions if isinstance(actions, list) else []
+
+                await self.context_manager.add_tool_call_message(tool_calls_payload)
             else:
-                 # Just text
-                 if isinstance(response_obj, str) and response_obj.strip():
-                     await self.context_manager.add_assistant_message(response_obj)
-                 else:
-                     # Fallback if response_obj was complex but yielded no actions (rare)
-                     pass
+                # Just text
+                if isinstance(response_obj, str) and response_obj.strip():
+                    await self.context_manager.add_assistant_message(response_obj)
+                else:
+                    # Fallback if response_obj was complex but yielded no actions (rare)
+                    pass
 
             if not has_actions:
                 # Agent is done talking
@@ -211,13 +225,13 @@ class AgentService:
                 await self.context_manager.add_tool_result_message(
                     tool_name=result.tool_name,
                     tool_call_id=result.tool_call_id,
-                    content=result.output
+                    content=result.output,
                 )
 
             # Check if we should stop
             if summary.should_finish:
                 break
-                
+
             # Loop continues to reflect on tool results...
 
     async def _get_clean_context(self):
@@ -226,13 +240,17 @@ class AgentService:
                 self.current_model, self.current_provider
             )
         except Exception as e:
-            await self.event_bus.emit(AgentEvents.ERROR.value, {"message": f"Context Error: {e}"})
+            await self.event_bus.emit(
+                AgentEvents.ERROR.value, {"message": f"Context Error: {e}"}
+            )
             return None
 
     # --- Support Methods for CommandDispatcher ---
     async def clear_conversation(self):
         await self.context_manager.clear()
-        await self.event_bus.emit(AgentEvents.INFO.value, {"message": "Context cleared."})
+        await self.event_bus.emit(
+            AgentEvents.INFO.value, {"message": "Context cleared."}
+        )
 
     async def get_status(self) -> Dict:
         stats = await self.context_manager.get_stats()

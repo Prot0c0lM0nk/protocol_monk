@@ -68,16 +68,20 @@ class SafeInputManager:
                 # Create async manager and set up prompts
                 self._async_manager = AsyncInputManager()
                 plain_input = PlainAsyncInputWithHistory(lock=self._lock)
-                plain_input.prompts = AsyncPrompts(self._async_manager)  # Set prompts reference
+                plain_input.prompts = AsyncPrompts(
+                    self._async_manager
+                )  # Set prompts reference
                 self._async_manager.register_capture("plain", plain_input)
             except Exception as e:
                 # Log error but don't fail - safety first
                 print(f"Warning: Failed to initialize async input: {e}")
                 self._async_manager = None
         elif settings.ui.use_async_input:
-            print("Warning: Async input requested but not in a terminal. Using traditional input.")
+            print(
+                "Warning: Async input requested but not in a terminal. Using traditional input."
+            )
             self._async_manager = None
-            
+
     async def start_capture(self):
         """Initialize and start the async input capture."""
         if self._traditional_manager is None:
@@ -87,7 +91,9 @@ class SafeInputManager:
             await self._async_manager.start_capture(self.ui_type)
             self._using_async = True
 
-    async def read_input_safe(self, prompt_text: str = "", is_main_loop: bool = False) -> Optional[str]:
+    async def read_input_safe(
+        self, prompt_text: str = "", is_main_loop: bool = False
+    ) -> Optional[str]:
         """
         Read input with safety mechanisms.
 
@@ -135,7 +141,9 @@ class SafeInputManager:
 
         return None
 
-    async def read_input(self, prompt_text: str = "", is_main_loop: bool = False) -> Optional[str]:
+    async def read_input(
+        self, prompt_text: str = "", is_main_loop: bool = False
+    ) -> Optional[str]:
         """
         Read input - wrapper for compatibility with existing code.
 
@@ -166,6 +174,8 @@ class SafeInputManager:
         self._using_async = False
 
 
-def create_safe_input_manager(ui_type: str = "plain", lock: Optional[asyncio.Lock] = None) -> SafeInputManager:
+def create_safe_input_manager(
+    ui_type: str = "plain", lock: Optional[asyncio.Lock] = None
+) -> SafeInputManager:
     """Factory function to create a safe input manager."""
     return SafeInputManager(ui_type, lock=lock)

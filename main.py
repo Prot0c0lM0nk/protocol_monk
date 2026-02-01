@@ -60,19 +60,23 @@ class Application:
         """Start the application."""
         try:
             # 1. Bootstrap Configuration
-            self.working_dir, self.ui_mode, self.disable_async_input = bootstrap_application()
+            self.working_dir, self.ui_mode, self.disable_async_input = (
+                bootstrap_application()
+            )
 
             # Initialize settings with bootstrap parameters
             from config.static import initialize_settings
+
             initialize_settings(self.disable_async_input)
             setup_logging()
 
             # 2. Initialize Infrastructure (The Spine)
             self.event_bus = EventBus()
-            
+
             # 3. Initialize Agent Service (The Brain)
             # It sits in the background and waits for events.
             from tools.registry import ToolRegistry
+
             tool_registry = ToolRegistry(
                 working_dir=self.working_dir,
                 preferred_env=None,
@@ -83,11 +87,15 @@ class Application:
             self.agent_service = AgentService(
                 working_dir=self.working_dir,
                 model_name=settings.model.default_model,
-                provider=(settings.api.provider_chain[0] if settings.api.provider_chain else "ollama"),
+                provider=(
+                    settings.api.provider_chain[0]
+                    if settings.api.provider_chain
+                    else "ollama"
+                ),
                 tool_registry=tool_registry,
                 event_bus=self.event_bus,
             )
-            
+
             await self.agent_service.async_initialize()
 
             # 4. Initialize UI (The Driver) based on mode
@@ -121,14 +129,14 @@ class Application:
                 "working_dir": str(self.working_dir),
                 "model": self.agent_service.current_model,
                 "provider": self.agent_service.current_provider,
-                "version": "1.0.0" # Example metadata
-            }
+                "version": "1.0.0",  # Example metadata
+            },
         )
-        
+
         # Start async input capture if enabled, AFTER the banner has been printed.
         if settings.ui.use_async_input:
             await self.ui.input.start_capture()
-        
+
         self.running = True
         await self.ui.run_loop()
 
@@ -137,19 +145,21 @@ class Application:
         print(f"[Protocol Monk] Starting Rich UI...")
         try:
             from ui.rich import RichUI
+
             self.ui = RichUI(event_bus=self.event_bus)
         except ImportError:
             # Fallback if RichUI signature hasn't been updated yet
             from ui.rich import create_rich_ui
+
             self.ui = create_rich_ui()
-            if hasattr(self.ui, 'event_bus'):
+            if hasattr(self.ui, "event_bus"):
                 self.ui.event_bus = self.event_bus
 
         await self.ui.display_startup_banner("")
-        
+
         self.running = True
         # Rich UI must also implement run_loop or similar
-        if hasattr(self.ui, 'run_loop'):
+        if hasattr(self.ui, "run_loop"):
             await self.ui.run_loop()
         else:
             # Fallback for partial migration
@@ -162,7 +172,7 @@ class Application:
         from ui.textual.interface import TextualUI
 
         self.tui_app = ProtocolMonkApp()
-        
+
         # Wire up the bridge
         # Note: TextualUI likely needs updates to fully utilize AgentService events
         # but passing the service instance maintains compatibility for now.
@@ -176,20 +186,20 @@ class Application:
     async def stop(self):
         """Stop the application gracefully."""
         self.running = False
-        
+
         # Stop UI
-        if self.ui and hasattr(self.ui, 'stop'):
+        if self.ui and hasattr(self.ui, "stop"):
             await self.ui.stop()
         if self.tui_app:
             await self.tui_app.exit()
-            
+
         # Stop Service
         if self.agent_service:
             try:
                 await self.agent_service.shutdown()
             except Exception:
                 pass
-                
+
         try:
             close_debug_log()
         except Exception:

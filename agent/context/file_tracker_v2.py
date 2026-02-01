@@ -18,6 +18,7 @@ from agent.context.message import Message
 @dataclass
 class DecayEntry:
     """Represents a file decay operation."""
+
     filepath: str
     message_index: int  # Index in conversation
     turns_remaining: int
@@ -67,10 +68,7 @@ class LockFreeFileTracker:
         self.logger.info("LockFreeFileTracker stopped")
 
     async def trigger_decay(
-        self,
-        filepath: str,
-        conversation: List[Message],
-        grace_period_msgs: int = 40
+        self, filepath: str, conversation: List[Message], grace_period_msgs: int = 40
     ):
         """
         Mark old reads of a file for decay.
@@ -89,7 +87,7 @@ class LockFreeFileTracker:
                 entry = DecayEntry(
                     filepath=filepath,
                     message_index=idx,
-                    turns_remaining=grace_period_msgs
+                    turns_remaining=grace_period_msgs,
                 )
                 await self._decay_queue.put(entry)
 
@@ -115,7 +113,7 @@ class LockFreeFileTracker:
                     entry = DecayEntry(
                         filepath=msg.metadata.get("file_read", "unknown"),
                         message_index=idx,
-                        turns_remaining=turns - 1
+                        turns_remaining=turns - 1,
                     )
                     await self._decay_queue.put(entry)
                     msg.metadata["turns_left"] = turns - 1
@@ -128,10 +126,7 @@ class LockFreeFileTracker:
         while self._running:
             try:
                 # Wait for entry with timeout to allow graceful shutdown
-                entry = await asyncio.wait_for(
-                    self._decay_queue.get(),
-                    timeout=0.1
-                )
+                entry = await asyncio.wait_for(self._decay_queue.get(), timeout=0.1)
 
                 if entry.turns_remaining <= 0:
                     # Mark as expired - this is done atomically
@@ -202,5 +197,5 @@ class LockFreeFileTracker:
         return {
             "decay_queue_size": self._decay_queue.qsize(),
             "tracked_files": len(self._file_read_counts),
-            "running": self._running
+            "running": self._running,
         }

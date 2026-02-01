@@ -69,18 +69,31 @@ class RichUI(UI):
         """Subscribe to all agent events."""
         # Streaming & Content
         self.event_bus.subscribe(AgentEvents.STREAM_CHUNK.value, self._on_stream_chunk)
-        self.event_bus.subscribe(AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete)
-        self.event_bus.subscribe(AgentEvents.THINKING_STARTED.value, self._on_thinking_started)
-        self.event_bus.subscribe(AgentEvents.THINKING_STOPPED.value, self._on_thinking_stopped)
+        self.event_bus.subscribe(
+            AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete
+        )
+        self.event_bus.subscribe(
+            AgentEvents.THINKING_STARTED.value, self._on_thinking_started
+        )
+        self.event_bus.subscribe(
+            AgentEvents.THINKING_STOPPED.value, self._on_thinking_stopped
+        )
 
         # Tool Lifecycle
-        self.event_bus.subscribe(AgentEvents.TOOL_CONFIRMATION_REQUESTED.value, self._on_tool_confirmation_request)
-        self.event_bus.subscribe(AgentEvents.TOOL_EXECUTION_START.value, self._on_tool_start)
+        self.event_bus.subscribe(
+            AgentEvents.TOOL_CONFIRMATION_REQUESTED.value,
+            self._on_tool_confirmation_request,
+        )
+        self.event_bus.subscribe(
+            AgentEvents.TOOL_EXECUTION_START.value, self._on_tool_start
+        )
         self.event_bus.subscribe(AgentEvents.TOOL_RESULT.value, self._on_tool_result)
         self.event_bus.subscribe(AgentEvents.TOOL_ERROR.value, self._on_tool_error)
 
         # Command/Input Events (for slash commands that prompt user)
-        self.event_bus.subscribe(AgentEvents.INPUT_REQUESTED.value, self._on_input_requested)
+        self.event_bus.subscribe(
+            AgentEvents.INPUT_REQUESTED.value, self._on_input_requested
+        )
 
         # System
         self.event_bus.subscribe(AgentEvents.INFO.value, self._on_info)
@@ -130,7 +143,9 @@ class RichUI(UI):
                 self._turn_complete.clear()
 
                 # 5. Dispatch to AgentService
-                await self.event_bus.emit(AgentEvents.USER_INPUT.value, {"input": user_text})
+                await self.event_bus.emit(
+                    AgentEvents.USER_INPUT.value, {"input": user_text}
+                )
 
             except asyncio.CancelledError:
                 self.renderer.print_system("Loop cancelled.")
@@ -183,7 +198,9 @@ class RichUI(UI):
         self.renderer.render_tool_confirmation(action, params)
 
         # Block for user confirmation
-        approved = await self.input_handler.confirm("Execute this action?", default=False)
+        approved = await self.input_handler.confirm(
+            "Execute this action?", default=False
+        )
 
         # Emit response
         await self.event_bus.emit(
@@ -192,7 +209,7 @@ class RichUI(UI):
                 "tool_call_id": tool_call_id,
                 "approved": approved,
                 "edits": None,
-            }
+            },
         )
 
     async def _on_tool_start(self, data: Dict[str, Any]):
@@ -228,8 +245,7 @@ class RichUI(UI):
             result = await self.input_handler.get_input(prompt_text)
 
         await self.event_bus.emit(
-            AgentEvents.INPUT_RESPONSE.value,
-            {"input": result or ""}
+            AgentEvents.INPUT_RESPONSE.value, {"input": result or ""}
         )
 
     async def _on_info(self, data: Dict[str, Any]):
@@ -256,14 +272,16 @@ class RichUI(UI):
         recovery_index = await self.input_handler.select_with_arrows(
             "Agent Error - Choose an action:",
             ["Resend to model", "Return control to user"],
-            default_index=1  # Default to returning control
+            default_index=1,  # Default to returning control
         )
 
         if recovery_index == 0:
             # Resend last input to agent
             if self._last_user_input:
                 self._turn_complete.clear()
-                await self.event_bus.emit(AgentEvents.USER_INPUT.value, {"input": self._last_user_input})
+                await self.event_bus.emit(
+                    AgentEvents.USER_INPUT.value, {"input": self._last_user_input}
+                )
         else:
             # Return control to user - unlock turn
             self._turn_complete.set()

@@ -9,6 +9,7 @@ from textual.containers import Horizontal
 from textual.widgets import TextArea, Button, Input
 from textual import events
 
+
 class InputBar(Horizontal):
     """
     A multi-line input bar.
@@ -22,7 +23,7 @@ class InputBar(Horizontal):
         text_area = TextArea(id="msg-input", show_line_numbers=False)
         text_area.placeholder = "Ask Protocol Monk..."
         yield text_area
-        
+
         yield Button("Send", id="send-btn", variant="primary")
 
     def on_mount(self) -> None:
@@ -36,7 +37,7 @@ class InputBar(Horizontal):
 
     def on_key(self, event: events.Key) -> None:
         """
-        Intercept Enter to submit. 
+        Intercept Enter to submit.
         Shift+Enter is handled natively by TextArea (new line).
         """
         if event.key == "enter":
@@ -62,6 +63,6 @@ class InputBar(Horizontal):
             # This allows the App to handle it exactly like a standard Input widget.
             # We pass 'text_widget' as the sender so the App knows where it came from.
             self.post_message(Input.Submitted(text_widget, value))
-            
+
             # Clear the box
             text_widget.text = ""

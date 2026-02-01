@@ -29,6 +29,7 @@ from agent.events import EventBus, AgentEvents, get_event_bus
 @dataclass
 class ExecutionSummary:
     """Summary of executing multiple tool calls."""
+
     results: List[ToolResult] = field(default_factory=list)
     should_finish: bool = False
 
@@ -162,14 +163,16 @@ class ToolExecutor:
 
         # CRITICAL FIX: Create future first, but don't start waiting yet
         future = asyncio.get_event_loop().create_future()
-        
+
         def _listener(data: Dict[str, Any]):
             if future.done():
                 return
 
             # Validate data structure
             if not isinstance(data, dict):
-                self.logger.warning(f"Received non-dict data in tool confirmation listener: {type(data)}")
+                self.logger.warning(
+                    f"Received non-dict data in tool confirmation listener: {type(data)}"
+                )
                 return
 
             # Match by tool_call_id
@@ -177,8 +180,10 @@ class ToolExecutor:
                 future.set_result(data)
 
         # Register listener BEFORE emitting - this is the fix
-        self.event_bus.subscribe(AgentEvents.TOOL_CONFIRMATION_RESPONSE.value, _listener)
-        
+        self.event_bus.subscribe(
+            AgentEvents.TOOL_CONFIRMATION_RESPONSE.value, _listener
+        )
+
         try:
             # Now emit the request (UI will handle it)
             await self.event_bus.emit(
@@ -189,17 +194,21 @@ class ToolExecutor:
                     "auto_confirm": self.auto_confirm,
                 },
             )
-            
+
             # NOW wait for the response (listener is already registered)
             response_data = await asyncio.wait_for(future, timeout=60.0)
-            
+
             approved = response_data.get("approved", False)
             edits = response_data.get("edits")
 
             if not approved:
                 await self.event_bus.emit(
                     AgentEvents.TOOL_REJECTED.value,
-                    {"tool_call": normalized, "tool_call_id": tool_call_id, "reason": "user_rejected"},
+                    {
+                        "tool_call": normalized,
+                        "tool_call_id": tool_call_id,
+                        "reason": "user_rejected",
+                    },
                 )
                 raise UserCancellationError("User rejected tool execution")
 
@@ -212,12 +221,18 @@ class ToolExecutor:
         except asyncio.TimeoutError:
             await self.event_bus.emit(
                 AgentEvents.TOOL_REJECTED.value,
-                {"tool_call": normalized, "tool_call_id": tool_call_id, "reason": "timeout"},
+                {
+                    "tool_call": normalized,
+                    "tool_call_id": tool_call_id,
+                    "reason": "timeout",
+                },
             )
             raise UserCancellationError("Confirmation timed out")
         finally:
             # Always unsubscribe
-            self.event_bus.unsubscribe(AgentEvents.TOOL_CONFIRMATION_RESPONSE.value, _listener)
+            self.event_bus.unsubscribe(
+                AgentEvents.TOOL_CONFIRMATION_RESPONSE.value, _listener
+            )
 
     async def _process_single_tool(
         self, tool_call: Dict
@@ -233,7 +248,10 @@ class ToolExecutor:
             return res, False
 
         if normalized["action"] == "finish":
-            await self.event_bus.emit(AgentEvents.TASK_COMPLETE.value, {"summary": normalized["parameters"].get("summary", "")})
+            await self.event_bus.emit(
+                AgentEvents.TASK_COMPLETE.value,
+                {"summary": normalized["parameters"].get("summary", "")},
+            )
             # FIX: manual assignment to prevent TypeError
             res = ToolResult(success=True, output="Task completed", tool_name="finish")
             res.tool_call_id = call_id
@@ -241,17 +259,19 @@ class ToolExecutor:
 
         # Calls the new event-based confirmation
         try:
-            final_tool_call, suggestion_result = await self._confirm_and_handle_edits(normalized, call_id)
+            final_tool_call, suggestion_result = await self._confirm_and_handle_edits(
+                normalized, call_id
+            )
             if suggestion_result:
                 return suggestion_result, False
-        
+
         except UserCancellationError:
             # FIX: Convert Cancellation to a valid ToolResult instead of crashing
             # AND FIX: Assign tool_call_id attribute manually since it's not in __init__
             result = ToolResult(
-                success=False, 
-                output="Tool execution cancelled by user.", 
-                tool_name=normalized["action"]
+                success=False,
+                output="Tool execution cancelled by user.",
+                tool_name=normalized["action"],
             )
             result.tool_call_id = call_id
             return result, False
@@ -260,7 +280,10 @@ class ToolExecutor:
         result.tool_name = final_tool_call["action"]
         result.tool_call_id = call_id
 
-        await self.event_bus.emit(AgentEvents.TOOL_RESULT.value, {"result": result, "tool_name": result.tool_name})
+        await self.event_bus.emit(
+            AgentEvents.TOOL_RESULT.value,
+            {"result": result, "tool_name": result.tool_name},
+        )
         return result, False
 
     async def execute_tool_calls(self, tool_calls: List[Dict]) -> ExecutionSummary:
@@ -271,13 +294,20 @@ class ToolExecutor:
         async with self.execution_lock:
             await self.event_bus.emit(
                 AgentEvents.TOOL_EXECUTION_START.value,
-                {"count": len(tool_calls), "tools": [c.get("action") for c in tool_calls]},
+                {
+                    "count": len(tool_calls),
+                    "tools": [c.get("action") for c in tool_calls],
+                },
             )
             summary = ExecutionSummary()
             for i, tool_call in enumerate(tool_calls):
                 await self.event_bus.emit(
                     AgentEvents.TOOL_EXECUTION_PROGRESS.value,
-                    {"current": i+1, "total": len(tool_calls), "current_tool": tool_call.get("action")},
+                    {
+                        "current": i + 1,
+                        "total": len(tool_calls),
+                        "current_tool": tool_call.get("action"),
+                    },
                 )
                 result, should_finish = await self._process_single_tool(tool_call)
                 if should_finish:
@@ -288,11 +318,16 @@ class ToolExecutor:
 
             await self.event_bus.emit(
                 AgentEvents.TOOL_EXECUTION_COMPLETE.value,
-                {"summary": f"Executed {len(tool_calls)} tools", "had_failures": any(not r.success for r in summary.results)},
+                {
+                    "summary": f"Executed {len(tool_calls)} tools",
+                    "had_failures": any(not r.success for r in summary.results),
+                },
             )
             return summary
 
     async def set_auto_confirm(self, value: bool):
         async with self._config_lock:
             self.auto_confirm = value
-        await self.event_bus.emit(AgentEvents.AUTO_CONFIRM_CHANGED.value, {"value": value})
+        await self.event_bus.emit(
+            AgentEvents.AUTO_CONFIRM_CHANGED.value, {"value": value}
+        )

@@ -56,22 +56,22 @@ class MainChatScreen(Screen):
         This is called by the agent when it needs user input.
         """
         input_bar = self.query_one(InputBar)
-        
+
         # Set a placeholder if prompt is provided
         if prompt:
             text_area = input_bar.query_one("#msg-input")
             if text_area:
                 text_area.placeholder = prompt
-        
+
         # Focus the input
         input_bar.focus_input()
-        
+
         # Create a future to wait for input
         future = asyncio.Future()
-        
+
         # Store the future in the input bar so it can resolve it
         input_bar.set_input_future(future)
-        
+
         try:
             result = await future
             return result

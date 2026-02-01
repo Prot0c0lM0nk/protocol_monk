@@ -2,16 +2,18 @@
 ui/textual/widgets/status_bar.py
 Live-updating status bar.
 """
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Label, Static
 from textual.reactive import reactive
 
+
 class StatusBar(Horizontal):
     """
     Top status bar showing live agent metrics.
     """
-    
+
     # Reactive attributes for auto-updates
     status = reactive("Idle")
     model_name = reactive("Unknown")
@@ -22,18 +24,18 @@ class StatusBar(Horizontal):
     def compose(self) -> ComposeResult:
         yield Label("☦ Protocol Monk", id="app-title")
         yield Static(" | ", classes="separator")
-        
+
         # Model & Provider
         yield Label(f"{self.provider}", id="provider-label")
         yield Static(":", classes="separator")
         yield Label(f"{self.model_name}", id="model-label")
-        
-        yield Static("", classes="spacer") # Pushes rest to the right
-        
+
+        yield Static("", classes="spacer")  # Pushes rest to the right
+
         # Token Usage
         yield Label("Tokens:", classes="metric-label")
         yield Label(f"{self.tokens}/{self.limit}", id="token-label")
-        
+
         yield Static(" | ", classes="separator")
         yield Label(f"● {self.status}", id="status-label")
 
@@ -42,7 +44,7 @@ class StatusBar(Horizontal):
         try:
             label = self.query_one("#status-label", Label)
             label.update(f"● {new_status}")
-            
+
             if "thinking" in new_status.lower():
                 label.set_classes("status-thinking")
             elif "error" in new_status.lower():

@@ -495,13 +495,22 @@ class UIConfig:
         if disable_async_input:
             self.use_async_input = False
         else:
-            self.use_async_input = os.getenv("USE_ASYNC_INPUT", "true").lower() == "true"
-            self.async_input_fallback = os.getenv("ASYNC_INPUT_FALLBACK", "true").lower() == "true"
-            self.input_latency_target_ms = int(os.getenv("INPUT_LATENCY_TARGET_MS", "5"))
+            self.use_async_input = (
+                os.getenv("USE_ASYNC_INPUT", "true").lower() == "true"
+            )
+            self.async_input_fallback = (
+                os.getenv("ASYNC_INPUT_FALLBACK", "true").lower() == "true"
+            )
+            self.input_latency_target_ms = int(
+                os.getenv("INPUT_LATENCY_TARGET_MS", "5")
+            )
             self.platform_optimizations = {
-                "linux": os.getenv("LINUX_INPUT_OPTIMIZATION", "true").lower() == "true",
-                "darwin": os.getenv("MACOS_INPUT_OPTIMIZATION", "true").lower() == "true",
-                "win32": os.getenv("WINDOWS_INPUT_OPTIMIZATION", "true").lower() == "true",
+                "linux": os.getenv("LINUX_INPUT_OPTIMIZATION", "true").lower()
+                == "true",
+                "darwin": os.getenv("MACOS_INPUT_OPTIMIZATION", "true").lower()
+                == "true",
+                "win32": os.getenv("WINDOWS_INPUT_OPTIMIZATION", "true").lower()
+                == "true",
             }
 
 
@@ -592,6 +601,7 @@ def initialize_settings(disable_async_input: bool = False):
     """Initialize global settings with bootstrap parameters."""
     global settings
     settings = ProtocolConfig(disable_async_input)
+
 
 # Initialize with default values for backward compatibility
 settings = ProtocolConfig()

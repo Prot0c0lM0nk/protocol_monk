@@ -123,30 +123,32 @@ class OpenRouterModelClient(BaseModelClient):
                 # Streaming response using official SDK
                 # The SDK doesn't have native async streaming, so we'll use a hybrid approach
                 # We'll process the stream synchronously but yield results asynchronously
-                
+
                 response = self.client.chat.send(**request_params)
-                
+
                 # Process streaming in small batches to avoid blocking
                 loop = asyncio.get_event_loop()
-                
+
                 def get_next_event(iterator):
                     """Get next event from iterator"""
                     try:
                         return next(iterator), False
                     except StopIteration:
                         return None, True
-                
+
                 # Create iterator from response
                 response_iter = iter(response)
-                
+
                 # Process events asynchronously
                 while True:
                     # Get next event in thread pool to avoid blocking
-                    event, done = await loop.run_in_executor(None, get_next_event, response_iter)
-                    
+                    event, done = await loop.run_in_executor(
+                        None, get_next_event, response_iter
+                    )
+
                     if done:
                         break
-                    
+
                     if not event.choices:
                         continue
 
@@ -163,18 +165,23 @@ class OpenRouterModelClient(BaseModelClient):
                         tool_calls = []
                         for tc in delta.tool_calls:
                             tc_data = {
-                                "index": getattr(tc, 'index', 0),
-                                "id": getattr(tc, 'id', ''),
+                                "index": getattr(tc, "index", 0),
+                                "id": getattr(tc, "id", ""),
                                 "type": "function",
                                 "function": {},
                             }
 
                             # Handle function fields if present
-                            if hasattr(tc, 'function') and tc.function:
-                                if hasattr(tc.function, 'name') and tc.function.name:
+                            if hasattr(tc, "function") and tc.function:
+                                if hasattr(tc.function, "name") and tc.function.name:
                                     tc_data["function"]["name"] = tc.function.name
-                                if hasattr(tc.function, 'arguments') and tc.function.arguments:
-                                    tc_data["function"]["arguments"] = tc.function.arguments
+                                if (
+                                    hasattr(tc.function, "arguments")
+                                    and tc.function.arguments
+                                ):
+                                    tc_data["function"][
+                                        "arguments"
+                                    ] = tc.function.arguments
 
                             tool_calls.append(tc_data)
 
@@ -183,7 +190,7 @@ class OpenRouterModelClient(BaseModelClient):
             else:
                 # Non-streaming response using official SDK
                 response = await self.client.chat.send_async(**request_params)
-                
+
                 # Extract content
                 content = response.choices[0].message.content
                 if content:
@@ -191,20 +198,24 @@ class OpenRouterModelClient(BaseModelClient):
 
                 # Extract tool calls (non-streaming)
                 message = response.choices[0].message
-                if hasattr(message, 'tool_calls') and message.tool_calls:
+                if hasattr(message, "tool_calls") and message.tool_calls:
                     tool_calls = []
                     for tc in message.tool_calls:
-                        tool_calls.append({
-                            "id": getattr(tc, 'id', ''),
-                            "type": "function",
-                            "function": {
-                                "name": getattr(tc.function, 'name', ''),
-                                "arguments": getattr(tc.function, 'arguments', ''),
-                            },
-                        })
+                        tool_calls.append(
+                            {
+                                "id": getattr(tc, "id", ""),
+                                "type": "function",
+                                "function": {
+                                    "name": getattr(tc.function, "name", ""),
+                                    "arguments": getattr(tc.function, "arguments", ""),
+                                },
+                            }
+                        )
                     yield {"tool_calls": tool_calls}
 
-                if not content and (not hasattr(message, 'tool_calls') or not message.tool_calls):
+                if not content and (
+                    not hasattr(message, "tool_calls") or not message.tool_calls
+                ):
                     raise EmptyResponseError(
                         message="Model returned an empty response",
                         details={"provider": "openrouter", "model": self.model_name},
@@ -218,7 +229,11 @@ class OpenRouterModelClient(BaseModelClient):
         except Exception as e:
             # Check for authentication errors
             error_msg = str(e).lower()
-            if "authentication" in error_msg or "unauthorized" in error_msg or "api key" in error_msg:
+            if (
+                "authentication" in error_msg
+                or "unauthorized" in error_msg
+                or "api key" in error_msg
+            ):
                 raise ProviderAuthenticationError(
                     f"OpenRouter authentication failed: {str(e)}",
                     provider_name="openrouter",
@@ -247,7 +262,7 @@ class OpenRouterModelClient(BaseModelClient):
         """
         # The OpenRouter SDK handles cleanup automatically when used as context manager
         # But we can explicitly close if needed
-        if hasattr(self.client, 'close'):
+        if hasattr(self.client, "close"):
             await self.client.close()
 
     def _prepare_payload(

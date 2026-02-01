@@ -32,7 +32,7 @@ class AgentEvents(Enum):
     TOOL_CONFIRMATION_RESPONSE = "agent.tool_confirmation_response"
     TOOL_REJECTED = "agent.tool_rejected"
     TOOL_MODIFIED = "agent.tool_modified"
-    
+
     TASK_COMPLETE = "agent.task_complete"
     AUTO_CONFIRM_CHANGED = "agent.auto_confirm_changed"
 
@@ -45,16 +45,16 @@ class AgentEvents(Enum):
 
     COMMAND_RESULT = "agent.command_result"
     STATUS_CHANGED = "agent.status_changed"
-    
+
     USER_INPUT = "user.input"
     INPUT_REQUESTED = "agent.input_requested"
     INPUT_RESPONSE = "user.input_response"
 
 
-
 @dataclass
 class Event:
     """Event data container"""
+
     type: str
     data: Dict[str, Any]
     timestamp: float
@@ -81,7 +81,7 @@ class EventBus:
 
     async def emit(self, event_type: str, data: Dict[str, Any]) -> None:
         """Emit an event to all subscribers without causing deadlocks."""
-        
+
         # 1. CAPTURE SUBSCRIBERS (With Lock)
         callbacks_to_run = []
         async with self._lock:
@@ -116,7 +116,12 @@ class EventBus:
         for event_type, data in events:
             await self.emit(event_type, data)
 
-    async def wait_for(self, event_type: str, timeout: float = None, predicate: Callable[[Dict], bool] = None) -> Dict[str, Any]:
+    async def wait_for(
+        self,
+        event_type: str,
+        timeout: float = None,
+        predicate: Callable[[Dict], bool] = None,
+    ) -> Dict[str, Any]:
         """
         Wait for a specific event to occur.
         """
@@ -125,7 +130,7 @@ class EventBus:
         def _listener(data: Dict[str, Any]):
             if future.done():
                 return
-            
+
             if predicate:
                 try:
                     if not predicate(data):
@@ -136,7 +141,7 @@ class EventBus:
             future.set_result(data)
 
         self.subscribe(event_type, _listener)
-        
+
         try:
             return await asyncio.wait_for(future, timeout=timeout)
         finally:

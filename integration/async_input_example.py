@@ -21,7 +21,9 @@ from ui.rich.async_input import RichAsyncInputWithPromptToolkit, RichUIAsyncAdap
 from ui.textual.async_input import TextualAsyncInput, TextualUIAsyncAdapter
 
 
-async def run_with_async_input(model_name: str = None, provider: str = None, ui_type: str = "plain"):
+async def run_with_async_input(
+    model_name: str = None, provider: str = None, ui_type: str = "plain"
+):
     """
     Run Protocol Monk with async input system.
 
@@ -39,12 +41,13 @@ async def run_with_async_input(model_name: str = None, provider: str = None, ui_
     agent = ProtocolAgent(
         model_name=model_name or "claude-3-5-sonnet-20241022",
         provider=provider or "anthropic",
-        event_bus=event_bus
+        event_bus=event_bus,
     )
 
     # Create UI based on type
     if ui_type == "plain":
         from ui.plain.app import PlainUI
+
         ui = PlainUI()
         # Create async adapter
         async_adapter = PlainUIAsyncAdapter(ui.input_manager)
@@ -53,6 +56,7 @@ async def run_with_async_input(model_name: str = None, provider: str = None, ui_
 
     elif ui_type == "rich":
         from ui.rich.app import RichUI
+
         ui = RichUI()
         # Create async adapter
         async_adapter = RichUIAsyncAdapter(ui)
@@ -61,6 +65,7 @@ async def run_with_async_input(model_name: str = None, provider: str = None, ui_
 
     elif ui_type == "textual":
         from ui.textual.app import ProtocolMonkChat
+
         ui = ProtocolMonkChat()
         # Create async adapter
         async_adapter = TextualUIAsyncAdapter(ui)
@@ -143,16 +148,13 @@ async def run_multiple_agents():
         AsyncMonkAgent(
             model_name="claude-3-5-sonnet-20241022",
             provider="anthropic",
-            name=f"Agent-{i}"
+            name=f"Agent-{i}",
         )
         for i in range(3)
     ]
 
     # Create tasks for each agent
-    tasks = [
-        asyncio.create_task(agent.run())
-        for agent in agents
-    ]
+    tasks = [asyncio.create_task(agent.run()) for agent in agents]
 
     # Wait for all agents to complete
     try:
@@ -232,8 +234,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Protocol Monk with async input")
     parser.add_argument("--model", help="Model name")
     parser.add_argument("--provider", help="Provider name")
-    parser.add_argument("--ui", choices=["plain", "rich", "textual"], default="plain",
-                        help="UI type")
+    parser.add_argument(
+        "--ui", choices=["plain", "rich", "textual"], default="plain", help="UI type"
+    )
     parser.add_argument("--multi", action="store_true", help="Run multiple agents")
 
     args = parser.parse_args()
@@ -243,8 +246,8 @@ if __name__ == "__main__":
         asyncio.run(run_multiple_agents())
     else:
         # Run single agent
-        asyncio.run(run_with_async_input(
-            model_name=args.model,
-            provider=args.provider,
-            ui_type=args.ui
-        ))
+        asyncio.run(
+            run_with_async_input(
+                model_name=args.model, provider=args.provider, ui_type=args.ui
+            )
+        )

@@ -23,12 +23,7 @@ class AsyncTokenManager:
     - Non-blocking estimates
     """
 
-    def __init__(
-        self,
-        max_tokens: int,
-        tokenizer=None,
-        model_family: str = "qwen"
-    ):
+    def __init__(self, max_tokens: int, tokenizer=None, model_family: str = "qwen"):
         self.max_tokens = max_tokens
         self.total_tokens = 0
         self.logger = logging.getLogger(__name__)
@@ -148,11 +143,7 @@ class AsyncTokenManager:
         pruning_threshold = int(self.max_tokens * 0.9)
         return (self.total_tokens + new_tokens) <= pruning_threshold
 
-    async def request_recalculation(
-        self,
-        system_message: str,
-        messages: List[Message]
-    ):
+    async def request_recalculation(self, system_message: str, messages: List[Message]):
         """
         Request background recalculation.
         Non-blocking - just sets a flag.
@@ -171,7 +162,7 @@ class AsyncTokenManager:
                 # Wait for recalculation request or timeout
                 await asyncio.sleep(0.5)  # Check every 500ms
 
-                if self._recalc_needed and hasattr(self, '_pending_system'):
+                if self._recalc_needed and hasattr(self, "_pending_system"):
                     # Perform recalculation
                     running_total = 0
 
@@ -201,8 +192,7 @@ class AsyncTokenManager:
     def get_stats(self) -> Dict:
         """Get current statistics."""
         usage_percent = (
-            (self.total_tokens / self.max_tokens) * 100
-            if self.max_tokens > 0 else 0
+            (self.total_tokens / self.max_tokens) * 100 if self.max_tokens > 0 else 0
         )
 
         return {
@@ -212,7 +202,7 @@ class AsyncTokenManager:
             "cache_hits": self._cache_hits,
             "cache_misses": self._cache_misses,
             "cache_size": len(self._token_cache),
-            "recalc_needed": self._recalc_needed
+            "recalc_needed": self._recalc_needed,
         }
 
     def clear_cache(self):

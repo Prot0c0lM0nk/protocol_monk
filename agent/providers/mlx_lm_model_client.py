@@ -43,12 +43,28 @@ class MLXLMModelClient(BaseModelClient):
 
         # MLX LM specific configuration - use settings if available, else defaults
         from config.static import settings
+
         mlx_config = settings.api.providers.get("mlx_lm", {})
 
-        self.system_prompt = provider_config.get("system_prompt", None) if provider_config else None
-        self.max_tokens = provider_config.get("max_tokens", mlx_config.get("max_tokens", 512)) if provider_config else mlx_config.get("max_tokens", 512)
-        self.temperature = provider_config.get("temperature", mlx_config.get("temperature", 0.1)) if provider_config else mlx_config.get("temperature", 0.1)
-        self.top_p = provider_config.get("top_p", mlx_config.get("top_p", 0.9)) if provider_config else mlx_config.get("top_p", 0.9)
+        self.system_prompt = (
+            provider_config.get("system_prompt", None) if provider_config else None
+        )
+        self.max_tokens = (
+            provider_config.get("max_tokens", mlx_config.get("max_tokens", 512))
+            if provider_config
+            else mlx_config.get("max_tokens", 512)
+        )
+        self.temperature = (
+            provider_config.get("temperature", mlx_config.get("temperature", 0.1))
+            if provider_config
+            else mlx_config.get("temperature", 0.1)
+        )
+        self.top_p = (
+            provider_config.get("top_p", mlx_config.get("top_p", 0.9))
+            if provider_config
+            else mlx_config.get("top_p", 0.9)
+        )
+
     async def load_model(self) -> None:
         """
         Load the MLX LM model and tokenizer.
@@ -95,7 +111,9 @@ class MLXLMModelClient(BaseModelClient):
             # Prepare the prompt using the chat template
             messages = conversation_context
             if self.system_prompt:
-                messages = [{"role": "system", "content": self.system_prompt}] + messages
+                messages = [
+                    {"role": "system", "content": self.system_prompt}
+                ] + messages
 
             prompt = self.tokenizer.apply_chat_template(
                 messages, add_generation_prompt=True

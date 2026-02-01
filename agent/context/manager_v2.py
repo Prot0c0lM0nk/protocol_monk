@@ -51,9 +51,7 @@ class ContextManagerV2:
         # Lock-free components
         self.file_tracker = LockFreeFileTracker(working_dir=working_dir or Path.cwd())
         self.token_manager = AsyncTokenManager(
-            max_tokens=max_tokens,
-            tokenizer=tokenizer,
-            model_family="qwen"
+            max_tokens=max_tokens, tokenizer=tokenizer, model_family="qwen"
         )
         self.pruner = ContextPruner(max_tokens=max_tokens)
 
@@ -110,16 +108,14 @@ class ContextManagerV2:
         await self.start()
         self.system_message = await self._build_system_message()
         await self.token_manager.request_recalculation(
-            self.system_message,
-            self.conversation
+            self.system_message, self.conversation
         )
 
     async def _build_system_message(self) -> str:
         """Reads the system prompt template."""
         try:
             return await asyncio.to_thread(
-                settings.filesystem.system_prompt_file.read_text,
-                encoding="utf-8"
+                settings.filesystem.system_prompt_file.read_text, encoding="utf-8"
             )
         except Exception as e:
             self.logger.error(f"Failed to build system prompt: {e}")
@@ -128,22 +124,21 @@ class ContextManagerV2:
     # --- Message Addition Methods (Lock-Free) ---
 
     async def add_message(
-        self,
-        role: str,
-        content: str,
-        importance: Optional[int] = None
+        self, role: str, content: str, importance: Optional[int] = None
     ):
         """
         Add a standard text message.
         Non-blocking - queues the operation for background processing.
         """
         # Queue operation instead of blocking
-        await self._operation_queue.put({
-            "type": "add_message",
-            "role": role,
-            "content": content,
-            "importance": importance
-        })
+        await self._operation_queue.put(
+            {
+                "type": "add_message",
+                "role": role,
+                "content": content,
+                "importance": importance,
+            }
+        )
 
         # Wait for completion (but don't block other operations)
         event = asyncio.Event()
@@ -155,10 +150,7 @@ class ContextManagerV2:
         self._message_events.pop(msg_id, None)
 
     async def _process_add_message(
-        self,
-        role: str,
-        content: str,
-        importance: Optional[int]
+        self, role: str, content: str, importance: Optional[int]
     ):
         """
         Actually add the message (runs in background).
@@ -170,14 +162,10 @@ class ContextManagerV2:
         temp_tokens = self.token_manager.estimate(content or "")
         if not self.token_manager.check_budget(temp_tokens):
             # Prune if needed
-            self.conversation = self.pruner.prune(
-                self.conversation,
-                self.token_manager
-            )
+            self.conversation = self.pruner.prune(self.conversation, self.token_manager)
             # Request recalculation after prune
             await self.token_manager.request_recalculation(
-                self.system_message,
-                self.conversation
+                self.system_message, self.conversation
             )
 
         # 3. Create and add message (atomic append)
@@ -206,10 +194,9 @@ class ContextManagerV2:
     async def add_tool_call_message(self, tool_calls: List[Dict]):
         """Add an assistant message containing tool calls."""
         # Queue operation
-        await self._operation_queue.put({
-            "type": "add_tool_call",
-            "tool_calls": tool_calls
-        })
+        await self._operation_queue.put(
+            {"type": "add_tool_call", "tool_calls": tool_calls}
+        )
 
         # Wait for completion
         event = asyncio.Event()
@@ -235,24 +222,28 @@ class ContextManagerV2:
                         arguments = json.loads(arguments)
                     except json.JSONDecodeError:
                         pass
-                converted_tool_calls.append({
-                    "type": "function",
-                    "function": {
-                        "name": func.name,
-                        "arguments": arguments,
+                converted_tool_calls.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": func.name,
+                            "arguments": arguments,
+                        },
                     }
-                })
-            
+                )
+
             # 2. Handle Internal "MonkCode" Format ({"action": "...", "parameters": ...})
             # This is the translation layer that fixes the crash.
             elif isinstance(tc, dict) and "action" in tc:
-                 converted_tool_calls.append({
-                    "type": "function",
-                    "function": {
-                        "name": tc["action"],
-                        "arguments": tc.get("parameters", {})
+                converted_tool_calls.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": tc["action"],
+                            "arguments": tc.get("parameters", {}),
+                        },
                     }
-                })
+                )
 
             # 3. Handle Standard API Dicts ({"function": ...})
             elif isinstance(tc, dict) and "function" in tc:
@@ -289,13 +280,15 @@ class ContextManagerV2:
     ):
         """Add a tool result message with file decay support."""
         # Queue operation
-        await self._operation_queue.put({
-            "type": "add_tool_result",
-            "tool_name": tool_name,
-            "tool_call_id": tool_call_id,
-            "content": content,
-            "file_path": file_path
-        })
+        await self._operation_queue.put(
+            {
+                "type": "add_tool_result",
+                "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
+                "content": content,
+                "file_path": file_path,
+            }
+        )
 
         # Wait for completion
         event = asyncio.Event()
@@ -309,7 +302,7 @@ class ContextManagerV2:
         tool_name: str,
         tool_call_id: Optional[str],
         content: str,
-        file_path: Optional[str]
+        file_path: Optional[str],
     ):
         """Process tool result message addition."""
         # Trigger file tracker tick
@@ -319,9 +312,7 @@ class ContextManagerV2:
         metadata = {}
         if file_path:
             await self.file_tracker.trigger_decay(
-                file_path,
-                self.conversation,
-                grace_period_msgs=20
+                file_path, self.conversation, grace_period_msgs=20
             )
             metadata = {"file_read": file_path}
 
@@ -364,8 +355,7 @@ class ContextManagerV2:
 
         # Request recalculation
         await self.token_manager.request_recalculation(
-            self.system_message,
-            self.conversation
+            self.system_message, self.conversation
         )
 
         self.logger.info(f"Context Scrub: Removed last message (role={msg.role})")
@@ -379,9 +369,7 @@ class ContextManagerV2:
     # --- Context Retrieval (Non-Blocking) ---
 
     async def get_context(
-        self,
-        model_name: str = None,
-        provider: str = "ollama"
+        self, model_name: str = None, provider: str = "ollama"
     ) -> List[Dict]:
         """
         Get conversation context for LLM.
@@ -411,8 +399,7 @@ class ContextManagerV2:
         self.conversation = []
         await self.file_tracker.clear()
         await self.token_manager.request_recalculation(
-            self.system_message,
-            self.conversation
+            self.system_message, self.conversation
         )
 
         # Signal completion
@@ -498,13 +485,10 @@ class ContextManagerV2:
 
         # Request recalculation
         await self.token_manager.request_recalculation(
-            self.system_message,
-            self.conversation
+            self.system_message, self.conversation
         )
 
-        self.logger.info(
-            f"Cleared old messages. New count: {len(self.conversation)}"
-        )
+        self.logger.info(f"Cleared old messages. New count: {len(self.conversation)}")
 
         # Signal completion
         msg_id = f"clear_old_{self._messages_added}"
@@ -514,10 +498,9 @@ class ContextManagerV2:
 
     async def update_max_tokens(self, new_max_tokens: int):
         """Update max token limit."""
-        await self._operation_queue.put({
-            "type": "update_max_tokens",
-            "new_max_tokens": new_max_tokens
-        })
+        await self._operation_queue.put(
+            {"type": "update_max_tokens", "new_max_tokens": new_max_tokens}
+        )
 
         event = asyncio.Event()
         msg_id = f"update_max_{self._messages_added}"
@@ -537,13 +520,9 @@ class ContextManagerV2:
                 f"Current token usage ({self.token_manager.total_tokens:,}) exceeds "
                 f"new limit ({new_max_tokens:,}), triggering prune..."
             )
-            self.conversation = self.pruner.prune(
-                self.conversation,
-                self.token_manager
-            )
+            self.conversation = self.pruner.prune(self.conversation, self.token_manager)
             await self.token_manager.request_recalculation(
-                self.system_message,
-                self.conversation
+                self.system_message, self.conversation
             )
 
         # Signal completion
@@ -563,8 +542,7 @@ class ContextManagerV2:
             try:
                 # Wait for operation with timeout
                 operation = await asyncio.wait_for(
-                    self._operation_queue.get(),
-                    timeout=0.1
+                    self._operation_queue.get(), timeout=0.1
                 )
 
                 # Process operation
@@ -574,7 +552,7 @@ class ContextManagerV2:
                     await self._process_add_message(
                         operation["role"],
                         operation["content"],
-                        operation.get("importance")
+                        operation.get("importance"),
                     )
 
                 elif op_type == "add_tool_call":
@@ -585,7 +563,7 @@ class ContextManagerV2:
                         operation["tool_name"],
                         operation.get("tool_call_id"),
                         operation["content"],
-                        operation.get("file_path")
+                        operation.get("file_path"),
                     )
 
                 elif op_type == "remove_last":
@@ -598,9 +576,7 @@ class ContextManagerV2:
                     await self._process_clear_old_messages()
 
                 elif op_type == "update_max_tokens":
-                    await self._process_update_max_tokens(
-                        operation["new_max_tokens"]
-                    )
+                    await self._process_update_max_tokens(operation["new_max_tokens"])
 
                 self._operations_processed += 1
 

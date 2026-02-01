@@ -144,17 +144,25 @@ class EnhancedLogger:
         except Exception as e:
             print(f"!! Failed to write context snapshot: {e}", file=sys.stderr)
 
-    def log_turn(self, turn_number: int, model_input: List[Dict], model_output: Any, parsed_actions: List[Any]):
+    def log_turn(
+        self,
+        turn_number: int,
+        model_input: List[Dict],
+        model_output: Any,
+        parsed_actions: List[Any],
+    ):
         """
         Records a full cognitive turn: what the agent saw, thought, and decided.
         Adapts to the new AgentService requirement.
         """
         # 1. Safely handle model output (it might be a Pydantic object or string)
-        if hasattr(model_output, "model_dump"): # Pydantic v2
+        if hasattr(model_output, "model_dump"):  # Pydantic v2
             safe_output = model_output.model_dump()
-        elif hasattr(model_output, "dict"): # Pydantic v1
+        elif hasattr(model_output, "dict"):  # Pydantic v1
             safe_output = model_output.dict()
-        elif not isinstance(model_output, (str, dict, list, int, float, bool, type(None))):
+        elif not isinstance(
+            model_output, (str, dict, list, int, float, bool, type(None))
+        ):
             safe_output = str(model_output)
         else:
             safe_output = model_output
@@ -175,7 +183,7 @@ class EnhancedLogger:
             "turn_number": turn_number,
             "input_length": len(model_input),
             "output": safe_output,
-            "actions": safe_actions
+            "actions": safe_actions,
         }
         self._write_entry("cognitive_turn", payload)
 

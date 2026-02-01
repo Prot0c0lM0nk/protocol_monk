@@ -14,8 +14,9 @@ from .messages import (
     AgentThinkingStatus,
     AgentToolResult,
     AgentSystemMessage,
-    AgentStatusUpdate, # <--- NEW
+    AgentStatusUpdate,  # <--- NEW
 )
+
 
 class TextualUI(UI):
     def __init__(self, app):
@@ -31,12 +32,18 @@ class TextualUI(UI):
     def _setup_event_listeners(self):
         # 1. Output (Passive)
         self._event_bus.subscribe(AgentEvents.STREAM_CHUNK.value, self._on_stream_chunk)
-        self._event_bus.subscribe(AgentEvents.THINKING_STARTED.value, self._on_thinking_started)
-        self._event_bus.subscribe(AgentEvents.THINKING_STOPPED.value, self._on_thinking_stopped)
+        self._event_bus.subscribe(
+            AgentEvents.THINKING_STARTED.value, self._on_thinking_started
+        )
+        self._event_bus.subscribe(
+            AgentEvents.THINKING_STOPPED.value, self._on_thinking_stopped
+        )
         self._event_bus.subscribe(AgentEvents.TOOL_RESULT.value, self._on_tool_result)
         self._event_bus.subscribe(AgentEvents.ERROR.value, self._on_error)
         self._event_bus.subscribe(AgentEvents.INFO.value, self._on_info)
-        self._event_bus.subscribe(AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete)
+        self._event_bus.subscribe(
+            AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete
+        )
 
     # --- EVENT HANDLERS ---
 
@@ -62,7 +69,7 @@ class TextualUI(UI):
         res = data.get("result")
         name = data.get("tool_name", "Unknown")
         if res is None:
-             res = ToolResult(success=False, output="No result data", tool_name=name)
+            res = ToolResult(success=False, output="No result data", tool_name=name)
         elif not hasattr(res, "success"):
             res = ToolResult(
                 success=data.get("success", True),
@@ -97,7 +104,7 @@ class TextualUI(UI):
         """
         # 1. Show the prompt in the chat so user knows what to do
         self.app.post_message(AgentSystemMessage(f"❓ {prompt}", type="info"))
-        
+
         # 2. Wait for input using the existing mechanism
         # Since the Agent loop is paused inside 'dispatch', this is safe.
         if hasattr(self.app, "get_user_input_wait"):
@@ -106,6 +113,7 @@ class TextualUI(UI):
 
     async def confirm_tool_execution(self, tool_data: Dict[str, Any]) -> bool:
         from .screens.modals.tool_confirm import ToolConfirmModal
+
         if hasattr(self.app, "push_screen_wait"):
             return await self.app.push_screen_wait(ToolConfirmModal(tool_data))
         return True
@@ -113,11 +121,15 @@ class TextualUI(UI):
     # --- REQUIRED STUBS ---
     async def print_stream(self, text: str):
         self.app.post_message(AgentStreamChunk(text))
+
     async def print_error(self, msg: str):
         self.app.post_message(AgentSystemMessage(msg, type="error"))
+
     async def print_info(self, msg: str):
         self.app.post_message(AgentSystemMessage(msg, type="info"))
+
     async def start_thinking(self):
         self.app.post_message(AgentThinkingStatus(True))
+
     async def stop_thinking(self):
         self.app.post_message(AgentThinkingStatus(False))

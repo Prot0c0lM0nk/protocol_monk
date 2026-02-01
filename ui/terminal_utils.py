@@ -43,7 +43,9 @@ class TerminalState:
         """Restore original terminal mode."""
         if self._original_settings and self._in_raw_mode:
             try:
-                termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, self._original_settings)
+                termios.tcsetattr(
+                    sys.stdin.fileno(), termios.TCSADRAIN, self._original_settings
+                )
                 self._in_raw_mode = False
             except Exception as e:
                 print(f"Warning: Could not restore terminal mode: {e}")
@@ -55,6 +57,7 @@ class TerminalState:
 
 def safe_terminal_operation(func):
     """Decorator to ensure terminal operations are safe."""
+
     def wrapper(*args, **kwargs):
         if not sys.stdin.isatty():
             print("Warning: Terminal operation requested but not in a terminal.")
@@ -64,4 +67,5 @@ def safe_terminal_operation(func):
         except Exception as e:
             print(f"Terminal operation failed: {e}")
             return None
+
     return wrapper

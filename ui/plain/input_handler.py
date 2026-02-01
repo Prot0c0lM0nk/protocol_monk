@@ -82,7 +82,9 @@ class InputHandler:
                 return default
             # Invalid input, prompt again
 
-    async def select_with_arrows(self, prompt: str, options: list[str], default_index: int = 0) -> int:
+    async def select_with_arrows(
+        self, prompt: str, options: list[str], default_index: int = 0
+    ) -> int:
         """
         Get selection from list using arrow keys (radiolist dialog).
         Returns the index of the selected option.

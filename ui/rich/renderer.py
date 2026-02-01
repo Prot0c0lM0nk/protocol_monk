@@ -92,7 +92,7 @@ class RichRenderer:
     # --- BANNER ---
     def render_banner(self, greeting: str = ""):
         self.end_streaming()
-        
+
         # Run the animated boot sequence
         # This will block for about 3-4 seconds while the animation plays
         run_boot_sequence(console)
@@ -210,7 +210,7 @@ class RichRenderer:
     # --- CONCURRENCY LOCKS ---
     def lock_for_input(self):
         """
-        Call this before asking for user input. 
+        Call this before asking for user input.
         It ensures no streaming updates interrupt the prompt.
         """
         self._is_locked = True

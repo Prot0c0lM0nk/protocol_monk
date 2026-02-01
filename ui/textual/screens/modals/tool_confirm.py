@@ -74,18 +74,18 @@ class ToolConfirmModal(ModalScreen[bool]):
         super().__init__()
         self.tool_name = tool_data.get("tool", "Unknown Tool")
         self.tool_args = tool_data.get("args", {})
-        
+
         # Format arguments for display
         self.args_str = "\n".join(f"{k}: {v}" for k, v in self.tool_args.items())
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
             yield Label("⚠️ Allow Tool Execution?", id="question")
-            
+
             # Display tool details
             details = f"Tool: {self.tool_name}\n\nArguments:\n{self.args_str}"
             yield Static(details, id="tool-details")
-            
+
             with Grid(id="buttons"):
                 yield Button("Deny (Esc)", variant="error", id="deny")
                 yield Button("Allow (Enter)", variant="success", id="confirm")

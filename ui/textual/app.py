@@ -24,14 +24,11 @@ from .messages import (
     AgentStatusUpdate,
 )
 
+
 class ProtocolMonkApp(App):
     """Protocol Monk - The Oracle of the Holy Light"""
 
-    CSS_PATH = [
-        "styles/main.tcss",
-        "styles/components.tcss",
-        "styles/chat.tcss"
-    ]
+    CSS_PATH = ["styles/main.tcss", "styles/components.tcss", "styles/chat.tcss"]
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", show=False),
@@ -44,7 +41,7 @@ class ProtocolMonkApp(App):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.textual_ui = None
-        self.agent = None          # Injected by main.py
+        self.agent = None  # Injected by main.py
         self._input_future = None  # The bridge for user input
 
     def compose(self) -> ComposeResult:
@@ -61,7 +58,9 @@ class ProtocolMonkApp(App):
         if self.agent:
             # Launch the agent in a dedicated worker thread/task
             # group="agent" allows us to manage it collectively
-            self.run_worker(self._agent_runner(), name="agent_brain", group="agent", exclusive=True)
+            self.run_worker(
+                self._agent_runner(), name="agent_brain", group="agent", exclusive=True
+            )
         else:
             self.notify("⚠️ No Agent Connected!", severity="error")
 
@@ -70,7 +69,7 @@ class ProtocolMonkApp(App):
         try:
             await self.agent.run()
         except asyncio.CancelledError:
-            pass 
+            pass
         except Exception as e:
             self.notify(f"Agent Crashed: {e}", severity="error")
 
@@ -107,7 +106,7 @@ class ProtocolMonkApp(App):
         This runs on the UI thread.
         """
         user_text = event.value
-        
+
         # 1. Show the user's message immediately (Optimistic UI)
         if hasattr(self.screen, "add_user_message"):
             asyncio.create_task(self.screen.add_user_message(user_text))
@@ -115,7 +114,7 @@ class ProtocolMonkApp(App):
         # 2. If the Agent is waiting for input, give it to them
         if self._input_future and not self._input_future.done():
             self._input_future.set_result(user_text)
-        
+
         # 3. If Agent is NOT waiting (e.g., busy thinking), notify user
         else:
             # Optional: You could queue this, but for now we warn
@@ -123,21 +122,21 @@ class ProtocolMonkApp(App):
 
     # --- Message Handlers (The UI Thread) ---
     # These handle events coming FROM the Agent (via interface.py)
-    
+
     def on_agent_stream_chunk(self, message: AgentStreamChunk) -> None:
-        if hasattr(self.screen, 'add_stream_chunk'):
+        if hasattr(self.screen, "add_stream_chunk"):
             self.screen.add_stream_chunk(message.chunk)
 
     def on_agent_thinking_status(self, message: AgentThinkingStatus) -> None:
-        if hasattr(self.screen, 'show_thinking'):
+        if hasattr(self.screen, "show_thinking"):
             self.screen.show_thinking(message.is_thinking)
 
     def on_agent_tool_result(self, message: AgentToolResult) -> None:
-        if hasattr(self.screen, 'add_tool_result'):
+        if hasattr(self.screen, "add_tool_result"):
             self.screen.add_tool_result(message.tool_name, message.result)
 
     def on_agent_status_update(self, message: AgentStatusUpdate) -> None:
-        if hasattr(self.screen, 'update_status_bar'):
+        if hasattr(self.screen, "update_status_bar"):
             self.screen.update_status_bar(message.stats)
         else:
             try:
@@ -153,5 +152,5 @@ class ProtocolMonkApp(App):
         elif message.type == "info":
             self.notify(message.message, severity="information")
         elif message.type == "response_complete":
-            if hasattr(self.screen, 'finalize_response'):
+            if hasattr(self.screen, "finalize_response"):
                 self.screen.finalize_response()

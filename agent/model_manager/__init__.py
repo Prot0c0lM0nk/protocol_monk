@@ -86,7 +86,7 @@ class RuntimeModelManager:
             SwitchReport: Assessment report with safety status and limits
         """
         return self.selector.assess_switch(current_usage, target_model_name)
-    
+
     def get_models_by_provider(self) -> Dict[str, List[str]]:
         """
         Get models grouped by provider.
@@ -107,6 +107,7 @@ class RuntimeModelManager:
                 provider_models[provider] = []
             provider_models[provider].append(model_name)
         return provider_models
+
     def get_provider_for_model(self, model_name: str) -> str:
         """
         Get the provider for a specific model.

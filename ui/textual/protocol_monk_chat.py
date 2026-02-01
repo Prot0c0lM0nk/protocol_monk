@@ -13,10 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, Horizontal
-from textual.widgets import (
-    Static, Input, Footer, Header, Button,
-    RichLog, Label
-)
+from textual.widgets import Static, Input, Footer, Header, Button, RichLog, Label
 from textual.reactive import reactive
 from textual import events
 from agent.events import get_event_bus, AgentEvents
@@ -176,7 +173,7 @@ class ProtocolMonkChat(App):
         yield Horizontal(
             Input(placeholder="Type a message...", id="message_input"),
             Button("Send", variant="primary", id="send_button"),
-            id="input_area"
+            id="input_area",
         )
         yield Footer()
 
@@ -191,83 +188,57 @@ class ProtocolMonkChat(App):
     def _subscribe_to_events(self) -> None:
         """Subscribe to all agent events."""
         # Info messages
-        self.event_bus.subscribe(
-            AgentEvents.INFO.value,
-            self._on_info_event
-        )
+        self.event_bus.subscribe(AgentEvents.INFO.value, self._on_info_event)
 
         # Error messages
-        self.event_bus.subscribe(
-            AgentEvents.ERROR.value,
-            self._on_error_event
-        )
+        self.event_bus.subscribe(AgentEvents.ERROR.value, self._on_error_event)
 
         # Warning messages
-        self.event_bus.subscribe(
-            AgentEvents.WARNING.value,
-            self._on_warning_event
-        )
+        self.event_bus.subscribe(AgentEvents.WARNING.value, self._on_warning_event)
 
         # Thinking events
         self.event_bus.subscribe(
-            AgentEvents.THINKING_STARTED.value,
-            self._on_thinking_started
+            AgentEvents.THINKING_STARTED.value, self._on_thinking_started
         )
 
         self.event_bus.subscribe(
-            AgentEvents.THINKING_STOPPED.value,
-            self._on_thinking_stopped
+            AgentEvents.THINKING_STOPPED.value, self._on_thinking_stopped
         )
 
         # Streaming response
-        self.event_bus.subscribe(
-            AgentEvents.STREAM_CHUNK.value,
-            self._on_stream_chunk
-        )
+        self.event_bus.subscribe(AgentEvents.STREAM_CHUNK.value, self._on_stream_chunk)
 
         # Response complete
         self.event_bus.subscribe(
-            AgentEvents.RESPONSE_COMPLETE.value,
-            self._on_response_complete
+            AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete
         )
 
         # Status changes
         self.event_bus.subscribe(
-            AgentEvents.STATUS_CHANGED.value,
-            self._on_status_changed
+            AgentEvents.STATUS_CHANGED.value, self._on_status_changed
         )
 
         # Model/provider switching
         self.event_bus.subscribe(
-            AgentEvents.MODEL_SWITCHED.value,
-            self._on_model_switched
+            AgentEvents.MODEL_SWITCHED.value, self._on_model_switched
         )
 
         self.event_bus.subscribe(
-            AgentEvents.PROVIDER_SWITCHED.value,
-            self._on_provider_switched
+            AgentEvents.PROVIDER_SWITCHED.value, self._on_provider_switched
         )
 
         # Tool events
         self.event_bus.subscribe(
-            AgentEvents.TOOL_EXECUTION_START.value,
-            self._on_tool_start
+            AgentEvents.TOOL_EXECUTION_START.value, self._on_tool_start
         )
 
-        self.event_bus.subscribe(
-            AgentEvents.TOOL_RESULT.value,
-            self._on_tool_result
-        )
+        self.event_bus.subscribe(AgentEvents.TOOL_RESULT.value, self._on_tool_result)
 
-        self.event_bus.subscribe(
-            AgentEvents.TOOL_ERROR.value,
-            self._on_tool_error
-        )
+        self.event_bus.subscribe(AgentEvents.TOOL_ERROR.value, self._on_tool_error)
 
         # Command results
         self.event_bus.subscribe(
-            AgentEvents.COMMAND_RESULT.value,
-            self._on_command_result
+            AgentEvents.COMMAND_RESULT.value, self._on_command_result
         )
 
     async def _start_agent(self) -> None:
@@ -365,7 +336,9 @@ class ProtocolMonkChat(App):
         status_bar = self.query_one(StatusBar)
         status_bar.update_model(status_bar.model, new_provider)
         chat = self.query_one("#chat", ChatContainer)
-        chat.add_message("system", f"🔄 Provider switched: {old_provider} → {new_provider}")
+        chat.add_message(
+            "system", f"🔄 Provider switched: {old_provider} → {new_provider}"
+        )
 
     def _on_tool_start(self, data: dict) -> None:
         """Handle tool execution start."""

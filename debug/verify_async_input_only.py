@@ -7,7 +7,8 @@ import sys
 import time
 
 # Add project root to path
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
+
 
 def verify_naming_contracts():
     """Verify naming contracts compliance."""
@@ -19,7 +20,7 @@ def verify_naming_contracts():
         USER_COMMAND_ISSUED,
         USER_INTERRUPT_REQUESTED,
         AGENT_INPUT_REQUESTED,
-        INPUT_VALIDATION_COMPLETED
+        INPUT_VALIDATION_COMPLETED,
     )
 
     # Check event naming
@@ -28,7 +29,7 @@ def verify_naming_contracts():
         USER_COMMAND_ISSUED,
         USER_INTERRUPT_REQUESTED,
         AGENT_INPUT_REQUESTED,
-        INPUT_VALIDATION_COMPLETED
+        INPUT_VALIDATION_COMPLETED,
     ]
 
     print("Event constants:")
@@ -37,7 +38,15 @@ def verify_naming_contracts():
         # Check SCREAMING_SNAKE_CASE
         assert event.isupper() and "_" in event, f"{event} must be SCREAMING_SNAKE_CASE"
         # Check present perfect tense
-        assert event.split("_")[-1] in ["SUBMITTED", "ISSUED", "REQUESTED", "COMPLETED", "FAILED", "STARTED", "STOPPED"], f"{event} must use present perfect tense"
+        assert event.split("_")[-1] in [
+            "SUBMITTED",
+            "ISSUED",
+            "REQUESTED",
+            "COMPLETED",
+            "FAILED",
+            "STARTED",
+            "STOPPED",
+        ], f"{event} must use present perfect tense"
 
     print("✓ All events follow naming contracts\n")
     return True
@@ -52,23 +61,32 @@ def verify_feature_flags():
     # Test default (disabled)
     initialize_settings()
     print(f"Default USE_ASYNC_INPUT: {settings.ui.use_async_input}")
-    assert settings.ui.use_async_input == False, "USE_ASYNC_INPUT must be False by default"
+    assert (
+        settings.ui.use_async_input == False
+    ), "USE_ASYNC_INPUT must be False by default"
 
     # Test environment variable
     import os
-    os.environ['USE_ASYNC_INPUT'] = 'true'
+
+    os.environ["USE_ASYNC_INPUT"] = "true"
     initialize_settings(disable_async_input=False)
     print(f"With USE_ASYNC_INPUT=true: {settings.ui.use_async_input}")
-    assert settings.ui.use_async_input == True, "USE_ASYNC_INPUT must respect environment variable"
+    assert (
+        settings.ui.use_async_input == True
+    ), "USE_ASYNC_INPUT must respect environment variable"
 
     # Test command line override
     initialize_settings(disable_async_input=True)
     print(f"With --no-async-input flag: {settings.ui.use_async_input}")
-    assert settings.ui.use_async_input == False, "--no-async-input must override environment variable"
+    assert (
+        settings.ui.use_async_input == False
+    ), "--no-async-input must override environment variable"
 
     # Test fallback
     print(f"Fallback enabled: {settings.ui.async_input_fallback}")
-    assert settings.ui.async_input_fallback == True, "Fallback must be enabled by default"
+    assert (
+        settings.ui.async_input_fallback == True
+    ), "Fallback must be enabled by default"
 
     print("✓ Feature flags work correctly\n")
     return True
@@ -90,7 +108,9 @@ def verify_safety_mechanisms():
     print(f"SafeInputManager created: {type(manager).__name__}")
 
     # Verify async is not initialized when disabled
-    assert settings.ui.use_async_input == False, "Async input must be disabled in safety test"
+    assert (
+        settings.ui.use_async_input == False
+    ), "Async input must be disabled in safety test"
 
     print("✓ Safety mechanisms in place\n")
     return True
@@ -102,16 +122,19 @@ def verify_core_architecture():
 
     # Check async input interface exists
     from ui.async_input_interface import AsyncInputInterface, AsyncInputManager
+
     print(f"✓ AsyncInputInterface: {AsyncInputInterface.__name__}")
     print(f"✓ AsyncInputManager: {AsyncInputManager.__name__}")
 
     # Check keyboard capture exists
     from ui.async_keyboard_capture import AsyncKeyboardCapture
+
     print(f"✓ AsyncKeyboardCapture: {AsyncKeyboardCapture.__name__}")
 
     # Check UI implementations
     from ui.plain.async_input import PlainAsyncInput
     from ui.textual.async_input import AsyncInputWidget
+
     print(f"✓ PlainAsyncInput: {PlainAsyncInput.__name__}")
     print(f"✓ AsyncInputWidget: {AsyncInputWidget.__name__}")
 
@@ -142,6 +165,7 @@ def main():
     except Exception as e:
         print(f"\n❌ VERIFICATION FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

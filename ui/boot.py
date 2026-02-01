@@ -15,7 +15,7 @@ from rich import box
 # shrink and then expand.  We compute the maximum line length across **all**
 # ASCII‑art assets, add the horizontal padding and border width, and force every
 # Panel to use this constant width.
-_PADDINGS = (5, 20)                     # (vertical, horizontal) padding for all panels
+_PADDINGS = (5, 20)  # (vertical, horizontal) padding for all panels
 _GLOBAL_MAX_CONTENT_WIDTH = max(
     len(line)
     for art in (
@@ -51,9 +51,9 @@ _GLOBAL_MAX_CONTENT_WIDTH = max(
 ▐▛▀▘ █   ▀▄▄▄▀   ▐▌  ▀▄▄▄▀     ▀▄▄▄▀ █     ▐▌  ▐▌▀▄▄▄▀ █   █ █ ▀▄ 
 ▐▌               ▐▌                  █     ▐▌  ▐▌            █  █ 
                  ▐▌                                               
-"""
+""",
     )
-    for line in art.strip().split('\n')
+    for line in art.strip().split("\n")
 )
 
 # border adds 2 characters (one on each side)
@@ -119,7 +119,7 @@ _ART_MAX_LENGTH = {}
 def _get_art_lines(art: str) -> list:
     """Cache art lines to avoid repeated splitting."""
     if art not in _ART_LINES:
-        _ART_LINES[art] = art.strip().split('\n')
+        _ART_LINES[art] = art.strip().split("\n")
         _ART_MAX_LENGTH[art] = max(len(line) for line in _ART_LINES[art])
     return _ART_LINES[art]
 
@@ -139,8 +139,7 @@ def corrupt_text(text: str, intensity: float = 0.3) -> str:
     rand = random.random
     choice = random.choice
     return "".join(
-        choice(glitch) if char.strip() and rand() < intensity else char
-        for char in text
+        choice(glitch) if char.strip() and rand() < intensity else char for char in text
     )
 
 
@@ -148,11 +147,11 @@ def apply_scanlines(text: str, intensity: float = 0.2) -> str:
     """Add CRT scanline effect to text."""
     if intensity <= 0:
         return text
-    lines = text.split('\n')
+    lines = text.split("\n")
     rand = random.random
     threshold = intensity
-    return '\n'.join(
-        line.replace(' ', '░') if i % 2 == 0 and rand() < threshold else line
+    return "\n".join(
+        line.replace(" ", "░") if i % 2 == 0 and rand() < threshold else line
         for i, line in enumerate(lines)
     )
 
@@ -168,15 +167,15 @@ def progressive_reveal(art: str, progress: float) -> str:
     for line in lines:
         line_len = len(line)
         if chars_shown >= chars_to_show:
-            result.append(' ' * line_len)
+            result.append(" " * line_len)
         elif chars_shown + line_len <= chars_to_show:
             result.append(line)
             chars_shown += line_len
         else:
             reveal_count = chars_to_show - chars_shown
-            result.append(line[:reveal_count] + ' ' * (line_len - reveal_count))
+            result.append(line[:reveal_count] + " " * (line_len - reveal_count))
             chars_shown = chars_to_show
-    return '\n'.join(result)
+    return "\n".join(result)
 
 
 def get_signal_indicator(strength: float, max_bars: int = 10) -> str:
@@ -206,7 +205,7 @@ def get_panel(
     max_length = _get_max_length(art)
 
     # Build display art from cached lines
-    display_art = '\n'.join(lines)
+    display_art = "\n".join(lines)
 
     # Apply effects
     if corruption > 0:
@@ -217,12 +216,12 @@ def get_panel(
 
     # Flicker – randomly dim some blocks
     if flicker and random.random() < 0.3:
-        dim_level = random.choice(['▓', '▒', '░'])
-        display_art = display_art.replace('█', dim_level)
+        dim_level = random.choice(["▓", "▒", "░"])
+        display_art = display_art.replace("█", dim_level)
 
     # Normalize line lengths using the cached max for this piece.
-    normalized_lines = [line.ljust(max_length) for line in display_art.split('\n')]
-    normalized_art = '\n'.join(normalized_lines)
+    normalized_lines = [line.ljust(max_length) for line in display_art.split("\n")]
+    normalized_art = "\n".join(normalized_lines)
 
     # Build content with optional signal indicator
     if signal_strength < 1.0:
@@ -230,16 +229,20 @@ def get_panel(
         filled = int(signal_strength * 10)
         bars = "█" * filled + "░" * (10 - filled)
         percentage = int(signal_strength * 100)
-        
+
         # Determine color based on signal strength
-        color = "green" if signal_strength > 0.7 else "yellow" if signal_strength > 0.4 else "red"
-        
+        color = (
+            "green"
+            if signal_strength > 0.7
+            else "yellow" if signal_strength > 0.4 else "red"
+        )
+
         # Create a Text object for the signal indicator with proper styling
         signal_text = Text()
         signal_text.append("SIGNAL: ", style="bold")
         signal_text.append(bars, style=color)
         signal_text.append(f" {percentage}%", style=color)
-        
+
         # Combine the art and signal indicator
         content = Text()
         content.append(normalized_art)

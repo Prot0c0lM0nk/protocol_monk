@@ -70,12 +70,15 @@ class RichInputHandler:
         Blocks until user responds.
         """
         from ui.prompts import AsyncPrompt
+
         suffix = " [Y/n]" if default else " [y/N]"
         full_prompt = f"{prompt}{suffix}"
 
         return await AsyncPrompt.confirm(full_prompt, default=default, console=console)
 
-    async def select_with_arrows(self, prompt: str, options: list[str], default_index: int = 0) -> int:
+    async def select_with_arrows(
+        self, prompt: str, options: list[str], default_index: int = 0
+    ) -> int:
         """
         Get selection from list using arrow keys (radiolist dialog).
         Returns the index of the selected option.

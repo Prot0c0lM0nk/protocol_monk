@@ -46,7 +46,7 @@ class BootstrapConfig:
         parser.add_argument(
             "--no-async-input",
             action="store_true",
-            help="Disable async input system and use traditional blocking input"
+            help="Disable async input system and use traditional blocking input",
         )
 
         # Parse only known args to avoid conflicts
