@@ -43,7 +43,7 @@ class ResponseStreamHandler:
                 # 1. Handle Thinking
                 if isinstance(chunk, dict) and chunk.get("type") == "thinking":
                     await self.event_bus.emit(
-                        AgentEvents.STREAM_CHUNK.value, {"thinking": chunk["content"]}
+                        AgentEvents.STREAM_CHUNK.value, {"thinking": chunk["content"], "content": chunk["content"]}
                     )
                     continue
 
