@@ -54,7 +54,6 @@ class Application:
         self.tui_app = None
         self.running = False
         self._stop_task = None
-        self._stop_task = None
 
     async def start(self):
         """Start the application."""
