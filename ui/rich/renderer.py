@@ -97,9 +97,16 @@ class RichRenderer:
         # This will block for about 3-4 seconds while the animation plays
         run_boot_sequence(console)
 
-        # Optional: Print the greeting below the banner if provided
+        # Optional: Print the status block below the banner if provided
         if greeting:
-            console.print(Align.center(f"[monk.text]{greeting}[/]"))
+            panel = Panel(
+                Text(greeting, style="monk.text"),
+                title="[tech.cyan]System[/]",
+                border_style="tech.cyan",
+                box=box.ROUNDED,
+                padding=(0, 1),
+            )
+            console.print(panel)
             console.print()
 
     # --- LIFECYCLE ---

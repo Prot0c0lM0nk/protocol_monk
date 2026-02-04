@@ -154,7 +154,15 @@ class Application:
             if hasattr(self.ui, "event_bus"):
                 self.ui.event_bus = self.event_bus
 
-        await self.ui.display_startup_banner("")
+        stats = await self.agent_service.get_status()
+        status_text = f"""Current State:
+Model: {stats.get('current_model', 'Unknown')}
+Provider: {stats.get('provider', 'Unknown')}
+Working Directory: {self.working_dir}
+Conversation: {stats.get('conversation_length', 0)} messages
+Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}
+Use /help for command list. /quit to quit."""
+        await self.ui.display_startup_banner(status_text)
 
         self.running = True
         # Rich UI must also implement run_loop or similar
