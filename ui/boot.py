@@ -285,17 +285,17 @@ def run_boot_sequence(console: Console):
     with Live(console=console, refresh_per_second=20, transient=True) as live:
         for idx, (art, style, message) in enumerate(sequence):
             is_final = idx == len(sequence) - 1
+            panel_signal = (idx + 1) / len(sequence)
 
             # Phase 1: Signal acquisition (weak signal, high corruption)
             acquisition_frames = 8 if not is_final else 4
             for frame in range(acquisition_frames):
-                signal = 0.1 + (frame / acquisition_frames) * 0.3
                 corruption = 0.6 - (frame / acquisition_frames) * 0.3
                 panel = get_panel(
                     art,
                     style=style,
                     subtitle=f"[dim]{message}[/]",
-                    signal_strength=signal,
+                    signal_strength=panel_signal,
                     corruption=corruption,
                     scanlines=True,
                     flicker=True,
@@ -310,13 +310,12 @@ def run_boot_sequence(console: Console):
                 revealed_art = progressive_reveal(art, progress)
 
                 corruption = 0.4 * (1 - progress)
-                signal = 0.4 + progress * 0.5
 
                 panel = get_panel(
                     revealed_art,
                     style=style,
                     subtitle=f"[dim]{message}[/]",
-                    signal_strength=signal,
+                    signal_strength=panel_signal,
                     corruption=corruption,
                     scanlines=progress < 0.8,
                     flicker=progress < 0.6,
@@ -336,7 +335,7 @@ def run_boot_sequence(console: Console):
                         art,
                         style=style,
                         subtitle=f"[dim]{message} — LOCKED[/]",
-                        signal_strength=0.95,
+                        signal_strength=panel_signal,
                         corruption=corruption,
                         scanlines=False,
                         flicker=frame < 2,
@@ -353,7 +352,7 @@ def run_boot_sequence(console: Console):
                         art,
                         style=style,
                         subtitle="[dim]TRANSMISSION INTERRUPTED...[/]",
-                        signal_strength=0.3 - frame * 0.05,
+                        signal_strength=panel_signal,
                         corruption=corruption,
                         scanlines=True,
                         flicker=True,
