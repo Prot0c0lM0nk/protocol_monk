@@ -1,0 +1,133 @@
+# Protocol Monk Core - Git Ignore
+
+# Environment and secrets
+.env
+.env.local
+*.local
+REFACTOR/
+quill_env.txt
+
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+debug_*.py
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.svg
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Session data
+.protocol_history.txt
+*.log
+
+# Working directory (user projects)
+monk_workspace/
+
+
+# Session logs and private config files
+detailed_session_*.jsonl
+*.log
+.session*
+*.history
+*.json
+
+# Protocol Monk specific
+.protocol_history.txt
+.scratch/
+context_snapshots/
+*.py.bak
+tests/
+.pytest_cache
+docs/SeniorRefactorArchitect.txt
+
+# Local configuration
+*.local
+config/local_*
+Code_Planning.txt
+
+# Markdown files (mostly fluid working documents)
+*.md
+
+# But keep important documentation
+!README.md
+!GETTING_STARTED.md
+!docs/README.md
+
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Model specific files (protect model choices)
+model_choices.txt
+model_config.json
+models/*.json
+models/*.yaml
+models/*.yml
+
+# Anthropic remnants
+*anthropic*
+*claude*
+.anthropic*
+
+# Private configuration
+.private*
+config/private*
+config/models/*
+!config/models/.gitkeep
+
+# Temporary and cache files
+*.tmp
+*.temp
+.cache
+.tmp/
+
+# IDE and editor specific
+*.idea/
+*.vscode/
+*.sublime*
+
+# Local development
+.local
+.development
+.dev
+RICH_DOCS/
+TEXTUAL_STUDY_NOTES/
+Textual_Docs/
+xml_tool_test copy
+workspace/

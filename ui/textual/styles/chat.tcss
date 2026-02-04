@@ -1,0 +1,47 @@
+/* ui/textual/styles/chat.tcss */
+
+/* === The Main Scrollable Container === */
+ChatArea {
+    /* The Layout Logic */
+    height: 1fr; /* 1fr = Grow to fill all available vertical space */
+    width: 100%;
+    /* Aesthetics */
+    background: $background;
+}
+
+/* === AI Message === */
+AIMessage {
+    width: 100%;
+    height: auto;
+    padding: 1 2;
+    margin-bottom: 2;
+    background: $background;
+    color: $text;
+    border: solid red;
+}
+
+/* === User Message === */
+UserMessage {
+    width: 30%;
+    height: auto;
+    background: $surface;
+    color: $text;
+    border: solid red;
+}
+
+/* === Thinking Indicator === */
+ThinkingIndicator {
+    padding: 0 0;
+    color: $text;
+    text-style: italic;
+}
+
+/* === Tool Result Widget === */
+ToolResultWidget {
+    width: 100%;
+    height: auto;
+    padding: 1 2;
+    margin-bottom: 1;
+    background: $surface;
+    border: solid $accent;
+}

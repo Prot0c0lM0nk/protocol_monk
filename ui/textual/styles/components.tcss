@@ -1,0 +1,35 @@
+/* ui/textual/styles/components.tcss */
+
+InputBar {
+    dock: bottom;
+    width: 100%;
+    height: 10;      /* Let it fit the content naturally */
+    min-height: 3;     /* Ensure it's at least one line tall */
+    padding: 1 0 2 0;      /* padding: <top> <right> <bottom> <left>; */
+    background: $background; 
+    align: center middle;
+
+    /* The Visual Debugger */
+    # border: solid red;    /* Only this box will be red */
+}
+
+InputBar > TextArea {
+    width: 60%;        /* VITAL: This forces the input to take all available width */
+    padding: 0 0 0 1;      /* Small side padding */
+    margin-right: 1;   /* Space between input and button */
+    content-align: center middle;
+    
+}
+
+InputBar > Button {
+    width: auto;
+    padding: 0 0 0 0;      /* padding: <top> <right> <bottom> <left>; */
+    min-width: 10;      /* Minimum width for the "Send" button */
+    content-align: center middle;
+    height: auto;
+}
+
+InputBar > Button:hover {
+    background: #00d7ff;
+    color: #000000;
+}
