@@ -3,6 +3,8 @@ ui/textual/command_provider.py
 The Command Bridge: Exposes Agent Actions and Debug Tests to the Palette.
 """
 
+import asyncio
+
 from textual.command import Provider, Hit, Hits, DiscoveryHit
 from agent.events import AgentEvents, get_event_bus
 
@@ -77,7 +79,16 @@ class AgentCommandProvider(Provider):
                     "Agent is busy, cannot inject command.", severity="warning"
                 )
         else:
-            self.app.notify("Agent is not waiting for input.", severity="warning")
+            # If agent isn't waiting, send it as a normal input event
+            if hasattr(self.app, "event_bus") and self.app.event_bus:
+                # Fire-and-forget to avoid blocking the UI thread
+                asyncio.create_task(
+                    self.app.event_bus.emit(
+                        AgentEvents.USER_INPUT.value, {"input": command_str}
+                    )
+                )
+            else:
+                self.app.notify("Agent is not waiting for input.", severity="warning")
 
     async def action_quit(self):
         await self.app.action_quit()

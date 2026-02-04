@@ -7,7 +7,7 @@ import asyncio
 from typing import Dict, Any
 
 from ui.base import UI, ToolResult
-from agent.events import AgentEvents, get_event_bus
+from agent.events import AgentEvents, get_event_bus, EventBus
 from .screens.modals.tool_confirm import ToolConfirmModal
 from .messages import (
     AgentStreamChunk,
@@ -19,14 +19,14 @@ from .messages import (
 
 
 class TextualUI(UI):
-    def __init__(self, app):
+    def __init__(self, app, event_bus: EventBus = None):
         """
         Args:
             app: The running ProtocolMonkApp instance.
         """
         super().__init__()
         self.app = app
-        self._event_bus = get_event_bus()
+        self._event_bus = event_bus or get_event_bus()
         self._setup_event_listeners()
 
     def _setup_event_listeners(self):
@@ -39,10 +39,17 @@ class TextualUI(UI):
             AgentEvents.THINKING_STOPPED.value, self._on_thinking_stopped
         )
         self._event_bus.subscribe(AgentEvents.TOOL_RESULT.value, self._on_tool_result)
+        self._event_bus.subscribe(
+            AgentEvents.TOOL_CONFIRMATION_REQUESTED.value,
+            self._on_tool_confirmation_request,
+        )
         self._event_bus.subscribe(AgentEvents.ERROR.value, self._on_error)
         self._event_bus.subscribe(AgentEvents.INFO.value, self._on_info)
         self._event_bus.subscribe(
             AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete
+        )
+        self._event_bus.subscribe(
+            AgentEvents.INPUT_REQUESTED.value, self._on_input_requested
         )
 
     # --- EVENT HANDLERS ---
@@ -85,10 +92,58 @@ class TextualUI(UI):
 
     async def _on_info(self, data: Dict[str, Any]):
         msg = data.get("message", "")
-        self.app.post_message(AgentSystemMessage(msg, type="info"))
+        items = data.get("data", [])
+        context = data.get("context", "")
+
+        if msg:
+            # Render selection lists for model/provider switches
+            if context in ["model_selection", "provider_selection"] and items:
+                options = "\n".join(f"{i + 1}. {item}" for i, item in enumerate(items))
+                message = f"{msg}\n\n{options}"
+                self.app.post_message(AgentSystemMessage(message, type="info"))
+            else:
+                self.app.post_message(AgentSystemMessage(msg, type="info"))
 
     async def _on_response_complete(self, data: Dict[str, Any]):
         self.app.post_message(AgentSystemMessage("", type="response_complete"))
+
+    async def _on_input_requested(self, data: Dict[str, Any]):
+        prompt_text = data.get("prompt", "Enter value: ")
+        self.app.post_message(AgentSystemMessage(f"❓ {prompt_text}", type="info"))
+        # Ensure input is focused for the prompt
+        try:
+            input_bar = self.app.screen.query_one("#msg-input")
+            input_bar.focus()
+        except Exception:
+            pass
+        if hasattr(self.app, "get_user_input_wait"):
+            response = await self.app.get_user_input_wait()
+        else:
+            response = ""
+        await self._event_bus.emit(
+            AgentEvents.INPUT_RESPONSE.value, {"input": response or ""}
+        )
+
+    async def _on_tool_confirmation_request(self, data: Dict[str, Any]):
+        tool_call = data.get("tool_call", {})
+        tool_call_id = data.get("tool_call_id", "")
+        tool_name = tool_call.get("action", "Unknown Tool")
+        tool_args = tool_call.get("parameters", {})
+
+        approved = True
+        if hasattr(self.app, "push_screen_wait"):
+            approved = await self.app.push_screen_wait(
+                ToolConfirmModal({"tool": tool_name, "args": tool_args})
+            )
+
+        await self._event_bus.emit(
+            AgentEvents.TOOL_CONFIRMATION_RESPONSE.value,
+            {
+                "tool_call_id": tool_call_id,
+                "approved": approved,
+                "edits": None,
+            },
+        )
 
     # --- BLOCKING INTERACTION ---
 

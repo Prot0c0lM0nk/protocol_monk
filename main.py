@@ -183,9 +183,10 @@ Use /help for command list. /quit to quit."""
         # Wire up the bridge
         # Note: TextualUI likely needs updates to fully utilize AgentService events
         # but passing the service instance maintains compatibility for now.
-        ui_bridge = TextualUI(self.tui_app)
+        ui_bridge = TextualUI(self.tui_app, event_bus=self.event_bus)
         self.tui_app.textual_ui = ui_bridge
         self.tui_app.agent = self.agent_service  # Service replaces Agent
+        self.tui_app.event_bus = self.event_bus
 
         self.running = True
         await self.tui_app.run_async()
