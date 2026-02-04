@@ -27,7 +27,7 @@ _GLOBAL_MAX_CONTENT_WIDTH = max(
    / /  | | _| || |___| | |  | |      | | | |___| |_____| || |___| | |\ \ | |___| |    | |  __/ 
   /_/   |_||___||_______|_|  |_|      | | |_______/________/_______|_| \_\|_______|    |_|_|     
                                       |_|                                                       
-"""
+""",
         r"""
  _______                            __       __   __                 
 (   _   )                           \ \     |  \ /  |                
@@ -53,7 +53,7 @@ _GLOBAL_MAX_CONTENT_WIDTH = max(
                  ▐▌                                               
 """,
     )
-    for line in art.strip().split("\n")
+    for line in art.strip("\n").split("\n")
 )
 
 # border adds 2 characters (one on each side)
@@ -119,7 +119,7 @@ _ART_MAX_LENGTH = {}
 def _get_art_lines(art: str) -> list:
     """Cache art lines to avoid repeated splitting."""
     if art not in _ART_LINES:
-        _ART_LINES[art] = art.strip().split("\n")
+        _ART_LINES[art] = art.strip("\n").split("\n")
         _ART_MAX_LENGTH[art] = max(len(line) for line in _ART_LINES[art])
     return _ART_LINES[art]
 
@@ -220,7 +220,7 @@ def get_panel(
         display_art = display_art.replace("█", dim_level)
 
     # Normalize line lengths using the cached max for this piece.
-    normalized_lines = [line.ljust(max_length) for line in display_art.split("\n")]
+    normalized_lines = [line.ljust(_GLOBAL_MAX_CONTENT_WIDTH) for line in display_art.split("\n")]
     normalized_art = "\n".join(normalized_lines)
 
     # Build content with optional signal indicator
