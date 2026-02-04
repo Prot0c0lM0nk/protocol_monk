@@ -196,6 +196,7 @@ def get_panel(
     scanlines=False,
     flicker=False,
     show_signal=True,
+    status_text="",
 ):
     """Wrap art in a consistent Rich Panel with optional visual effects."""
     # Get cached art lines and the *original* max line length.
@@ -246,13 +247,16 @@ def get_panel(
 
         # Create a Text object for the signal indicator with proper styling
         signal_text = Text()
+        if status_text:
+            signal_text.append(status_text, style="dim")
+            signal_text.append("  ")
         signal_text.append("SIGNAL: ", style="bold")
         signal_text.append(bars, style=color)
         signal_text.append(f" {percentage}%", style=color)
 
         # Combine the art and signal indicator
         content = Text()
-        content.append(normalized_art)
+        content.append(normalized_art, style=style)
         content.append("\n\n")
         content.append(signal_text)
     else:
@@ -285,26 +289,40 @@ def run_boot_sequence(console: Console):
     with Live(console=console, refresh_per_second=20, transient=True) as live:
         for idx, (art, style, message) in enumerate(sequence):
             is_final = idx == len(sequence) - 1
-            panel_signal = (idx + 1) / len(sequence)
+            start_signal = idx / len(sequence)
+            end_signal = (idx + 1) / len(sequence)
+
+            acquisition_frames = 8 if not is_final else 4
+            reveal_steps = 20 if not is_final else 12
+            lock_frames = 6 if not is_final else 0
+            transition_frames = 5 if not is_final else 0
+            total_frames = acquisition_frames + (reveal_steps + 1) + lock_frames + transition_frames
+            frame_index = 0
+
+            def _frame_signal(i: int) -> float:
+                if total_frames <= 0:
+                    return end_signal
+                t = (i + 1) / total_frames
+                return start_signal + (end_signal - start_signal) * t
 
             # Phase 1: Signal acquisition (weak signal, high corruption)
-            acquisition_frames = 8 if not is_final else 4
             for frame in range(acquisition_frames):
                 corruption = 0.6 - (frame / acquisition_frames) * 0.3
                 panel = get_panel(
                     art,
                     style=style,
-                    subtitle=f"[dim]{message}[/]",
-                    signal_strength=panel_signal,
+                    subtitle="",
+                    status_text=message,
+                    signal_strength=_frame_signal(frame_index),
                     corruption=corruption,
                     scanlines=True,
                     flicker=True,
                 )
                 live.update(panel)
+                frame_index += 1
                 time.sleep(0.08)
 
             # Phase 2: Progressive decode (character reveal)
-            reveal_steps = 20 if not is_final else 12
             for step in range(reveal_steps + 1):
                 progress = step / reveal_steps
                 revealed_art = progressive_reveal(art, progress)
@@ -314,19 +332,20 @@ def run_boot_sequence(console: Console):
                 panel = get_panel(
                     revealed_art,
                     style=style,
-                    subtitle=f"[dim]{message}[/]",
-                    signal_strength=panel_signal,
+                    subtitle="",
+                    status_text=message,
+                    signal_strength=_frame_signal(frame_index),
                     corruption=corruption,
                     scanlines=progress < 0.8,
                     flicker=progress < 0.6,
                 )
                 live.update(panel)
+                frame_index += 1
                 delay = 0.05 + (1 - progress) * 0.08
                 time.sleep(delay)
 
             # Phase 3: Lock‑on (stable display with subtle effects)
             if not is_final:
-                lock_frames = 6
                 for frame in range(lock_frames):
                     glitch_chance = 0.2 * (1 - frame / lock_frames)
                     corruption = glitch_chance if random.random() < glitch_chance else 0
@@ -334,37 +353,41 @@ def run_boot_sequence(console: Console):
                     panel = get_panel(
                         art,
                         style=style,
-                        subtitle=f"[dim]{message} — LOCKED[/]",
-                        signal_strength=panel_signal,
+                        subtitle="",
+                        status_text=f"{message} — LOCKED",
+                        signal_strength=_frame_signal(frame_index),
                         corruption=corruption,
                         scanlines=False,
                         flicker=frame < 2,
                     )
                     live.update(panel)
+                    frame_index += 1
                     time.sleep(0.1)
 
             # Phase 4: Transition glitch (except for final frame)
             if not is_final:
-                transition_frames = 5
                 for frame in range(transition_frames):
                     corruption = 0.5 + (frame / transition_frames) * 0.4
                     panel = get_panel(
                         art,
                         style=style,
-                        subtitle="[dim]TRANSMISSION INTERRUPTED...[/]",
-                        signal_strength=panel_signal,
+                        subtitle="",
+                        status_text="TRANSMISSION INTERRUPTED...",
+                        signal_strength=_frame_signal(frame_index),
                         corruption=corruption,
                         scanlines=True,
                         flicker=True,
                     )
                     live.update(panel)
+                    frame_index += 1
                     time.sleep(0.06)
 
         # Final static display
         final_panel = get_panel(
             ART_FINAL,
             style="monk.border",
-            subtitle="ORTHODOX PROTOCOL v1.0 — SYSTEM READY",
+            subtitle="",
+            status_text="ORTHODOX PROTOCOL v1.0 — SYSTEM READY",
             signal_strength=1.0,
         )
         live.update(final_panel)
