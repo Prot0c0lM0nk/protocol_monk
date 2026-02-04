@@ -195,6 +195,7 @@ def get_panel(
     corruption=0.0,
     scanlines=False,
     flicker=False,
+    show_signal=True,
 ):
     """Wrap art in a consistent Rich Panel with optional visual effects."""
     # Get cached art lines and the *original* max line length.
@@ -219,12 +220,18 @@ def get_panel(
         dim_level = random.choice(["▓", "▒", "░"])
         display_art = display_art.replace("█", dim_level)
 
-    # Normalize line lengths using the cached max for this piece.
-    normalized_lines = [line.ljust(_GLOBAL_MAX_CONTENT_WIDTH) for line in display_art.split("\n")]
+    # Normalize line lengths using the cached max for this piece,
+    # then center the whole art block inside the global width.
+    left_pad = max((_GLOBAL_MAX_CONTENT_WIDTH - max_length) // 2, 0)
+    right_pad = max(_GLOBAL_MAX_CONTENT_WIDTH - max_length - left_pad, 0)
+    normalized_lines = [
+        (" " * left_pad) + line.ljust(max_length) + (" " * right_pad)
+        for line in display_art.split("\n")
+    ]
     normalized_art = "\n".join(normalized_lines)
 
     # Build content with optional signal indicator
-    if signal_strength < 1.0:
+    if show_signal and signal_strength is not None:
         # Create the signal indicator using Rich Text objects for proper styling
         filled = int(signal_strength * 10)
         bars = "█" * filled + "░" * (10 - filled)
