@@ -24,32 +24,33 @@ class StatusBar(Horizontal):
     working_dir = reactive("")
 
     def compose(self) -> ComposeResult:
-        yield Label("☦ Protocol Monk", id="app-title")
-        yield Static(" | ", classes="separator")
+        with Horizontal(id="status-left"):
+            yield Label("☦ Protocol Monk", id="app-title")
+            yield Label("", id="debug-label")
+            yield Static(" | ", classes="separator")
 
-        # Model & Provider
-        yield Label(f"{self.provider}", id="provider-label")
-        yield Static(":", classes="separator")
-        yield Label(f"{self.model_name}", id="model-label")
+            # Model & Provider
+            yield Label(f"{self.provider}", id="provider-label")
+            yield Static(":", classes="separator")
+            yield Label(f"{self.model_name}", id="model-label")
 
-        yield Static("", classes="spacer")  # Pushes rest to the right
+        with Horizontal(id="status-right"):
+            # Messages
+            yield Label("Msgs:", classes="metric-label")
+            yield Label(f"{self.messages}", id="messages-label")
 
-        # Messages
-        yield Label("Msgs:", classes="metric-label")
-        yield Label(f"{self.messages}", id="messages-label")
+            yield Static(" | ", classes="separator")
 
-        yield Static(" | ", classes="separator")
+            # Token Usage
+            yield Label("Tokens:", classes="metric-label")
+            yield Label(f"{self.tokens}/{self.limit}", id="token-label")
 
-        # Token Usage
-        yield Label("Tokens:", classes="metric-label")
-        yield Label(f"{self.tokens}/{self.limit}", id="token-label")
+            yield Static(" | ", classes="separator")
+            yield Label(f"● {self.status}", id="status-label")
 
-        yield Static(" | ", classes="separator")
-        yield Label(f"● {self.status}", id="status-label")
-
-        yield Static(" | ", classes="separator")
-        yield Label("Dir:", classes="metric-label")
-        yield Label(f"{self.working_dir}", id="working-dir-label")
+            yield Static(" | ", classes="separator")
+            yield Label("Dir:", classes="metric-label")
+            yield Label(f"{self.working_dir}", id="working-dir-label")
 
     def watch_status(self, new_status: str) -> None:
         """Update status indicator color."""
@@ -68,12 +69,26 @@ class StatusBar(Horizontal):
 
     def update_metrics(self, stats: dict) -> None:
         """Called by App to update display values."""
-        self.model_name = stats.get("current_model", "Unknown")
-        self.provider = stats.get("provider", "Unknown")
+        self.model_name = stats.get("current_model") or "Unknown"
+        self.provider = stats.get("provider") or "Unknown"
         self.tokens = f"{stats.get('estimated_tokens', 0):,}"
         self.limit = f"{stats.get('token_limit', 0):,}"
         self.messages = str(stats.get("conversation_length", 0))
-        self.working_dir = stats.get("working_dir", "")
+        self.working_dir = stats.get("working_dir") or ""
+
+        # Force immediate label updates (defensive against reactive timing)
+        self._set_label("#provider-label", self.provider)
+        self._set_label("#model-label", self.model_name)
+        self._set_label("#messages-label", self.messages)
+        self._set_label("#token-label", f"{self.tokens}/{self.limit}")
+        self._set_label("#working-dir-label", self.working_dir)
+        self._set_label("#debug-label", "[dbg] status updated")
+
+    def _set_label(self, selector: str, text: str) -> None:
+        try:
+            self.query_one(selector, Label).update(text)
+        except Exception:
+            pass
 
     def watch_model_name(self, value: str) -> None:
         try:

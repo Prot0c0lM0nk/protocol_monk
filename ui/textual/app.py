@@ -48,9 +48,8 @@ class ProtocolMonkApp(App):
 
     def compose(self) -> ComposeResult:
         """Create the app layout."""
-        yield Header()
-        yield MainChatScreen()
-        yield Footer()
+        if False:
+            yield  # Screens are pushed in on_mount
 
     def on_mount(self) -> None:
         """Initialize the app and START THE AGENT WORKER."""
@@ -63,6 +62,20 @@ class ProtocolMonkApp(App):
             # Kick a first status refresh so the bar isn't empty at startup
             if self.textual_ui and hasattr(self.textual_ui, "_refresh_status"):
                 asyncio.create_task(self.textual_ui._refresh_status())
+            # Direct seed to status bar (bypass event bus) for first render
+            asyncio.create_task(self._seed_status_bar())
+
+    async def _seed_status_bar(self) -> None:
+        """Populate the status bar once on startup."""
+        if not self.agent:
+            return
+        try:
+            stats = await self.agent.get_status()
+            stats["working_dir"] = getattr(self.agent, "working_dir", "")
+            if hasattr(self.screen, "update_status_bar"):
+                self.screen.update_status_bar(stats)
+        except Exception:
+            pass
 
     # --- 1. CRITICAL FIX: MODAL WAITER ---
     async def push_screen_wait(self, screen: Screen) -> Any:
