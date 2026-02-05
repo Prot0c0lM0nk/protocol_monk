@@ -59,6 +59,10 @@ class ProtocolMonkApp(App):
 
         if not self.agent:
             self.notify("⚠️ No Agent Connected!", severity="error")
+        else:
+            # Kick a first status refresh so the bar isn't empty at startup
+            if self.textual_ui and hasattr(self.textual_ui, "_refresh_status"):
+                asyncio.create_task(self.textual_ui._refresh_status())
 
     # --- 1. CRITICAL FIX: MODAL WAITER ---
     async def push_screen_wait(self, screen: Screen) -> Any:
