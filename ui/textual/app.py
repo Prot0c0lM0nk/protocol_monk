@@ -13,6 +13,7 @@ from textual.widgets import Header, Footer, Input
 from textual.screen import Screen
 
 from .command_provider import AgentCommandProvider
+from agent.events import AgentEvents
 
 from .screens.main_chat import MainChatScreen
 from .interface import TextualUI
@@ -42,6 +43,7 @@ class ProtocolMonkApp(App):
         super().__init__(**kwargs)
         self.textual_ui = None
         self.agent = None  # Injected by main.py
+        self.event_bus = None  # Injected by main.py
         self._input_future = None  # The bridge for user input
 
     def compose(self) -> ComposeResult:
@@ -55,23 +57,12 @@ class ProtocolMonkApp(App):
         self.notify("Protocol Monk TUI Ready", severity="information")
         self.push_screen(MainChatScreen())
 
-        if self.agent:
-            # Launch the agent in a dedicated worker thread/task
-            # group="agent" allows us to manage it collectively
-            self.run_worker(
-                self._agent_runner(), name="agent_brain", group="agent", exclusive=True
-            )
-        else:
+        if not self.agent:
             self.notify("⚠️ No Agent Connected!", severity="error")
-
-    async def _agent_runner(self):
-        """The dedicated coroutine for the Agent Worker."""
-        try:
-            await self.agent.run()
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            self.notify(f"Agent Crashed: {e}", severity="error")
+        else:
+            # Kick a first status refresh so the bar isn't empty at startup
+            if self.textual_ui and hasattr(self.textual_ui, "_refresh_status"):
+                asyncio.create_task(self.textual_ui._refresh_status())
 
     # --- 1. CRITICAL FIX: MODAL WAITER ---
     async def push_screen_wait(self, screen: Screen) -> Any:
@@ -115,7 +106,13 @@ class ProtocolMonkApp(App):
         if self._input_future and not self._input_future.done():
             self._input_future.set_result(user_text)
 
-        # 3. If Agent is NOT waiting (e.g., busy thinking), notify user
+        # 3. If Agent is NOT waiting, emit USER_INPUT to the event bus
+        elif self.event_bus:
+            asyncio.create_task(
+                self.event_bus.emit(AgentEvents.USER_INPUT.value, {"input": user_text})
+            )
+
+        # 4. If Agent is NOT waiting and no event bus, notify user
         else:
             # Optional: You could queue this, but for now we warn
             self.notify("Agent is busy processing...", severity="warning")
