@@ -8,6 +8,7 @@ from textual.screen import Screen
 from textual.widgets import Header, Footer
 from ..widgets.chat_area import ChatArea
 from ..widgets.input_bar import InputBar
+from ..widgets.status_bar import StatusBar
 
 
 class MainChatScreen(Screen):
@@ -17,6 +18,7 @@ class MainChatScreen(Screen):
         """Create the screen layout."""
         yield Header()
         yield ChatArea()
+        yield StatusBar()
         yield InputBar()
         yield Footer()
 
@@ -49,6 +51,14 @@ class MainChatScreen(Screen):
         """Finalize the current AI response."""
         chat_area = self.query_one(ChatArea)
         chat_area.finalize_response()
+
+    def update_status_bar(self, stats: dict) -> None:
+        """Update the status bar with new stats."""
+        try:
+            status_bar = self.query_one(StatusBar)
+            status_bar.update_metrics(stats)
+        except Exception:
+            pass
 
     async def await_user_input(self, prompt: str = "") -> str:
         """

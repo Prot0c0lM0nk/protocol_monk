@@ -33,3 +33,11 @@ InputBar > Button:hover {
     background: #00d7ff;
     color: #000000;
 }
+
+StatusBar {
+    dock: top;
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+    background: $background;
+}

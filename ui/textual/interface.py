@@ -16,6 +16,7 @@ from .messages import (
     AgentSystemMessage,
     AgentStatusUpdate,  # <--- NEW
 )
+from .screens.modals.selection import SelectionModal
 
 
 class TextualUI(UI):
@@ -42,8 +43,19 @@ class TextualUI(UI):
         self._event_bus.subscribe(AgentEvents.ERROR.value, self._on_error)
         self._event_bus.subscribe(AgentEvents.INFO.value, self._on_info)
         self._event_bus.subscribe(
+            AgentEvents.MODEL_SWITCHED.value, self._on_model_switched
+        )
+        self._event_bus.subscribe(
+            AgentEvents.PROVIDER_SWITCHED.value, self._on_provider_switched
+        )
+        self._event_bus.subscribe(
             AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete
         )
+
+        # Selection tracking for model/provider switches
+        self._pending_selection = None
+        self._pending_options = None
+        self._pending_title = None
 
     # --- EVENT HANDLERS ---
 
@@ -63,6 +75,7 @@ class TextualUI(UI):
         """Pull fresh stats from agent and push to UI."""
         if hasattr(self.app, "agent") and self.app.agent:
             stats = await self.app.agent.get_status()
+            stats["working_dir"] = getattr(self.app.agent, "working_dir", "")
             self.app.post_message(AgentStatusUpdate(stats))
 
     async def _on_tool_result(self, data: Dict[str, Any]):
@@ -85,10 +98,127 @@ class TextualUI(UI):
 
     async def _on_info(self, data: Dict[str, Any]):
         msg = data.get("message", "")
-        self.app.post_message(AgentSystemMessage(msg, type="info"))
+        items = data.get("data", [])
+        context = data.get("context", "")
+
+        if msg:
+            # Modal selection for model/provider switches
+            if context in ["model_selection", "provider_selection"] and items:
+                self._pending_title = msg
+                self._pending_options = [self._format_option(item) for item in items]
+                return
+            self.app.post_message(AgentSystemMessage(msg, type="info"))
+
+    async def _on_model_switched(self, data: Dict[str, Any]):
+        old_model = data.get("old_model", "")
+        new_model = data.get("new_model", "")
+        if hasattr(self.app, "post_message"):
+            self.app.post_message(
+                AgentSystemMessage(
+                    f"🔄 Model switched: {old_model} → {new_model}", type="info"
+                )
+            )
+        try:
+            input_bar = self.app.screen.query_one("#msg-input")
+            input_bar.focus()
+        except Exception:
+            pass
+        await self._refresh_status()
+
+    async def _on_provider_switched(self, data: Dict[str, Any]):
+        old_provider = data.get("old_provider", "")
+        new_provider = data.get("new_provider", "")
+        if hasattr(self.app, "post_message"):
+            self.app.post_message(
+                AgentSystemMessage(
+                    f"🔄 Provider switched: {old_provider} → {new_provider}",
+                    type="info",
+                )
+            )
+        try:
+            input_bar = self.app.screen.query_one("#msg-input")
+            input_bar.focus()
+        except Exception:
+            pass
+        await self._refresh_status()
 
     async def _on_response_complete(self, data: Dict[str, Any]):
         self.app.post_message(AgentSystemMessage("", type="response_complete"))
+
+    async def _on_input_requested(self, data: Dict[str, Any]):
+        prompt_text = data.get("prompt", "Enter value: ")
+        # If a selection list is pending, show modal now and respond
+        if self._pending_options:
+            title = self._pending_title or "Select an option"
+            options = self._pending_options
+            self._pending_title = None
+            self._pending_options = None
+
+            if hasattr(self.app, "push_screen_wait"):
+                selected_index = await self.app.push_screen_wait(
+                    SelectionModal(title, options)
+                )
+                if selected_index is not None:
+                    await self._event_bus.emit(
+                        AgentEvents.INPUT_RESPONSE.value,
+                        {"input": str(selected_index + 1)},
+                    )
+                    return
+
+        # If we already have a selection from a modal, respond immediately
+        if self._pending_selection:
+            selection = self._pending_selection
+            self._pending_selection = None
+            await self._event_bus.emit(
+                AgentEvents.INPUT_RESPONSE.value, {"input": selection}
+            )
+            return
+
+        self.app.post_message(AgentSystemMessage(f"❓ {prompt_text}", type="info"))
+        # Ensure input is focused for the prompt
+        try:
+            input_bar = self.app.screen.query_one("#msg-input")
+            input_bar.focus()
+        except Exception:
+            pass
+        if hasattr(self.app, "get_user_input_wait"):
+            response = await self.app.get_user_input_wait()
+        else:
+            response = ""
+        await self._event_bus.emit(
+            AgentEvents.INPUT_RESPONSE.value, {"input": response or ""}
+        )
+
+    def _format_option(self, item) -> str:
+        if hasattr(item, "name"):
+            name = item.name
+        else:
+            name = str(item)
+        provider = getattr(item, "provider", None)
+        if provider:
+            name = f"{name} ({provider})"
+        return name
+
+    async def _on_tool_confirmation_request(self, data: Dict[str, Any]):
+        tool_call = data.get("tool_call", {})
+        tool_call_id = data.get("tool_call_id", "")
+        tool_name = tool_call.get("action", "Unknown Tool")
+        tool_args = tool_call.get("parameters", {})
+
+        approved = True
+        if hasattr(self.app, "push_screen_wait"):
+            approved = await self.app.push_screen_wait(
+                ToolConfirmModal({"tool": tool_name, "args": tool_args})
+            )
+
+        await self._event_bus.emit(
+            AgentEvents.TOOL_CONFIRMATION_RESPONSE.value,
+            {
+                "tool_call_id": tool_call_id,
+                "approved": approved,
+                "edits": None,
+            },
+        )
 
     # --- BLOCKING INTERACTION ---
 
