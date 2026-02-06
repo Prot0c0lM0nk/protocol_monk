@@ -117,6 +117,25 @@ class LockFreeFileTracker:
                     )
                     await self._decay_queue.put(entry)
                     msg.metadata["turns_left"] = turns - 1
+                else:
+                    # Already expired - invalidate immediately
+                    await self._invalidate_expired_at_index(msg, idx)
+
+    async def _invalidate_expired_at_index(self, msg: Message, idx: int):
+        """Helper to invalidate a single expired message."""
+        filepath = msg.metadata.get("file_read", "unknown_file")
+
+        # Replace content with expiration notice
+        msg.content = (
+            f"[System: File content '{filepath}' refreshed. "
+            "See latest messages for current version.]"
+        )
+
+        # Clean up metadata
+        msg.metadata.pop("turns_left", None)
+        msg.metadata.pop("file_read", None)
+
+        self.logger.info(f"Invalidated expired file: {filepath}")
 
     async def _decay_processor(self):
         """
@@ -129,8 +148,9 @@ class LockFreeFileTracker:
                 entry = await asyncio.wait_for(self._decay_queue.get(), timeout=0.1)
 
                 if entry.turns_remaining <= 0:
-                    # Mark as expired - this is done atomically
-                    # The actual invalidation happens when conversation is accessed
+                    # Decay complete - invalidate this entry
+                    # Note: We mark it as expired in the queue, actual invalidation
+                    # happens when tick() processes it or invalidate_expired is called
                     self.logger.debug(
                         f"Decay complete for {entry.filepath} at index {entry.message_index}"
                     )
