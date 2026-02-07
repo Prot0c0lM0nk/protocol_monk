@@ -20,6 +20,7 @@ from agent.command_dispatcher import CommandDispatcher
 from agent.logic.parsers import ToolCallExtractor
 from agent.logic.streaming import ResponseStreamHandler
 from agent.events import EventBus, AgentEvents, get_event_bus
+from agent.context import model_error_prompts
 from config.static import settings
 from exceptions import ContextValidationError
 from utils.enhanced_logger import EnhancedLogger
@@ -82,6 +83,7 @@ class AgentService:
         # State
         self._running = False
         self.max_autonomous_loops = 10
+        self._tool_retry_counts: Dict[str, int] = {}
 
     async def async_initialize(self):
         """Subscribe to events and init subsytems."""
@@ -218,9 +220,37 @@ class AgentService:
 
             # E. Execute Tools (The Act Phase)
             # ToolExecutor handles the "Tool Confirmation" via events internally now
+            if self._has_git_commit(actions):
+                await self.context_manager.add_temporary_system_prompt(
+                    model_error_prompts.git_commit_signoff_prompt()
+                )
             summary = await self.tool_executor.execute_tool_calls(actions)
 
             # F. Record Results
+            for result in summary.results:
+                kind = model_error_prompts.classify_tool_error(result)
+                if kind is None:
+                    continue
+
+                if model_error_prompts.should_stop(kind):
+                    summary.should_finish = True
+                    continue
+
+                if model_error_prompts.should_retry(kind):
+                    retry_key = f"{getattr(result, 'tool_name', 'unknown')}:{kind.value}"
+                    retry_count = self._tool_retry_counts.get(retry_key, 0)
+                    if retry_count == 0:
+                        self._tool_retry_counts[retry_key] = 1
+                        await self.context_manager.add_temporary_system_prompt(
+                            model_error_prompts.build_tool_error_prompt(
+                                getattr(result, "tool_name", "unknown"),
+                                result,
+                                None,
+                            )
+                        )
+                    else:
+                        summary.should_finish = True
+
             for result in summary.results:
                 await self.context_manager.add_tool_result_message(
                     tool_name=result.tool_name,
@@ -244,6 +274,15 @@ class AgentService:
                 AgentEvents.ERROR.value, {"message": f"Context Error: {e}"}
             )
             return None
+
+    def _has_git_commit(self, actions: List[Dict[str, Any]]) -> bool:
+        for action in actions:
+            if action.get("action") != "git_operation":
+                continue
+            params = action.get("parameters") or {}
+            if params.get("operation") == "commit":
+                return True
+        return False
 
     # --- Support Methods for CommandDispatcher ---
     async def clear_conversation(self):

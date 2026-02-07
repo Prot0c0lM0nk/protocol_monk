@@ -60,6 +60,7 @@ class ContextManagerV2:
         self._operation_queue: asyncio.Queue = asyncio.Queue()
         self._background_task: asyncio.Task | None = None
         self._running = False
+        self._temp_system_prompts: List[Dict[str, Any]] = []
 
         # Stats
         self._messages_added = 0
@@ -205,6 +206,21 @@ class ContextManagerV2:
         await event.wait()
         self._message_events.pop(msg_id, None)
 
+    async def add_temporary_system_prompt(self, text: str, ttl_turns: int = 1):
+        """
+        Add a temporary system prompt for the next model call.
+        This prompt is not persisted in conversation history.
+        """
+        await self._operation_queue.put(
+            {"type": "add_temp_prompt", "content": text, "ttl": ttl_turns}
+        )
+
+        event = asyncio.Event()
+        msg_id = f"temp_{self._messages_added}"
+        self._message_events[msg_id] = event
+        await event.wait()
+        self._message_events.pop(msg_id, None)
+
     async def _process_add_tool_call(self, tool_calls: List[Dict]):
         """Process tool call message addition with Robust Format Translation."""
         # Trigger file tracker tick
@@ -297,6 +313,15 @@ class ContextManagerV2:
         await event.wait()
         self._message_events.pop(msg_id, None)
 
+    async def _process_add_temp_prompt(self, content: str, ttl: int):
+        """Process temporary system prompt addition."""
+        self._temp_system_prompts.append({"content": content, "ttl": ttl})
+
+        msg_id = f"temp_{self._messages_added}"
+        if msg_id in self._message_events:
+            self._message_events[msg_id].set()
+            self._message_events.pop(msg_id, None)
+
     async def _process_add_tool_result(
         self,
         tool_name: str,
@@ -377,6 +402,16 @@ class ContextManagerV2:
         """
         # Start with system message
         context = [{"role": "system", "content": self.system_message}]
+
+        # Insert temporary system prompts (one-turn, auto-expire)
+        if self._temp_system_prompts:
+            updated_prompts = []
+            for prompt in self._temp_system_prompts:
+                context.append({"role": "system", "content": prompt["content"]})
+                prompt["ttl"] -= 1
+                if prompt["ttl"] > 0:
+                    updated_prompts.append(prompt)
+            self._temp_system_prompts = updated_prompts
 
         # Append conversation (read-only, no locks needed)
         for msg in self.conversation:
@@ -564,6 +599,10 @@ class ContextManagerV2:
                         operation.get("tool_call_id"),
                         operation["content"],
                         operation.get("file_path"),
+                    )
+                elif op_type == "add_temp_prompt":
+                    await self._process_add_temp_prompt(
+                        operation["content"], operation.get("ttl", 1)
                     )
 
                 elif op_type == "remove_last":
