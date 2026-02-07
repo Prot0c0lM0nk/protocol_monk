@@ -18,7 +18,7 @@ class MainChatScreen(Screen):
         """Create the screen layout."""
         yield Header()
         yield ChatArea()
-        yield StatusBar()
+        yield StatusBar(id="status-bar")
         yield InputBar()
         yield Footer()
 
@@ -55,10 +55,13 @@ class MainChatScreen(Screen):
     def update_status_bar(self, stats: dict) -> None:
         """Update the status bar with new stats."""
         try:
-            status_bar = self.query_one(StatusBar)
+            status_bar = self.query_one("#status-bar", StatusBar)
             status_bar.update_metrics(stats)
-        except Exception:
-            pass
+        except Exception as error:
+            self.app.notify(
+                f"Status bar update failed: {error}",
+                severity="error",
+            )
 
     async def await_user_input(self, prompt: str = "") -> str:
         """
