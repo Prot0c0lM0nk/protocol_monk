@@ -3,6 +3,8 @@ ui/textual/command_provider.py
 The Command Bridge: Exposes Agent Actions and Debug Tests to the Palette.
 """
 
+import asyncio
+
 from textual.command import Provider, Hit, Hits, DiscoveryHit
 from agent.events import AgentEvents, get_event_bus
 
@@ -66,18 +68,24 @@ class AgentCommandProvider(Provider):
     # --- 1. REAL COMMANDS (Internal Injection) ---
 
     async def _inject_command(self, command_str: str):
-        """Helper to resolve the Agent's waiting future with a command."""
-        # Access the private future in the app
+        """Send slash commands via pending prompt future or event bus."""
+        bus = getattr(self.app, "event_bus", None) or get_event_bus()
+
+        # If the agent loop is waiting on a direct prompt, satisfy that first.
         if hasattr(self.app, "_input_future") and self.app._input_future:
             if not self.app._input_future.done():
                 self.app._input_future.set_result(command_str)
                 self.app.notify(f"Command Sent: {command_str}")
-            else:
-                self.app.notify(
-                    "Agent is busy, cannot inject command.", severity="warning"
-                )
+                return
+
+        # Otherwise treat it like normal user input and emit to the shared bus.
+        if bus:
+            asyncio.create_task(
+                bus.emit(AgentEvents.USER_INPUT.value, {"input": command_str})
+            )
+            self.app.notify(f"Command Sent: {command_str}")
         else:
-            self.app.notify("Agent is not waiting for input.", severity="warning")
+            self.app.notify("No event bus available for command.", severity="error")
 
     async def action_quit(self):
         await self.app.action_quit()
@@ -94,7 +102,7 @@ class AgentCommandProvider(Provider):
     # --- 2. DEBUG TESTS (Event Emission) ---
 
     async def test_error(self):
-        bus = get_event_bus()
+        bus = getattr(self.app, "event_bus", None) or get_event_bus()
         await bus.emit(
             AgentEvents.ERROR.value,
             {
@@ -104,7 +112,7 @@ class AgentCommandProvider(Provider):
         )
 
     async def test_info(self):
-        bus = get_event_bus()
+        bus = getattr(self.app, "event_bus", None) or get_event_bus()
         await bus.emit(
             AgentEvents.INFO.value,
             {
@@ -114,11 +122,11 @@ class AgentCommandProvider(Provider):
         )
 
     async def test_thinking_on(self):
-        bus = get_event_bus()
+        bus = getattr(self.app, "event_bus", None) or get_event_bus()
         await bus.emit(AgentEvents.THINKING_STARTED.value, {})
 
     async def test_thinking_off(self):
-        bus = get_event_bus()
+        bus = getattr(self.app, "event_bus", None) or get_event_bus()
         await bus.emit(AgentEvents.THINKING_STOPPED.value, {})
 
     async def test_tool_confirm(self):

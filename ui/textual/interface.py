@@ -4,10 +4,10 @@ The Bridge: Connects the Async EventBus to the Textual App Loop.
 """
 
 import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from ui.base import UI, ToolResult
-from agent.events import AgentEvents, get_event_bus
+from agent.events import AgentEvents, EventBus, get_event_bus
 from .screens.modals.tool_confirm import ToolConfirmModal
 from .messages import (
     AgentStreamChunk,
@@ -20,14 +20,14 @@ from .screens.modals.selection import SelectionModal
 
 
 class TextualUI(UI):
-    def __init__(self, app):
+    def __init__(self, app, event_bus: Optional[EventBus] = None):
         """
         Args:
             app: The running ProtocolMonkApp instance.
         """
         super().__init__()
         self.app = app
-        self._event_bus = get_event_bus()
+        self._event_bus = event_bus or get_event_bus()
         self._setup_event_listeners()
 
     def _setup_event_listeners(self):
@@ -50,6 +50,13 @@ class TextualUI(UI):
         )
         self._event_bus.subscribe(
             AgentEvents.RESPONSE_COMPLETE.value, self._on_response_complete
+        )
+        self._event_bus.subscribe(
+            AgentEvents.INPUT_REQUESTED.value, self._on_input_requested
+        )
+        self._event_bus.subscribe(
+            AgentEvents.TOOL_CONFIRMATION_REQUESTED.value,
+            self._on_tool_confirmation_request,
         )
 
         # Selection tracking for model/provider switches

@@ -5,17 +5,19 @@ Refactored for Event Bubbling and Modal Waiting.
 """
 
 import asyncio
+import os
 from typing import Any
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import Header, Footer, Input
+from textual.widgets import Input
 from textual.screen import Screen
 
 from .command_provider import AgentCommandProvider
 from agent.events import AgentEvents
 
 from .screens.main_chat import MainChatScreen
+from .screens.startup import CinematicStartupScreen
 from .interface import TextualUI
 from .messages import (
     AgentStreamChunk,
@@ -29,7 +31,12 @@ from .messages import (
 class ProtocolMonkApp(App):
     """Protocol Monk - The Oracle of the Holy Light"""
 
-    CSS_PATH = ["styles/main.tcss", "styles/components.tcss", "styles/chat.tcss"]
+    CSS_PATH = [
+        "styles/main.tcss",
+        "styles/components.tcss",
+        "styles/chat.tcss",
+        "styles/startup.tcss",
+    ]
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", show=False),
@@ -45,24 +52,46 @@ class ProtocolMonkApp(App):
         self.agent = None  # Injected by main.py
         self.event_bus = None  # Injected by main.py
         self._input_future = None  # The bridge for user input
+        self._main_screen_shown = False
 
     def compose(self) -> ComposeResult:
-        """Create the app layout."""
-        yield Header()
-        yield MainChatScreen()
-        yield Footer()
+        """The app uses pushed screens for full control of startup flow."""
+        if False:
+            yield
 
     def on_mount(self) -> None:
-        """Initialize the app and START THE AGENT WORKER."""
+        """Initialize startup flow: cinematic intro first, then main chat."""
+        asyncio.create_task(self._launch_startup_flow())
+
+    async def _launch_startup_flow(self) -> None:
+        """Play startup intro unless disabled, then enter main chat."""
         self.notify("Protocol Monk TUI Ready", severity="information")
-        self.push_screen(MainChatScreen())
+
+        skip_intro = os.getenv("PROTOCOL_MONK_SKIP_STARTUP", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if not skip_intro:
+            try:
+                await self.push_screen_wait(CinematicStartupScreen())
+            except Exception:
+                pass
 
         if not self.agent:
             self.notify("⚠️ No Agent Connected!", severity="error")
-        else:
-            # Kick a first status refresh so the bar isn't empty at startup
-            if self.textual_ui and hasattr(self.textual_ui, "_refresh_status"):
-                asyncio.create_task(self.textual_ui._refresh_status())
+        self._enter_main_chat()
+
+    def _enter_main_chat(self) -> None:
+        """Switch to the main chat screen exactly once."""
+        if self._main_screen_shown:
+            return
+        self._main_screen_shown = True
+        self.push_screen(MainChatScreen())
+
+        # Kick a first status refresh so the bar isn't empty at startup
+        if self.textual_ui and hasattr(self.textual_ui, "_refresh_status"):
+            asyncio.create_task(self.textual_ui._refresh_status())
 
     # --- 1. CRITICAL FIX: MODAL WAITER ---
     async def push_screen_wait(self, screen: Screen) -> Any:

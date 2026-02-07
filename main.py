@@ -179,11 +179,12 @@ Use /help for command list. /quit to quit."""
         from ui.textual.interface import TextualUI
 
         self.tui_app = ProtocolMonkApp()
+        self.tui_app.event_bus = self.event_bus
 
         # Wire up the bridge
         # Note: TextualUI likely needs updates to fully utilize AgentService events
         # but passing the service instance maintains compatibility for now.
-        ui_bridge = TextualUI(self.tui_app)
+        ui_bridge = TextualUI(self.tui_app, event_bus=self.event_bus)
         self.tui_app.textual_ui = ui_bridge
         self.tui_app.agent = self.agent_service  # Service replaces Agent
 
