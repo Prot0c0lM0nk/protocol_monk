@@ -1,6 +1,6 @@
 """
 ui/textual/screens/startup.py
-Cinematic startup screen for Protocol Monk TUI.
+Textual startup screen powered by a non-ANSI custom matrix harness.
 """
 
 from __future__ import annotations
@@ -8,233 +8,231 @@ from __future__ import annotations
 import asyncio
 import random
 import time
-from typing import Iterable
+from typing import Optional
 
-from rich.align import Align
-from rich.text import Text
 from textual.binding import Binding
 from textual.containers import Container, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
-# Startup art is defined locally so Textual startup has no dependency on Rich boot code.
-ART_HEBREW = r"""
- _                                                                                              
-| |____ _______ ________ __  __   _______ ________  ______ __________   __________ ______ ____  
-|____  |.  __  |.  ___  |  \/  | |____  .|.  ___  ||____  |.  ___  \ \ / /.  ___  |____  |  _ \ 
-    / / | |  | || |   | | |\/| |      | | | |   | |     | || |   | |  V / | |   | |    | | |_) |
-   / /  | | _| || |___| | |  | |      | | | |___| |_____| || |___| | |\ \ | |___| |    | |  __/ 
-  /_/   |_||___||_______|_|  |_|      | | |_______/________/_______|_| \_\|_______|    |_|_|     
-                                      |_|                                                       
-"""
+from ui.custom_matrix import CHAOS_CHARS, ILLUMINATION_CHARS, PRAYER_CHARS
 
-ART_GREEK = r"""
- _______                            __       __   __                 
-(   _   )                           \ \     |  \ /  |                
- | | | | ___   ___ ___ _____   _____ \ \    |   v   | ___  _  ___  __
- | | | |/ _ \ / _ (   ) _ \ \ / / _ \ > \   | |\_/| |/ _ \| |/ / |/ /
- | | | | |_) | (_) ) ( (_) ) v ( (_) ) ^ \  | |   | ( (_) ) / /|   < 
- |_| |_|  __/ \___/ \_)___/ > < \___/_/ \_\ |_|   |_|\___/|__/ |_|\_\
-       | |                 / ^ \                                     
-       |_|                /_/ \_\                                    
-"""
 
-ART_RUSSIAN = r"""
-##### ####   ###  #####  ###  #   #  ###  #####     #   #  ###  #   # #   # 
-#   # #   # #   #   #   #   # #   # #   #  #  #     ## ## #   # #   # #  #  
-#   # ####  #   #   #   #   #  #### #   #  #  #     # # # #   # ##### ###   
-#   # #     #   #   #   #   #     # #   #  #  #     #   # #   # #   # #  #  
-#   # #      ###    #    ###      #  ###  #   #     #   #  ###  #   # #   # 
-"""
+class MatrixHarness:
+    """Generate matrix-style frames without ANSI escapes."""
 
-ART_FINAL = r"""
-▗▄▄▖  ▄▄▄ ▄▄▄     ■   ▄▄▄  ▗▞▀▘ ▄▄▄  █     ▗▖  ▗▖ ▄▄▄  ▄▄▄▄  █  ▄ 
-▐▌ ▐▌█   █   █ ▗▄▟▙▄▖█   █ ▝▚▄▖█   █ █     ▐▛▚▞▜▌█   █ █   █ █▄▀  
-▐▛▀▘ █   ▀▄▄▄▀   ▐▌  ▀▄▄▄▀     ▀▄▄▄▀ █     ▐▌  ▐▌▀▄▄▄▀ █   █ █ ▀▄ 
-▐▌               ▐▌                  █     ▐▌  ▐▌            █  █ 
-                 ▐▌                                               
-"""
+    def __init__(self, width: int, height: int) -> None:
+        self.width = max(20, width)
+        self.height = max(6, height)
+        self._drops: list[dict] = []
+        self._reset_drops()
+
+    def resize(self, width: int, height: int) -> None:
+        width = max(20, width)
+        height = max(6, height)
+        if width == self.width and height == self.height:
+            return
+        self.width = width
+        self.height = height
+        self._reset_drops()
+
+    def _reset_drops(self) -> None:
+        self._drops = []
+        for _ in range(self.width):
+            self._drops.append(
+                {
+                    "head": random.randint(-self.height, 0),
+                    "length": random.randint(4, 14),
+                    "speed": random.randint(1, 3),
+                    "tick": random.randint(0, 2),
+                }
+            )
+
+    def _pick_char(self, progress: float) -> str:
+        if progress < 0.35:
+            char_set = CHAOS_CHARS
+        elif progress < 0.75:
+            char_set = ILLUMINATION_CHARS
+        else:
+            char_set = PRAYER_CHARS
+        return random.choice(char_set)
+
+    def _overlay_title(self, grid: list[list[str]], progress: float) -> None:
+        if self.height < 3:
+            return
+
+        title = "PROTOCOL.MONK"
+        subtitle = "Textual Matrix Bootstrap"
+        reveal = 0.0 if progress < 0.35 else min(1.0, (progress - 0.35) / 0.6)
+        reveal_count = int(len(title) * reveal)
+
+        title_line = list(" " * len(title))
+        for idx, char in enumerate(title):
+            if idx < reveal_count:
+                title_line[idx] = char
+            elif char != " " and random.random() < 0.18:
+                title_line[idx] = self._pick_char(progress)
+
+        title_text = "".join(title_line)
+        start_col = max(0, (self.width - len(title_text)) // 2)
+        title_row = self.height // 2 - 1
+        if 0 <= title_row < self.height:
+            for idx, char in enumerate(title_text):
+                col = start_col + idx
+                if 0 <= col < self.width and char != " ":
+                    grid[title_row][col] = char
+
+        if reveal >= 0.65:
+            sub_start = max(0, (self.width - len(subtitle)) // 2)
+            sub_row = title_row + 2
+            if 0 <= sub_row < self.height:
+                for idx, char in enumerate(subtitle):
+                    col = sub_start + idx
+                    if 0 <= col < self.width and char != " ":
+                        grid[sub_row][col] = char
+
+    def step(self, progress: float) -> str:
+        grid = [[" " for _ in range(self.width)] for _ in range(self.height)]
+
+        for col, drop in enumerate(self._drops):
+            drop["tick"] += 1
+            if drop["tick"] >= drop["speed"]:
+                drop["tick"] = 0
+                drop["head"] += 1
+
+            if drop["head"] - drop["length"] > self.height + random.randint(0, 6):
+                drop["head"] = random.randint(-self.height, 0)
+                drop["length"] = random.randint(4, 14)
+                drop["speed"] = random.randint(1, 3)
+
+            for tail in range(drop["length"]):
+                row = drop["head"] - tail
+                if 0 <= row < self.height:
+                    grid[row][col] = self._pick_char(progress)
+
+        self._overlay_title(grid, progress)
+        return "\n".join("".join(line) for line in grid)
 
 
 class CinematicStartupScreen(Screen[bool]):
-    """Non-blocking cinematic intro before entering the main chat screen."""
+    """Matrix startup that runs while the agent initializes in the background."""
 
     BINDINGS = [
         Binding("enter", "skip", "Skip Intro", show=False),
         Binding("escape", "skip", "Skip Intro", show=False),
     ]
 
-    _RAIN_CHARS = "░▒▓█▌▐╱╲╳"
-    _RARE_GLYPHS = "☦†✠"
-
-    _PHASES = [
-        (ART_HEBREW, "DECODING ANCIENT PROTOCOLS...", "red"),
-        (ART_GREEK, "TRANSMITTING BYZANTINE WISDOM...", "yellow"),
-        (ART_RUSSIAN, "ESTABLISHING MONASTIC LINK...", "cyan"),
-        (ART_FINAL, "ORTHODOX PROTOCOL v1.0 INITIALIZED", "green"),
-    ]
-
-    def __init__(self, min_runtime: float = 4.5) -> None:
+    def __init__(
+        self,
+        ready_task: Optional[asyncio.Task] = None,
+        min_runtime: float = 4.0,
+    ) -> None:
         super().__init__()
+        self._ready_task = ready_task
         self._min_runtime = min_runtime
-        self._started_at = 0.0
-        self._rain_lines: list[str] = []
-        self._rain_timer = None
-        self._sequence_task: asyncio.Task | None = None
+        self._start_time = 0.0
+        self._skip_requested = False
         self._completed = False
+        self._harness: Optional[MatrixHarness] = None
+        self._frame_timer = None
+        self._sequence_task: Optional[asyncio.Task] = None
 
     def compose(self):
         with Container(id="startup-root"):
-            yield Static("", id="startup-atmosphere")
             with Vertical(id="startup-panel"):
-                yield Static("PROTOCOL MONK", id="startup-title")
-                yield Static("Textual Interface Initialization", id="startup-subtitle")
-                yield Static("", id="startup-art")
+                yield Static("", id="startup-matrix")
                 yield Static("", id="startup-status")
                 yield Static("", id="startup-progress")
-                yield Static("Press Enter to skip", id="startup-hint")
+                yield Static("Press Enter to skip intro", id="startup-hint")
 
     def on_mount(self) -> None:
-        self._started_at = time.perf_counter()
-        self._seed_rain()
-        self._rain_timer = self.set_interval(0.09, self._tick_rain)
+        self._start_time = time.perf_counter()
+        self._init_harness()
+        self._frame_timer = self.set_interval(0.06, self._tick_frame)
         self._sequence_task = asyncio.create_task(self._run_sequence())
+
+    def _init_harness(self) -> None:
+        matrix = self.query_one("#startup-matrix", Static)
+        width = max(30, matrix.size.width - 4)
+        height = max(8, matrix.size.height - 2)
+        if self._harness is None:
+            self._harness = MatrixHarness(width, height)
+        else:
+            self._harness.resize(width, height)
+
+    def _tick_frame(self) -> None:
+        if not self.is_mounted or self._harness is None:
+            return
+        elapsed = time.perf_counter() - self._start_time
+        target_runtime = 0.0 if self._skip_requested else self._min_runtime
+        progress = 1.0 if target_runtime == 0 else min(1.0, elapsed / target_runtime)
+        frame = self._harness.step(progress)
+        self.query_one("#startup-matrix", Static).update(frame)
 
     async def _run_sequence(self) -> None:
         try:
-            phase_count = len(self._PHASES)
-            for idx, (art, status_text, color) in enumerate(self._PHASES):
-                await self._animate_phase(
-                    art=art,
-                    status_text=status_text,
-                    color=color,
-                    phase_idx=idx,
-                    total_phases=phase_count,
+            while True:
+                elapsed = time.perf_counter() - self._start_time
+                target_runtime = 0.0 if self._skip_requested else self._min_runtime
+                progress = (
+                    1.0 if target_runtime == 0 else min(1.0, elapsed / target_runtime)
                 )
-                await asyncio.sleep(0.14)
+                ready = self._ready_task is None or self._ready_task.done()
 
-            await self._respect_min_runtime()
+                self.query_one("#startup-status", Static).update(
+                    self._status_line(progress, ready)
+                )
+                self.query_one("#startup-progress", Static).update(
+                    self._progress_line(progress, ready)
+                )
+
+                if progress >= 1.0 and ready:
+                    break
+                await asyncio.sleep(0.06)
+
+            if self._ready_task and self._ready_task.done():
+                try:
+                    await self._ready_task
+                except Exception:
+                    pass
+
         except asyncio.CancelledError:
             pass
         finally:
             self._finish()
 
-    async def _animate_phase(
-        self,
-        art: str,
-        status_text: str,
-        color: str,
-        phase_idx: int,
-        total_phases: int,
-    ) -> None:
-        self.query_one("#startup-status", Static).update(status_text)
-        lines = art.strip("\n").splitlines()
-        frame_count = 16 if phase_idx == total_phases - 1 else 20
+    def _status_line(self, progress: float, ready: bool) -> str:
+        if self._ready_task and self._ready_task.done():
+            try:
+                self._ready_task.result()
+            except Exception:
+                return "Agent initialization failed. Starting interface with warnings."
 
-        for frame in range(frame_count + 1):
-            progress = frame / frame_count
-            ratio = (phase_idx + progress) / total_phases
-            shown_art = self._progressive_reveal(lines, progress)
-            art_text = Text(shown_art, style=f"bold {color}")
-            self.query_one("#startup-art", Static).update(Align.center(art_text))
-            self.query_one("#startup-subtitle", Static).update(
-                f"Phase {phase_idx + 1}/{total_phases}"
-            )
-            self.query_one("#startup-progress", Static).update(
-                self._render_progress_bar(ratio)
-            )
-            await asyncio.sleep(0.05 if phase_idx < total_phases - 1 else 0.06)
+        if not ready and progress < 0.35:
+            return "Calibrating matrix harness..."
+        if not ready:
+            return "Agent service initializing in background..."
+        if ready and progress < 1.0:
+            return "Agent ready. Finalizing terminal handshake..."
+        return "Agent online. Entering chat."
 
-    def _progressive_reveal(self, lines: Iterable[str], progress: float) -> str:
-        materialized_lines = list(lines)
-        total_chars = sum(len(line) for line in materialized_lines)
-        visible_chars = int(total_chars * progress)
-        built: list[str] = []
-        shown = 0
-
-        for line in materialized_lines:
-            line_len = len(line)
-            if shown >= visible_chars:
-                built.append(" " * line_len)
-            elif shown + line_len <= visible_chars:
-                built.append(self._add_flicker(line, phase="full"))
-                shown += line_len
-            else:
-                visible_in_line = visible_chars - shown
-                visible = self._add_flicker(line[:visible_in_line], phase="edge")
-                hidden = " " * (line_len - visible_in_line)
-                built.append(visible + hidden)
-                shown = visible_chars
-
-        return "\n".join(built)
-
-    def _add_flicker(self, text: str, phase: str) -> str:
-        if not text.strip():
-            return text
-        chance = 0.025 if phase == "full" else 0.08
-        out = []
-        for char in text:
-            if char != " " and random.random() < chance:
-                out.append(random.choice(self._RAIN_CHARS))
-            else:
-                out.append(char)
-        return "".join(out)
-
-    def _render_progress_bar(self, ratio: float, width: int = 34) -> Text:
-        ratio = max(0.0, min(1.0, ratio))
-        filled = int(width * ratio)
-        empty = width - filled
-        pct = int(ratio * 100)
-
-        bar = Text()
-        bar.append("[" , style="bold #7da9f8")
-        bar.append("█" * filled, style="bold #7da9f8")
-        bar.append("░" * empty, style="#305080")
-        bar.append("]", style="bold #7da9f8")
-        bar.append(f" {pct:>3}% ", style="bold #9ec6ff")
-        return bar
-
-    def _seed_rain(self) -> None:
-        width = max(self.size.width - 8, 40)
-        self._rain_lines = [self._make_rain_line(width) for _ in range(6)]
-        self.query_one("#startup-atmosphere", Static).update("\n".join(self._rain_lines))
-
-    def _tick_rain(self) -> None:
-        if not self.is_mounted:
-            return
-        width = max(self.size.width - 8, 40)
-        self._rain_lines.pop(0)
-        self._rain_lines.append(self._make_rain_line(width))
-        self.query_one("#startup-atmosphere", Static).update("\n".join(self._rain_lines))
-
-    def _make_rain_line(self, width: int) -> str:
-        line = []
-        for _ in range(width):
-            roll = random.random()
-            if roll < 0.32:
-                line.append(random.choice(self._RAIN_CHARS))
-            elif roll < 0.34:
-                line.append(random.choice(self._RARE_GLYPHS))
-            else:
-                line.append(" ")
-        return "".join(line)
-
-    async def _respect_min_runtime(self) -> None:
-        elapsed = time.perf_counter() - self._started_at
-        remaining = self._min_runtime - elapsed
-        if remaining > 0:
-            await asyncio.sleep(remaining)
+    def _progress_line(self, progress: float, ready: bool, width: int = 34) -> str:
+        fill = int(progress * width)
+        bar = "█" * fill + "░" * (width - fill)
+        percent = int(progress * 100)
+        init_state = "READY" if ready else "LOADING"
+        return f"[{bar}] {percent:>3}%  AGENT:{init_state}"
 
     def action_skip(self) -> None:
-        if self._sequence_task and not self._sequence_task.done():
-            self._sequence_task.cancel()
+        self._skip_requested = True
+        self.query_one("#startup-hint", Static).update("Skip requested...")
 
     def _finish(self) -> None:
         if self._completed:
             return
         self._completed = True
-        if self._rain_timer is not None:
-            self._rain_timer.stop()
+        if self._frame_timer is not None:
+            self._frame_timer.stop()
         try:
             self.dismiss(True)
         except Exception:

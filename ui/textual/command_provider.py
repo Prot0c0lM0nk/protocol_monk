@@ -20,6 +20,7 @@ class AgentCommandProvider(Provider):
     DATA = [
         # -- Real Agent Actions --
         ("Quit Protocol Monk", "action_quit", "Exit the application gracefully"),
+        ("Refresh Status", "action_status", "Refresh status bar metrics"),
         ("Clear Context", "action_clear", "Reset conversation memory"),
         ("Switch Model", "action_model", "Switch the AI model"),
         ("Switch Provider", "action_provider", "Switch between Ollama/OpenRouter"),
@@ -93,6 +94,17 @@ class AgentCommandProvider(Provider):
     async def action_clear(self):
         await self._inject_command("/clear")
 
+    async def action_status(self):
+        if (
+            hasattr(self.app, "textual_ui")
+            and self.app.textual_ui
+            and hasattr(self.app.textual_ui, "_refresh_status")
+        ):
+            asyncio.create_task(self.app.textual_ui._refresh_status())
+            self.app.notify("Status bar refreshed")
+        else:
+            self.app.notify("Status bar unavailable", severity="warning")
+
     async def action_model(self):
         await self._inject_command("/model")
 
@@ -103,31 +115,35 @@ class AgentCommandProvider(Provider):
 
     async def test_error(self):
         bus = getattr(self.app, "event_bus", None) or get_event_bus()
-        await bus.emit(
-            AgentEvents.ERROR.value,
-            {
-                "message": "Manual Test: Critical Reactor Failure detected!",
-                "context": "test_suite",
-            },
+        asyncio.create_task(
+            bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": "Manual Test: Critical Reactor Failure detected!",
+                    "context": "test_suite",
+                },
+            )
         )
 
     async def test_info(self):
         bus = getattr(self.app, "event_bus", None) or get_event_bus()
-        await bus.emit(
-            AgentEvents.INFO.value,
-            {
-                "message": "Manual Test: Systems operating within normal parameters.",
-                "context": "test_suite",
-            },
+        asyncio.create_task(
+            bus.emit(
+                AgentEvents.INFO.value,
+                {
+                    "message": "Manual Test: Systems operating within normal parameters.",
+                    "context": "test_suite",
+                },
+            )
         )
 
     async def test_thinking_on(self):
         bus = getattr(self.app, "event_bus", None) or get_event_bus()
-        await bus.emit(AgentEvents.THINKING_STARTED.value, {})
+        asyncio.create_task(bus.emit(AgentEvents.THINKING_STARTED.value, {}))
 
     async def test_thinking_off(self):
         bus = getattr(self.app, "event_bus", None) or get_event_bus()
-        await bus.emit(AgentEvents.THINKING_STOPPED.value, {})
+        asyncio.create_task(bus.emit(AgentEvents.THINKING_STOPPED.value, {}))
 
     async def test_tool_confirm(self):
         from ui.textual.screens.modals.tool_confirm import ToolConfirmModal
