@@ -81,7 +81,10 @@ class TextualUI(UI):
     async def _refresh_status(self):
         """Pull fresh stats from agent and push to UI."""
         if hasattr(self.app, "agent") and self.app.agent:
-            stats = await self.app.agent.get_status()
+            try:
+                stats = await self.app.agent.get_status()
+            except Exception:
+                return
             stats["working_dir"] = getattr(self.app.agent, "working_dir", "")
             self.app.post_message(AgentStatusUpdate(stats))
 

@@ -54,6 +54,7 @@ class Application:
         self.tui_app = None
         self.running = False
         self._stop_task = None
+        self._agent_init_task = None
 
     async def start(self):
         """Start the application."""
@@ -95,14 +96,15 @@ class Application:
                 event_bus=self.event_bus,
             )
 
-            await self.agent_service.async_initialize()
-
             # 4. Initialize UI (The Driver) based on mode
             if self.ui_mode == "textual":
                 await self._start_textual_ui()
-            elif self.ui_mode == "rich":
-                await self._start_rich_ui()
             else:
+                await self.agent_service.async_initialize()
+
+            if self.ui_mode == "rich":
+                await self._start_rich_ui()
+            elif self.ui_mode == "plain":
                 await self._start_plain_ui()
 
         except BootstrapError as e:
@@ -178,8 +180,12 @@ Use /help for command list. /quit to quit."""
         from ui.textual.app import ProtocolMonkApp
         from ui.textual.interface import TextualUI
 
+        # Agent initializes in background while startup animation runs.
+        self._agent_init_task = asyncio.create_task(self.agent_service.async_initialize())
+
         self.tui_app = ProtocolMonkApp()
         self.tui_app.event_bus = self.event_bus
+        self.tui_app.agent_ready_task = self._agent_init_task
 
         # Wire up the bridge
         # Note: TextualUI likely needs updates to fully utilize AgentService events
@@ -202,6 +208,13 @@ Use /help for command list. /quit to quit."""
             await self.tui_app.exit()
 
         # Stop Service
+        if self._agent_init_task and not self._agent_init_task.done():
+            self._agent_init_task.cancel()
+            try:
+                await self._agent_init_task
+            except BaseException:
+                pass
+
         if self.agent_service:
             try:
                 await self.agent_service.shutdown()

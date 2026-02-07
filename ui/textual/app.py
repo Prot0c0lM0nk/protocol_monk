@@ -6,7 +6,7 @@ Refactored for Event Bubbling and Modal Waiting.
 
 import asyncio
 import os
-from typing import Any
+from typing import Any, Optional
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -50,6 +50,7 @@ class ProtocolMonkApp(App):
         super().__init__(**kwargs)
         self.textual_ui = None
         self.agent = None  # Injected by main.py
+        self.agent_ready_task: Optional[asyncio.Task] = None  # Injected by main.py
         self.event_bus = None  # Injected by main.py
         self._input_future = None  # The bridge for user input
         self._main_screen_shown = False
@@ -74,13 +75,26 @@ class ProtocolMonkApp(App):
         }
         if not skip_intro:
             try:
-                await self.push_screen_wait(CinematicStartupScreen())
+                await self.push_screen_wait(
+                    CinematicStartupScreen(ready_task=self.agent_ready_task)
+                )
             except Exception:
                 pass
+
+        await self._wait_for_agent_ready()
 
         if not self.agent:
             self.notify("⚠️ No Agent Connected!", severity="error")
         self._enter_main_chat()
+
+    async def _wait_for_agent_ready(self) -> None:
+        """Ensure the agent service is initialized before entering chat."""
+        if not self.agent_ready_task:
+            return
+        try:
+            await self.agent_ready_task
+        except Exception as error:
+            self.notify(f"⚠️ Agent init failed: {error}", severity="error")
 
     def _enter_main_chat(self) -> None:
         """Switch to the main chat screen exactly once."""
@@ -126,6 +140,19 @@ class ProtocolMonkApp(App):
         This runs on the UI thread.
         """
         user_text = event.value
+        stripped_text = user_text.strip()
+
+        # In Textual, /status is a UI command that refreshes the status bar.
+        if (
+            stripped_text.lower() == "/status"
+            and not (self._input_future and not self._input_future.done())
+        ):
+            if self.textual_ui and hasattr(self.textual_ui, "_refresh_status"):
+                asyncio.create_task(self.textual_ui._refresh_status())
+                self.notify("Status bar refreshed", severity="information")
+            else:
+                self.notify("Status bar unavailable", severity="warning")
+            return
 
         # 1. Show the user's message immediately (Optimistic UI)
         if hasattr(self.screen, "add_user_message"):

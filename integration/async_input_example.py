@@ -64,12 +64,12 @@ async def run_with_async_input(
         ui._async_adapter = async_adapter
 
     elif ui_type == "textual":
-        from ui.textual.app import ProtocolMonkChat
+        from ui.textual.app import ProtocolMonkApp
 
-        ui = ProtocolMonkChat()
+        ui = ProtocolMonkApp()
         # Create async adapter
         async_adapter = TextualUIAsyncAdapter(ui)
-        # This would need to be integrated into the ProtocolMonkChat class
+        # This would need to be integrated into the ProtocolMonkApp class
         ui._async_adapter = async_adapter
 
     else:
