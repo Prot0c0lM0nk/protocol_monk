@@ -20,7 +20,6 @@ from rich import box
 from ui.base import ToolResult
 from .styles import console, create_monk_panel
 from ui.common import render_shared_error
-from ui.boot import run_boot_sequence
 
 
 class RichRenderer:
@@ -93,9 +92,14 @@ class RichRenderer:
     def render_banner(self, greeting: str = ""):
         self.end_streaming()
 
-        # Run the animated boot sequence
-        # This will block for about 3-4 seconds while the animation plays
-        run_boot_sequence(console)
+        panel = Panel(
+            Align.center(Text("PROTOCOL MONK", style="bold monk.border")),
+            border_style="monk.border",
+            box=box.DOUBLE,
+            padding=(2, 4),
+        )
+        console.print(panel)
+        console.print()
 
         # Optional: Print the status block below the banner if provided
         if greeting:
