@@ -83,9 +83,13 @@ class TextualUI(UI):
         if hasattr(self.app, "agent") and self.app.agent:
             try:
                 stats = await self.app.agent.get_status()
-            except Exception:
+            except Exception as error:
+                self.app.post_message(
+                    AgentSystemMessage(f"Status refresh failed: {error}", type="error")
+                )
                 return
             stats["working_dir"] = getattr(self.app.agent, "working_dir", "")
+            stats["status"] = "Ready"
             self.app.post_message(AgentStatusUpdate(stats))
 
     async def _on_tool_result(self, data: Dict[str, Any]):

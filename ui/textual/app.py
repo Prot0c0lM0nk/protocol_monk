@@ -183,6 +183,11 @@ class ProtocolMonkApp(App):
     def on_agent_thinking_status(self, message: AgentThinkingStatus) -> None:
         if hasattr(self.screen, "show_thinking"):
             self.screen.show_thinking(message.is_thinking)
+        try:
+            status_bar = self.query_one("StatusBar")
+            status_bar.status = "Thinking" if message.is_thinking else "Ready"
+        except Exception:
+            pass
 
     def on_agent_tool_result(self, message: AgentToolResult) -> None:
         if hasattr(self.screen, "add_tool_result"):
