@@ -198,9 +198,13 @@ class RichUI(UI):
         self.renderer.render_tool_confirmation(action, params)
 
         # Block for user confirmation
-        approved = await self.input_handler.confirm(
-            "Execute this action?", default=False
-        )
+        self.renderer.lock_for_input()
+        try:
+            approved = await self.input_handler.confirm(
+                "Execute this action?", default=False
+            )
+        finally:
+            self.renderer.unlock_for_input()
 
         # Emit response
         await self.event_bus.emit(
