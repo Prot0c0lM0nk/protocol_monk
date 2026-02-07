@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import random
 import time
+import unicodedata
 from typing import Optional
 
 from textual.binding import Binding
@@ -16,6 +17,25 @@ from textual.screen import Screen
 from textual.widgets import Static
 
 from ui.custom_matrix import CHAOS_CHARS, ILLUMINATION_CHARS, PRAYER_CHARS
+
+
+def _sanitize_charset(chars: str) -> str:
+    """Keep printable single-cell glyphs to avoid Textual layout wrapping."""
+    clean: list[str] = []
+    for char in chars:
+        if not char.isprintable():
+            continue
+        if unicodedata.combining(char):
+            continue
+        if unicodedata.east_asian_width(char) in {"W", "F"}:
+            continue
+        clean.append(char)
+    return "".join(clean)
+
+
+CHAOS_POOL = _sanitize_charset(CHAOS_CHARS) or "01/\\|-_"
+ILLUMINATION_POOL = _sanitize_charset(ILLUMINATION_CHARS) or "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+PRAYER_POOL = _sanitize_charset(PRAYER_CHARS) or "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 
 class MatrixHarness:
@@ -41,7 +61,7 @@ class MatrixHarness:
         for _ in range(self.width):
             self._drops.append(
                 {
-                    "head": random.randint(-self.height, 0),
+                    "head": random.randint(0, self.height),
                     "length": random.randint(4, 14),
                     "speed": random.randint(1, 3),
                     "tick": random.randint(0, 2),
@@ -50,11 +70,11 @@ class MatrixHarness:
 
     def _pick_char(self, progress: float) -> str:
         if progress < 0.35:
-            char_set = CHAOS_CHARS
+            char_set = CHAOS_POOL
         elif progress < 0.75:
-            char_set = ILLUMINATION_CHARS
+            char_set = ILLUMINATION_POOL
         else:
-            char_set = PRAYER_CHARS
+            char_set = PRAYER_POOL
         return random.choice(char_set)
 
     def _overlay_title(self, grid: list[list[str]], progress: float) -> None:
@@ -62,7 +82,7 @@ class MatrixHarness:
             return
 
         title = "PROTOCOL.MONK"
-        subtitle = "Textual Matrix Bootstrap"
+        subtitle = "Booting up. The Kingdom is at hand. Delete the false world."
         reveal = 0.0 if progress < 0.35 else min(1.0, (progress - 0.35) / 0.6)
         reveal_count = int(len(title) * reveal)
 
@@ -101,7 +121,7 @@ class MatrixHarness:
                 drop["head"] += 1
 
             if drop["head"] - drop["length"] > self.height + random.randint(0, 6):
-                drop["head"] = random.randint(-self.height, 0)
+                drop["head"] = random.randint(-self.height // 3, 0)
                 drop["length"] = random.randint(4, 14)
                 drop["speed"] = random.randint(1, 3)
 
@@ -152,17 +172,31 @@ class CinematicStartupScreen(Screen[bool]):
         self._sequence_task = asyncio.create_task(self._run_sequence())
 
     def _init_harness(self) -> None:
-        matrix = self.query_one("#startup-matrix", Static)
-        width = max(30, matrix.size.width - 4)
-        height = max(8, matrix.size.height - 2)
+        width, height = self._measure_matrix_area()
         if self._harness is None:
             self._harness = MatrixHarness(width, height)
         else:
             self._harness.resize(width, height)
 
+    def _measure_matrix_area(self) -> tuple[int, int]:
+        matrix = self.query_one("#startup-matrix", Static)
+        # size can be very small at mount; keep updating until layout settles.
+        width = matrix.size.width
+        height = matrix.size.height
+
+        if width < 8:
+            width = self.size.width - 4
+        if height < 4:
+            height = self.size.height - 8
+
+        return max(30, width - 2), max(8, height - 2)
+
     def _tick_frame(self) -> None:
         if not self.is_mounted or self._harness is None:
             return
+        width, height = self._measure_matrix_area()
+        self._harness.resize(width, height)
+
         elapsed = time.perf_counter() - self._start_time
         target_runtime = 0.0 if self._skip_requested else self._min_runtime
         progress = 1.0 if target_runtime == 0 else min(1.0, elapsed / target_runtime)

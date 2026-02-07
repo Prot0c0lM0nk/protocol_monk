@@ -37,7 +37,50 @@ InputBar > Button:hover {
 StatusBar {
     dock: top;
     width: 100%;
-    height: auto;
+    height: 1;
     padding: 0 1;
-    background: $background;
+    layout: horizontal;
+    background: #0f1722;
+    color: #d5e6f8;
+}
+
+StatusBar > .separator {
+    color: #5e7ea1;
+}
+
+StatusBar > .metric-label {
+    color: #8ab5da;
+}
+
+StatusBar > .spacer {
+    width: 1fr;
+}
+
+#app-title {
+    color: #9dd7ff;
+    text-style: bold;
+}
+
+#provider-label,
+#model-label,
+#messages-label,
+#token-label,
+#working-dir-label {
+    color: #d5e6f8;
+}
+
+#status-label {
+    color: #7fd7a8;
+}
+
+.status-thinking {
+    color: #f6e58d;
+}
+
+.status-error {
+    color: #ff8e8e;
+}
+
+.status-idle {
+    color: #7fd7a8;
 }
