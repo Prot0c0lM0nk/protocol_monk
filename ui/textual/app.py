@@ -41,6 +41,7 @@ class ProtocolMonkApp(App):
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", show=False),
         Binding("ctrl+p", "command_palette", "Commands"),
+        Binding("ctrl+o", "open_detail", "Open Detail", show=False),
         Binding("f1", "show_help", "Help"),
     ]
 
@@ -178,7 +179,7 @@ class ProtocolMonkApp(App):
 
     def on_agent_stream_chunk(self, message: AgentStreamChunk) -> None:
         if hasattr(self.screen, "add_stream_chunk"):
-            self.screen.add_stream_chunk(message.chunk)
+            self.screen.add_stream_chunk(message.chunk, message.is_thinking)
 
     def on_agent_thinking_status(self, message: AgentThinkingStatus) -> None:
         if hasattr(self.screen, "show_thinking"):
@@ -212,3 +213,12 @@ class ProtocolMonkApp(App):
         elif message.type == "response_complete":
             if hasattr(self.screen, "finalize_response"):
                 self.screen.finalize_response()
+
+    def action_open_detail(self, detail_id: str = "") -> None:
+        """Open a detail modal for a chat item."""
+        if not hasattr(self.screen, "open_detail"):
+            self.notify("No detail viewer available on this screen.", severity="warning")
+            return
+
+        target_id = detail_id.strip() if isinstance(detail_id, str) else ""
+        self.screen.open_detail(target_id or None)

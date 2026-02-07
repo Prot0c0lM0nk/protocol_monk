@@ -32,11 +32,21 @@ UserMessage {
 ToolResultWidget {
     width: 100%;
     height: auto;
-    padding: 1 2;
+    padding: 0 1;
     margin-bottom: 1;
-    background: #07141d;
+    background: #061018;
     color: #d3eeff;
-    border: solid #00d7ff;
+    border: round #00b8d9;
+}
+
+ThinkingSummaryWidget {
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    background: #0d1117;
+    color: #d2d9e2;
+    border: round #5f7085;
 }
 
 ThinkingIndicator {

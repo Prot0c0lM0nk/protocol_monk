@@ -3,12 +3,17 @@ ui/textual/widgets/chat_area.py
 Chat area widget for Protocol Monk TUI
 """
 
-import asyncio
+import json
+from datetime import datetime
+from typing import Dict, Optional
 
+from rich.markup import escape
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
 from textual.widgets import Markdown, Static
-from textual import events
+
+from ..models import DetailRecord
+from ..screens.modals.detail_viewer import DetailViewerModal
 
 
 class UserMessage(Markdown):
@@ -30,7 +35,13 @@ class ThinkingIndicator(Static):
 
 
 class ToolResultWidget(Static):
-    """Tool result display widget."""
+    """Compact tool result bullet."""
+
+    pass
+
+
+class ThinkingSummaryWidget(Static):
+    """Compact summary bullet for hidden reasoning."""
 
     pass
 
@@ -40,9 +51,13 @@ class ChatArea(VerticalScroll):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._current_ai_message = None
-        self._current_ai_text = ""  # Track accumulated AI text
-        self._thinking_indicator = None
+        self._current_ai_message: Optional[AIMessage] = None
+        self._current_ai_text = ""
+        self._thinking_indicator: Optional[ThinkingIndicator] = None
+        self._current_thinking_text = ""
+        self._details: Dict[str, DetailRecord] = {}
+        self._detail_order: list[str] = []
+        self._detail_counter = 0
 
     def compose(self) -> ComposeResult:
         """Create the initial chat area content."""
@@ -68,8 +83,15 @@ class ChatArea(VerticalScroll):
         await self.mount(self._current_ai_message)
         self._current_ai_message.scroll_visible()
 
-    def add_stream_chunk(self, chunk: str) -> None:
+    def add_stream_chunk(self, chunk: str, is_thinking: bool = False) -> None:
         """Add a streaming chunk to the current AI message."""
+        if not chunk:
+            return
+
+        if is_thinking:
+            self._current_thinking_text += chunk
+            return
+
         if self._current_ai_message is None:
             # Start a new AI message if none exists
             self._current_ai_text = chunk
@@ -96,18 +118,131 @@ class ChatArea(VerticalScroll):
                 self._thinking_indicator = None
 
     def add_tool_result(self, tool_name: str, result) -> None:
-        """Add a tool result to the chat."""
+        """Add a compact tool result bullet with expandable detail."""
         success_icon = "✅" if result.success else "❌"
+        raw_output = str(getattr(result, "output", "") or "")
+        summary = self._summarize_text(raw_output) or "No output"
+        syntax_hint = self._infer_tool_syntax(tool_name)
+
+        detail_parts = [raw_output]
+        result_data = getattr(result, "data", None)
+        if isinstance(result_data, dict) and result_data:
+            detail_parts.extend(["", "Metadata:", json.dumps(result_data, indent=2)])
+
+        record = self.register_detail(
+            kind="tool_result",
+            title=f"Tool Result: {tool_name}",
+            summary=summary,
+            full_text="\n".join(detail_parts).strip(),
+            syntax_hint=syntax_hint,
+            tool_name=tool_name,
+        )
+        view_link = self._view_link(record.id)
         tool_widget = ToolResultWidget(
-            f"{success_icon} **{tool_name}**: {result.output}"
+            f"{success_icon} {escape(tool_name)} - {escape(summary)} {view_link}"
         )
         self.call_later(self.mount, tool_widget)
+        self.call_after_refresh(self.scroll_end, animate=False)
+
+    def register_detail(
+        self,
+        *,
+        kind: str,
+        title: str,
+        summary: str,
+        full_text: str,
+        syntax_hint: Optional[str] = None,
+        tool_name: Optional[str] = None,
+    ) -> DetailRecord:
+        """Register and return a session-scoped detail record."""
+        self._detail_counter += 1
+        record_id = f"d{self._detail_counter:04d}"
+        record = DetailRecord(
+            id=record_id,
+            kind=kind,
+            title=title,
+            summary=summary,
+            full_text=full_text,
+            syntax_hint=syntax_hint,
+            tool_name=tool_name,
+            created_at=datetime.now(),
+        )
+        self._details[record_id] = record
+        self._detail_order.append(record_id)
+        return record
+
+    def get_detail(self, detail_id: str) -> Optional[DetailRecord]:
+        """Get a detail record by ID."""
+        return self._details.get(detail_id)
+
+    def last_detail_id(self) -> Optional[str]:
+        """Return the most recently added detail ID."""
+        if not self._detail_order:
+            return None
+        return self._detail_order[-1]
+
+    def open_detail(self, detail_id: Optional[str] = None) -> None:
+        """Open the detail modal for a record."""
+        target_id = detail_id or self.last_detail_id()
+        if not target_id:
+            self.app.notify("No detail available.", severity="warning")
+            return
+
+        record = self._details.get(target_id)
+        if not record:
+            self.app.notify(f"Detail '{target_id}' not found.", severity="error")
+            return
+
+        self.app.push_screen(DetailViewerModal(record))
+
+    def _emit_thinking_summary(self) -> None:
+        """Store one hidden reasoning detail per assistant turn."""
+        full_text = self._current_thinking_text.strip()
+        if not full_text:
+            return
+
+        summary = f"Thinking captured ({len(full_text)} chars)"
+        record = self.register_detail(
+            kind="thinking",
+            title="Reasoning Detail",
+            summary=summary,
+            full_text=full_text,
+            syntax_hint=None,
+        )
+        bullet = ThinkingSummaryWidget(f"🧠 {escape(summary)} {self._view_link(record.id)}")
+        self.call_later(self.mount, bullet)
+        self.call_after_refresh(self.scroll_end, animate=False)
+
+    def _view_link(self, detail_id: str) -> str:
+        return f"[@click=app.open_detail('{detail_id}')]View[/]"
+
+    @staticmethod
+    def _summarize_text(text: str, max_len: int = 120) -> str:
+        stripped = text.strip()
+        if not stripped:
+            return ""
+        line = stripped.splitlines()[0]
+        if len(line) <= max_len:
+            return line
+        return f"{line[: max_len - 1]}..."
+
+    @staticmethod
+    def _infer_tool_syntax(tool_name: str) -> Optional[str]:
+        if tool_name in {"replace_lines", "delete_lines", "insert_in_file", "append_to_file"}:
+            return "diff"
+        if tool_name == "run_python":
+            return "python"
+        if tool_name in {"execute_command", "git_operation"}:
+            return "bash"
+        return None
 
     def finalize_response(self) -> None:
         """Finalize the current AI response."""
         # Hide thinking indicator
         self.show_thinking(False)
+        self._emit_thinking_summary()
 
         # Reset current AI message pointer and accumulated text
         self._current_ai_message = None
         self._current_ai_text = ""
+        self._current_thinking_text = ""

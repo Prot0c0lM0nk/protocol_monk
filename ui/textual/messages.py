@@ -11,8 +11,9 @@ from ui.base import ToolResult
 class AgentStreamChunk(Message):
     """A chunk of streaming text from the agent."""
 
-    def __init__(self, chunk: str):
+    def __init__(self, chunk: str, is_thinking: bool = False):
         self.chunk = chunk
+        self.is_thinking = is_thinking
         super().__init__()
 
 
