@@ -117,8 +117,8 @@ class BaseTool(ABC):
         """Return the tool's schema definition."""
 
     @abstractmethod
-    def execute(self, **kwargs) -> ToolResult:
-        """Execute the tool's main logic."""
+    async def execute(self, **kwargs) -> ToolResult:
+        """Execute the tool's main logic asynchronously."""
 
     def _is_safe_file_path(self, filepath: str) -> bool:
         """

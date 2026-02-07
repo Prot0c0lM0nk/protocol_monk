@@ -3,6 +3,7 @@
 Append to File Tool - Tool for appending content to the end of a file.
 """
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -54,9 +55,21 @@ class AppendToFileTool(BaseTool):
             required_params=["filepath"],
         )
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
-        Orchestrate the append operation.
+        Orchestrate the append operation asynchronously.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments (filepath, content, etc).
+
+        Returns:
+            ToolResult: The result of the append operation.
+        """
+        return await asyncio.to_thread(self._execute_sync, **kwargs)
+
+    def _execute_sync(self, **kwargs) -> ToolResult:
+        """
+        Synchronous core for append operation (runs in a worker thread).
 
         Args:
             **kwargs: Arbitrary keyword arguments (filepath, content, etc).

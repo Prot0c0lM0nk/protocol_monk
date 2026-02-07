@@ -240,7 +240,12 @@ class ToolRegistry:
             if asyncio.iscoroutinefunction(tool.execute):
                 result = await tool.execute(**kwargs)
             else:
-                result = await asyncio.to_thread(tool.execute, **kwargs)
+                self.logger.error(
+                    "Tool '%s' execute must be async (coroutine).", name
+                )
+                return ToolResult.internal_error(
+                    f"Tool '{name}' execute must be async (coroutine)."
+                )
 
             if self.agent_logger:
                 self.agent_logger.log_tool_result(name, kwargs, result)

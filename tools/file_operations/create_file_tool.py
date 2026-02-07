@@ -3,6 +3,7 @@
 Create File Tool - Tool for creating new files with content.
 """
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -52,9 +53,21 @@ class CreateFileTool(BaseTool):
             required_params=["filepath"],
         )
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
-        Orchestrate file creation.
+        Orchestrate file creation asynchronously.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments (filepath, content, etc).
+
+        Returns:
+            ToolResult: The result of the file creation operation.
+        """
+        return await asyncio.to_thread(self._execute_sync, **kwargs)
+
+    def _execute_sync(self, **kwargs) -> ToolResult:
+        """
+        Synchronous core for file creation (runs in a worker thread).
 
         Args:
             **kwargs: Arbitrary keyword arguments (filepath, content, etc).

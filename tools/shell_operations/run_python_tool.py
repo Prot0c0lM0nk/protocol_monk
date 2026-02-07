@@ -3,6 +3,7 @@
 Run Python Tool - Execute Python code by leveraging the ExecuteCommandTool.
 """
 
+import asyncio
 import logging
 import sys
 from pathlib import Path
@@ -45,9 +46,9 @@ class RunPythonTool(BaseTool):
             required_params=["script_content"],
         )
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
-        Orchestrate the python execution.
+        Orchestrate the python execution asynchronously.
 
         Args:
             **kwargs: Arbitrary keyword arguments (script_content, etc).
@@ -65,16 +66,18 @@ class RunPythonTool(BaseTool):
             )
 
         # 1. Write Script
-        file_path, error = self._write_temp_script(name, content)
+        file_path, error = await asyncio.to_thread(
+            self._write_temp_script, name, content
+        )
         if error:
             return error
 
         # 2. Execute Script
         try:
             # pylint: disable=unpacking-non-sequence
-            return self._run_script_execution(file_path, content)
+            return await self._run_script_execution(file_path, content)
         finally:
-            self._cleanup(file_path)
+            await asyncio.to_thread(self._cleanup, file_path)
 
     def _write_temp_script(
         self, name: str, content: str
@@ -106,7 +109,7 @@ class RunPythonTool(BaseTool):
             self.logger.error("Failed to write temp script: %s", e)
             return None, ToolResult.internal_error(f"❌ Failed to write script: {e}")
 
-    def _run_script_execution(
+    async def _run_script_execution(
         self, file_path: Path, original_content: str
     ) -> ToolResult:
         """
@@ -121,7 +124,7 @@ class RunPythonTool(BaseTool):
         """
         command = f"{sys.executable} {file_path.name}"
 
-        result = self.command_executor.execute(
+        result = await self.command_executor.execute(
             command=command, description="Executing temporary Python script."
         )
 

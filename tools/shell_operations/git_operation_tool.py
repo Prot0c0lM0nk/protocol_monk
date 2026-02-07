@@ -4,6 +4,8 @@ Git Operations Tool - Handle git commands for MonkCode Agent.
 Adapted from the original CodeAssistant class functionality.
 """
 
+import asyncio
+import contextlib
 import logging
 import subprocess
 from pathlib import Path
@@ -59,9 +61,9 @@ class GitOperationTool(BaseTool):
             required_params=["operation"],
         )
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
-        Orchestrate the git operation.
+        Orchestrate the git operation asynchronously.
 
         Args:
             **kwargs: Arbitrary keyword arguments (operation, etc).
@@ -81,7 +83,7 @@ class GitOperationTool(BaseTool):
         )
 
         # 3. Execute
-        return self._execute_git_command(operation, command)
+        return await self._execute_git_command_async(operation, command)
 
     def _validate_operation(
         self, operation: Optional[str]
@@ -130,33 +132,63 @@ class GitOperationTool(BaseTool):
 
         return command
 
-    def _execute_git_command(self, operation: str, command: List[str]) -> ToolResult:
+    async def _execute_git_command_async(
+        self, operation: str, command: List[str], timeout: int = DEFAULT_GIT_TIMEOUT
+    ) -> ToolResult:
         """
-        Run the git subprocess and format output.
+        Run the git subprocess asynchronously with output streaming.
 
         Args:
             operation: The name of the operation (for logging).
             command: The actual command list to execute.
+            timeout: Maximum execution time in seconds.
 
         Returns:
             ToolResult: The execution result.
         """
         try:
-            result = subprocess.run(
-                command,
-                shell=False,  # SECURITY: Prevent shell injection
-                cwd=self.working_dir,
-                capture_output=True,
-                text=True,
-                timeout=DEFAULT_GIT_TIMEOUT,
-                check=False,
-            )
-            return self._format_result(operation, command, result)
+            self.logger.debug("Starting git %s: %s", operation, " ".join(command))
 
-        except subprocess.TimeoutExpired:
-            return ToolResult.timeout(
-                f"⏰ Git {operation} timed out after " f"{DEFAULT_GIT_TIMEOUT} seconds"
+            # Create async subprocess
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                cwd=self.working_dir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+
+            self.logger.debug("Git process PID %s started: %s", process.pid, command)
+
+            # Always stream output to prevent buffer overflow deadlocks
+            stdout_task = asyncio.create_task(
+                self._stream_output(process.stdout, "STDOUT", self.logger)
+            )
+            stderr_task = asyncio.create_task(
+                self._stream_output(process.stderr, "STDERR", self.logger)
+            )
+
+            try:
+                await asyncio.wait_for(process.wait(), timeout=timeout)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                stdout_task.cancel()
+                stderr_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await stdout_task
+                    await stderr_task
+                return ToolResult.timeout(
+                    f"⏰ Git {operation} timed out after {timeout} seconds"
+                )
+
+            stdout_result, stderr_result = await asyncio.gather(
+                stdout_task, stderr_task
+            )
+
+            return self._format_result(
+                operation, command, process.returncode, stdout_result, stderr_result
+            )
+
         except FileNotFoundError:
             return ToolResult.command_failed(
                 "❌ 'git' command not found. Is Git installed?", exit_code=127
@@ -165,8 +197,33 @@ class GitOperationTool(BaseTool):
             self.logger.error("Git execution error: %s", e, exc_info=True)
             return ToolResult.internal_error(f"❌ Error executing git {operation}: {e}")
 
+    async def _stream_output(
+        self, stream, stream_name: str, logger
+    ) -> str:
+        """
+        Stream output from a subprocess pipe incrementally.
+
+        Args:
+            stream: The asyncio stream to read from.
+            stream_name: Name for logging (STDOUT/STDERR).
+            logger: Logger instance.
+
+        Returns:
+            str: All output collected from the stream.
+        """
+        output_lines = []
+        try:
+            async for line in stream:
+                line_str = line.decode("utf-8", errors="replace").rstrip()
+                output_lines.append(line_str)
+                logger.debug(f"Git {stream_name}: {line_str}")
+        except Exception as e:
+            logger.error("Error streaming %s: %s", stream_name, e)
+
+        return "\n".join(output_lines)
+
     def _format_result(
-        self, operation: str, command: List[str], result: subprocess.CompletedProcess
+        self, operation: str, command: List[str], return_code: int, stdout: str, stderr: str
     ) -> ToolResult:
         """
         Format success or failure output.
@@ -174,38 +231,40 @@ class GitOperationTool(BaseTool):
         Args:
             operation: The operation name.
             command: The executed command list.
-            result: The subprocess completion object.
+            return_code: The process exit code.
+            stdout: Captured stdout output.
+            stderr: Captured stderr output.
 
         Returns:
             ToolResult: The formatted result.
         """
-        output = self._build_output_string(result, operation)
-        status_icon = "✅" if result.returncode == 0 else "❌"
+        output = self._build_output_string(return_code, stdout, stderr, operation)
+        status_icon = "✅" if return_code == 0 else "❌"
 
-        # Note: ToolResult.command_failed does not accept 'data' in base.py,
-        # so we only attach data on success or handle it differently if needed.
-        if result.returncode == 0:
+        if return_code == 0:
             data = {
                 "operation": operation,
                 "command": " ".join(command),
-                "exit_code": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
+                "exit_code": return_code,
+                "stdout": stdout,
+                "stderr": stderr,
             }
             return ToolResult.success_result(f"{status_icon} {output}", data=data)
 
         return ToolResult.command_failed(
-            f"{status_icon} {output}", exit_code=result.returncode
+            f"{status_icon} {output}", exit_code=return_code
         )
 
     def _build_output_string(
-        self, result: subprocess.CompletedProcess, operation: str
+        self, return_code: int, stdout: str, stderr: str, operation: str
     ) -> str:
         """
         Helper to build the descriptive output string.
 
         Args:
-            result: The subprocess result.
+            return_code: The process exit code.
+            stdout: Captured stdout output.
+            stderr: Captured stderr output.
             operation: The operation name.
 
         Returns:
@@ -223,19 +282,19 @@ class GitOperationTool(BaseTool):
             "log": "📜 Commit history",
         }
 
-        if result.returncode == 0:
+        if return_code == 0:
             parts.append(headers.get(operation, f"Git {operation} completed"))
         else:
             parts.append(f"Git {operation} failed")
 
         # Standard output
-        if result.stdout:
-            parts.append(f"STDOUT:\n{result.stdout}")
-        if result.stderr:
-            parts.append(f"STDERR:\n{result.stderr}")
+        if stdout:
+            parts.append(f"STDOUT:\n{stdout}")
+        if stderr:
+            parts.append(f"STDERR:\n{stderr}")
 
         # Hints
-        if result.returncode == 128 and operation in ["push", "pull"]:
+        if return_code == 128 and operation in ["push", "pull"]:
             parts.append("💡 Hint: Exit code 128 often means authentication failed.")
 
         return "\n".join(parts)
