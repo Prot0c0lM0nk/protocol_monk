@@ -33,7 +33,11 @@ class ReadFileTool(BaseTool):
         """
         return ToolSchema(
             name="read_file",
-            description=("Read and display file contents, with optional line range."),
+            description=(
+                "Read and display file contents, with optional line range. "
+                "Prefer this for local files (including log files) instead of "
+                "shelling out with execute_command."
+            ),
             parameters={
                 "filepath": {
                     "type": "string",
