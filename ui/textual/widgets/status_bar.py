@@ -51,6 +51,21 @@ class StatusBar(Horizontal):
         yield Label("Dir:", classes="metric-label")
         yield Label(f"{self.working_dir}", id="working-dir-label")
 
+    def on_mount(self) -> None:
+        """Force an initial render so all labels are visible immediately."""
+        self._render_all()
+
+    def _render_all(self) -> None:
+        try:
+            self.query_one("#provider-label", Label).update(str(self.provider))
+            self.query_one("#model-label", Label).update(str(self.model_name))
+            self.query_one("#messages-label", Label).update(str(self.messages))
+            self.query_one("#token-label", Label).update(f"{self.tokens}/{self.limit}")
+            self.query_one("#status-label", Label).update(f"● {self.status}")
+            self.query_one("#working-dir-label", Label).update(str(self.working_dir))
+        except Exception:
+            pass
+
     def watch_status(self, new_status: str) -> None:
         """Update status indicator color."""
         try:
@@ -68,12 +83,14 @@ class StatusBar(Horizontal):
 
     def update_metrics(self, stats: dict) -> None:
         """Called by App to update display values."""
-        self.model_name = stats.get("current_model", "Unknown")
-        self.provider = stats.get("provider", "Unknown")
+        self.model_name = str(stats.get("current_model", "Unknown"))
+        self.provider = str(stats.get("provider", "Unknown"))
         self.tokens = f"{stats.get('estimated_tokens', 0):,}"
         self.limit = f"{stats.get('token_limit', 0):,}"
         self.messages = str(stats.get("conversation_length", 0))
-        self.working_dir = stats.get("working_dir", "")
+        self.working_dir = str(stats.get("working_dir", ""))
+        self.status = str(stats.get("status", "Ready"))
+        self._render_all()
 
     def watch_model_name(self, value: str) -> None:
         try:

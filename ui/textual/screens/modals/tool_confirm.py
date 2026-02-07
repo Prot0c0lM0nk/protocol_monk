@@ -3,12 +3,18 @@ ui/textual/screens/modals/tool_confirm.py
 Modal screen for confirming tool execution.
 """
 
+from pathlib import Path
+
+from rich.syntax import Syntax
+from rich.text import Text
+
 from textual.screen import ModalScreen
 from textual.app import ComposeResult
-from textual.containers import Grid, Vertical
+from textual.containers import Grid, Vertical, VerticalScroll
 from textual.widgets import Button, Label, Static
 from textual.binding import Binding
 
+from ...tool_preview import build_tool_preview
 
 class ToolConfirmModal(ModalScreen[bool]):
     """
@@ -25,26 +31,33 @@ class ToolConfirmModal(ModalScreen[bool]):
     #dialog {
         background: $surface;
         border: thick $primary;
-        width: 60;
-        height: auto;
-        padding: 2;
+        width: 90%;
+        height: 85%;
+        padding: 1 2;
     }
 
     #question {
-        text-align: center;
-        width: 100%;
-        margin-bottom: 1;
         text-style: bold;
+        margin-bottom: 1;
     }
 
-    #tool-details {
-        background: $background;
+    #summary {
+        color: #9aa3ad;
+        margin-bottom: 1;
+    }
+
+    #preview-scroll {
+        height: 1fr;
         border: solid $accent;
+        background: $background;
+        margin-bottom: 1;
         padding: 1;
-        margin-bottom: 2;
+    }
+
+    #preview-content {
+        background: $background;
         color: $text;
         height: auto;
-        max-height: 20;
     }
 
     #buttons {
@@ -74,17 +87,23 @@ class ToolConfirmModal(ModalScreen[bool]):
         super().__init__()
         self.tool_name = tool_data.get("tool", "Unknown Tool")
         self.tool_args = tool_data.get("args", {})
+        working_dir = tool_data.get("working_dir")
+        if isinstance(working_dir, Path):
+            self.working_dir = str(working_dir)
+        else:
+            self.working_dir = str(working_dir) if working_dir else None
 
-        # Format arguments for display
-        self.args_str = "\n".join(f"{k}: {v}" for k, v in self.tool_args.items())
+        preview = build_tool_preview(self.tool_name, self.tool_args, self.working_dir)
+        self.preview_summary = preview.summary
+        self.preview_text = preview.full_text
+        self.preview_syntax = preview.syntax_hint
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
-            yield Label("⚠️ Allow Tool Execution?", id="question")
-
-            # Display tool details
-            details = f"Tool: {self.tool_name}\n\nArguments:\n{self.args_str}"
-            yield Static(details, id="tool-details")
+            yield Label("Allow Tool Execution?", id="question")
+            yield Label(self.preview_summary, id="summary")
+            with VerticalScroll(id="preview-scroll"):
+                yield Static(self._render_preview(), id="preview-content")
 
             with Grid(id="buttons"):
                 yield Button("Deny (Esc)", variant="error", id="deny")
@@ -101,3 +120,19 @@ class ToolConfirmModal(ModalScreen[bool]):
 
     def action_deny(self) -> None:
         self.dismiss(False)
+
+    def _render_preview(self):
+        syntax_hint = (self.preview_syntax or "").lower()
+        lexer = None
+        if syntax_hint in {"diff", "patch"}:
+            lexer = "diff"
+        elif syntax_hint in {"python", "py"}:
+            lexer = "python"
+        elif syntax_hint in {"bash", "shell", "sh"}:
+            lexer = "bash"
+        elif syntax_hint in {"json"}:
+            lexer = "json"
+
+        if lexer:
+            return Syntax(self.preview_text, lexer, word_wrap=True, line_numbers=False)
+        return Text(self.preview_text)
