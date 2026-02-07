@@ -4,6 +4,7 @@ The Bridge: Connects the Async EventBus to the Textual App Loop.
 """
 
 import asyncio
+from pathlib import Path
 from typing import Dict, Any, Optional
 
 from ui.base import UI, ToolResult
@@ -67,7 +68,17 @@ class TextualUI(UI):
     # --- EVENT HANDLERS ---
 
     async def _on_stream_chunk(self, data: Dict[str, Any]):
-        self.app.post_message(AgentStreamChunk(data.get("chunk", "")))
+        thinking_text = data.get("thinking")
+        if thinking_text:
+            self.app.post_message(AgentStreamChunk(str(thinking_text), is_thinking=True))
+            return
+
+        chunk = data.get("chunk")
+        if chunk is None:
+            chunk = data.get("content", "")
+        if not chunk:
+            return
+        self.app.post_message(AgentStreamChunk(str(chunk), is_thinking=False))
 
     async def _on_thinking_started(self, data: Dict[str, Any]):
         self.app.post_message(AgentThinkingStatus(is_thinking=True))
@@ -104,7 +115,6 @@ class TextualUI(UI):
                 tool_name=name,
             )
         self.app.post_message(AgentToolResult(name, res))
-        self.app.post_message(AgentThinkingStatus(is_thinking=True))
 
     async def _on_error(self, data: Dict[str, Any]):
         msg = data.get("message", "Unknown Error")
@@ -218,11 +228,20 @@ class TextualUI(UI):
         tool_call_id = data.get("tool_call_id", "")
         tool_name = tool_call.get("action", "Unknown Tool")
         tool_args = tool_call.get("parameters", {})
+        working_dir = getattr(getattr(self.app, "agent", None), "working_dir", None)
+        if isinstance(working_dir, Path):
+            working_dir = str(working_dir)
 
         approved = True
         if hasattr(self.app, "push_screen_wait"):
             approved = await self.app.push_screen_wait(
-                ToolConfirmModal({"tool": tool_name, "args": tool_args})
+                ToolConfirmModal(
+                    {
+                        "tool": tool_name,
+                        "args": tool_args,
+                        "working_dir": working_dir,
+                    }
+                )
             )
 
         await self._event_bus.emit(
@@ -259,12 +278,20 @@ class TextualUI(UI):
         from .screens.modals.tool_confirm import ToolConfirmModal
 
         if hasattr(self.app, "push_screen_wait"):
-            return await self.app.push_screen_wait(ToolConfirmModal(tool_data))
+            payload = dict(tool_data or {})
+            if "tool" not in payload and "tool_name" in payload:
+                payload["tool"] = payload.get("tool_name")
+            if "args" not in payload and "parameters" in payload:
+                payload["args"] = payload.get("parameters")
+            if "working_dir" not in payload:
+                working_dir = getattr(getattr(self.app, "agent", None), "working_dir", None)
+                payload["working_dir"] = str(working_dir) if working_dir else None
+            return await self.app.push_screen_wait(ToolConfirmModal(payload))
         return True
 
     # --- REQUIRED STUBS ---
     async def print_stream(self, text: str):
-        self.app.post_message(AgentStreamChunk(text))
+        self.app.post_message(AgentStreamChunk(text, is_thinking=False))
 
     async def print_error(self, msg: str):
         self.app.post_message(AgentSystemMessage(msg, type="error"))
