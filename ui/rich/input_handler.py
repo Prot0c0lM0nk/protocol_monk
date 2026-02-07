@@ -69,12 +69,26 @@ class RichInputHandler:
         Get yes/no confirmation from user using Rich prompts.
         Blocks until user responds.
         """
-        from ui.prompts import AsyncPrompt
-
         suffix = " [Y/n]" if default else " [y/N]"
         full_prompt = f"{prompt}{suffix}"
 
-        return await AsyncPrompt.confirm(full_prompt, default=default, console=console)
+        async with self._prompt_lock:
+            while True:
+                try:
+                    with patch_stdout():
+                        response = await self.session.prompt_async(full_prompt)
+                    response = response.strip().lower()
+
+                    if response in ("y", "yes"):
+                        return True
+                    if response in ("n", "no"):
+                        return False
+                    if response == "" or response.startswith("\r"):
+                        return default
+                except EOFError:
+                    return default
+                except (KeyboardInterrupt, Exception):
+                    return default
 
     async def select_with_arrows(
         self, prompt: str, options: list[str], default_index: int = 0
