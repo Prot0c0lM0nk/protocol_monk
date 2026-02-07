@@ -5,7 +5,7 @@ Main chat screen for Protocol Monk TUI
 
 import asyncio
 from textual.screen import Screen
-from textual.widgets import Header, Footer
+from textual.widgets import Footer
 from ..widgets.chat_area import ChatArea
 from ..widgets.input_bar import InputBar
 from ..widgets.status_bar import StatusBar
@@ -16,9 +16,8 @@ class MainChatScreen(Screen):
 
     def compose(self):
         """Create the screen layout."""
-        yield Header()
-        yield ChatArea()
         yield StatusBar(id="status-bar")
+        yield ChatArea()
         yield InputBar()
         yield Footer()
 
