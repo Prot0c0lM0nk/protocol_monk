@@ -35,25 +35,32 @@ InputBar > Button:hover {
 }
 
 StatusBar {
-    dock: top;
-    width: 50%;
+    width: 100%;
     height: 1;
-    padding: 0 0 0 0;
+    padding: 0 1;
     layout: horizontal;
     background: #0f1722;
     color: #d5e6f8;
 }
 
+StatusBar Label,
+StatusBar Static {
+    padding: 0 1 0 0;
+}
+
 StatusBar > .separator {
     color: #5e7ea1;
+    padding: 0;
 }
 
 StatusBar > .metric-label {
     color: #8ab5da;
+    text-style: bold;
 }
 
 StatusBar > .spacer {
     width: 1fr;
+    padding: 0;
 }
 
 #app-title {
@@ -69,8 +76,29 @@ StatusBar > .spacer {
     color: #d5e6f8;
 }
 
+#provider-label {
+    min-width: 8;
+}
+
+#model-label {
+    width: 18;
+}
+
+#messages-label {
+    min-width: 4;
+}
+
+#token-label {
+    width: 14;
+}
+
+#working-dir-label {
+    width: 24;
+}
+
 #status-label {
     color: #7fd7a8;
+    min-width: 10;
 }
 
 .status-thinking {
