@@ -3,6 +3,7 @@
 Replace Lines Tool - Replace specific line numbers in a file.
 """
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -60,9 +61,21 @@ class ReplaceLinesTool(BaseTool):
             required_params=["filepath", "line_start", "line_end"],
         )
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
-        Orchestrate the replacement.
+        Orchestrate the replacement asynchronously.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            ToolResult: The result of the replacement operation.
+        """
+        return await asyncio.to_thread(self._execute_sync, **kwargs)
+
+    def _execute_sync(self, **kwargs) -> ToolResult:
+        """
+        Synchronous core for replacement (runs in a worker thread).
 
         Args:
             **kwargs: Arbitrary keyword arguments.

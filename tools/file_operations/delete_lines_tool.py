@@ -3,6 +3,7 @@
 Delete Lines Tool - Delete specific line numbers from a file.
 """
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -51,9 +52,21 @@ class DeleteLinesTool(BaseTool):
             required_params=["filepath", "line_start", "line_end"],
         )
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
-        Orchestrate the line deletion process.
+        Orchestrate the line deletion process asynchronously.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            ToolResult: The result of the deletion operation.
+        """
+        return await asyncio.to_thread(self._execute_sync, **kwargs)
+
+    def _execute_sync(self, **kwargs) -> ToolResult:
+        """
+        Synchronous core for line deletion (runs in a worker thread).
 
         Args:
             **kwargs: Arbitrary keyword arguments.

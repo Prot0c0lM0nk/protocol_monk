@@ -3,6 +3,7 @@
 Insert In File Tool - Insert content after a specific line in a file.
 """
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -63,9 +64,21 @@ class InsertInFileTool(BaseTool):
             required_params=["filepath", "after_line"],
         )
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
-        Orchestrate the insertion.
+        Orchestrate the insertion asynchronously.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments (filepath, after_line, etc).
+
+        Returns:
+            ToolResult: The result of the insertion operation.
+        """
+        return await asyncio.to_thread(self._execute_sync, **kwargs)
+
+    def _execute_sync(self, **kwargs) -> ToolResult:
+        """
+        Synchronous core for insertion (runs in a worker thread).
 
         Args:
             **kwargs: Arbitrary keyword arguments (filepath, after_line, etc).

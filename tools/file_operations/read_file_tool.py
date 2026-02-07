@@ -3,6 +3,7 @@
 Read File Tool - Tool for reading specific lines from a file.
 """
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -50,9 +51,21 @@ class ReadFileTool(BaseTool):
             required_params=["filepath"],
         )
 
-    def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
-        Orchestrate the read operation.
+        Orchestrate the read operation asynchronously.
+
+        Args:
+            **kwargs: Arbitrary keyword arguments (filepath, line_start, etc).
+
+        Returns:
+            ToolResult: The result of the file read operation.
+        """
+        return await asyncio.to_thread(self._execute_sync, **kwargs)
+
+    def _execute_sync(self, **kwargs) -> ToolResult:
+        """
+        Synchronous core for read operation (runs in a worker thread).
 
         Args:
             **kwargs: Arbitrary keyword arguments (filepath, line_start, etc).
