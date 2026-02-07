@@ -1,12 +1,14 @@
 """
 ui/textual/widgets/status_bar.py
-Live-updating status bar.
+Live-updating status bar with spinner support.
 """
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Label, Static
 from textual.reactive import reactive
+
+from .spinners import Spinner
 
 
 class StatusBar(Horizontal):
@@ -22,6 +24,9 @@ class StatusBar(Horizontal):
     limit = reactive("0")
     messages = reactive("0")
     working_dir = reactive("")
+    
+    # Spinner for thinking state
+    _thinking_spinner: Spinner = None
 
     def compose(self) -> ComposeResult:
         yield Label("☦ Protocol Monk", id="app-title")
@@ -51,6 +56,10 @@ class StatusBar(Horizontal):
         yield Label("Dir:", classes="metric-label")
         yield Label(f"{self.working_dir}", id="working-dir-label")
 
+        # Thinking spinner (hidden by default)
+        self._thinking_spinner.add_class("hidden")
+        yield self._thinking_spinner
+
     def on_mount(self) -> None:
         """Force an initial render so all labels are visible immediately."""
         self._render_all()
@@ -67,17 +76,23 @@ class StatusBar(Horizontal):
             pass
 
     def watch_status(self, new_status: str) -> None:
-        """Update status indicator color."""
+        """Update status indicator color and spinner."""
         try:
             label = self.query_one("#status-label", Label)
             label.update(f"● {new_status}")
 
             if "thinking" in new_status.lower():
                 label.set_classes("status-thinking")
+                self._thinking_spinner.remove_class("hidden")
+                self._thinking_spinner.start()
             elif "error" in new_status.lower():
                 label.set_classes("status-error")
+                self._thinking_spinner.add_class("hidden")
+                self._thinking_spinner.stop()
             else:
                 label.set_classes("status-idle")
+                self._thinking_spinner.add_class("hidden")
+                self._thinking_spinner.stop()
         except Exception:
             pass
 
@@ -87,7 +102,7 @@ class StatusBar(Horizontal):
         self.provider = str(stats.get("provider", "Unknown"))
         self.tokens = f"{stats.get('estimated_tokens', 0):,}"
         self.limit = f"{stats.get('token_limit', 0):,}"
-        self.messages = str(stats.get("conversation_length", 0))
+        self.messages = str(stats.get('conversation_length', 0))
         self.working_dir = str(stats.get("working_dir", ""))
         self.status = str(stats.get("status", "Ready"))
         self._render_all()
@@ -119,6 +134,12 @@ class StatusBar(Horizontal):
     def watch_messages(self, value: str) -> None:
         try:
             self.query_one("#messages-label", Label).update(value)
+        except Exception:
+            pass
+
+    def watch_working_dir(self, value: str) -> None:
+        try:
+            self.query_one("#working-dir-label", Label).update(value)
         except Exception:
             pass
 
