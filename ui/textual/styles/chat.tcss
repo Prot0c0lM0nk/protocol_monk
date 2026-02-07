@@ -2,46 +2,47 @@
 
 /* === The Main Scrollable Container === */
 ChatArea {
-    /* The Layout Logic */
-    height: 1fr; /* 1fr = Grow to fill all available vertical space */
+    height: 1fr;
     width: 100%;
-    /* Aesthetics */
-    background: $background;
+    padding: 1 2;
+    background: #03070d;
+    border-top: solid #101d2d;
 }
 
-/* === AI Message === */
 AIMessage {
     width: 100%;
     height: auto;
     padding: 1 2;
-    margin-bottom: 2;
-    background: $background;
-    color: $text;
-    border: solid red;
+    margin: 0 0 1 0;
+    background: #03070d;
+    color: #87ff00;
+    # border: round #875fd7;
 }
 
-/* === User Message === */
 UserMessage {
-    width: 30%;
+    width: 100%;
     height: auto;
-    background: $surface;
-    color: $text;
-    border: solid red;
+    margin: 0 0 1 100;
+    padding: 1 2;
+    background: #12151b;
+    color: #9ea4ad;
+    border: round #444d5d;
 }
 
-/* === Thinking Indicator === */
-ThinkingIndicator {
-    padding: 0 0;
-    color: $text;
-    text-style: italic;
-}
-
-/* === Tool Result Widget === */
 ToolResultWidget {
     width: 100%;
     height: auto;
     padding: 1 2;
     margin-bottom: 1;
-    background: $surface;
-    border: solid $accent;
+    background: #07141d;
+    color: #d3eeff;
+    border: solid #00d7ff;
+}
+
+ThinkingIndicator {
+    width: 100%;
+    margin: 0 0 1 0;
+    padding: 0 1;
+    color: #5fd700;
+    text-style: italic;
 }
