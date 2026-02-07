@@ -186,6 +186,7 @@ class PlainInterface(UI):
         if len(param_str) > 150:
             param_str = param_str[:147] + "..."
         print(f"[MONK] Tool Request: {action}({param_str})")
+        self._maybe_print_long_running_hint(action, params)
 
         # Block for user confirmation
         approved = await self.input_handler.confirm("Execute this tool?", default=False)
@@ -199,6 +200,26 @@ class PlainInterface(UI):
                 "edits": None,  # Could add editing later
             },
         )
+
+    def _maybe_print_long_running_hint(self, action: str, params: Dict[str, Any]):
+        if action != "execute_command":
+            return
+        command = str(params.get("command", "")).lower()
+        long_running_markers = [
+            "npm run dev",
+            "pnpm dev",
+            "yarn dev",
+            "vite",
+            "next dev",
+            "serve",
+            "dev server",
+            "tail -f",
+        ]
+        if any(marker in command for marker in long_running_markers):
+            self.renderer.print_warning(
+                "If input appears stuck, press Ctrl+C to return to the prompt. "
+                "The server/process will keep running."
+            )
 
     async def _on_tool_start(self, data: Dict[str, Any]):
         """Tool execution starting."""

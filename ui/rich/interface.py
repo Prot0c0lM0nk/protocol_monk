@@ -196,6 +196,7 @@ class RichUI(UI):
         # Display the tool request (Rich-styled)
         params = tool_call.get("parameters", {})
         self.renderer.render_tool_confirmation(action, params)
+        self._maybe_print_long_running_hint(action, params)
 
         # Block for user confirmation
         self.renderer.lock_for_input()
@@ -215,6 +216,26 @@ class RichUI(UI):
                 "edits": None,
             },
         )
+
+    def _maybe_print_long_running_hint(self, action: str, params: Dict[str, Any]):
+        if action != "execute_command":
+            return
+        command = str(params.get("command", "")).lower()
+        long_running_markers = [
+            "npm run dev",
+            "pnpm dev",
+            "yarn dev",
+            "vite",
+            "next dev",
+            "serve",
+            "dev server",
+            "tail -f",
+        ]
+        if any(marker in command for marker in long_running_markers):
+            self.renderer.print_warning(
+                "If input appears stuck, press Ctrl+C to return to the prompt. "
+                "The server/process will keep running."
+            )
 
     async def _on_tool_start(self, data: Dict[str, Any]):
         """Tool execution starting."""

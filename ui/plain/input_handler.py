@@ -80,6 +80,9 @@ class InputHandler:
             except EOFError:
                 # Ctrl+D - return default
                 return default
+            except KeyboardInterrupt:
+                # Ctrl+C - return default without exiting
+                return default
             # Invalid input, prompt again
 
     async def select_with_arrows(
