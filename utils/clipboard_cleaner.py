@@ -95,23 +95,34 @@ def _get_command_args(command_str: str) -> list:
     return shlex.split(command_str)
 
 
-def _unsafe_read_clipboard() -> str:
-    """Reads from the system clipboard without locking."""
+async def _unsafe_read_clipboard() -> str:
+    """Reads from the system clipboard asynchronously."""
     cmd = settings.security.clipboard_paste_cmd
     try:
         # SECURITY FIX: Use shell=False with parsed arguments
-        result = subprocess.run(
-            _get_command_args(cmd),
-            shell=False,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=2,
+        process = await asyncio.create_subprocess_exec(
+            *_get_command_args(cmd),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        return result.stdout
-    except subprocess.TimeoutExpired as e:
+
+        # Stream output to prevent buffer overflow
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(), timeout=2
+        )
+
+        if process.returncode != 0:
+            logger.error(
+                "Clipboard read failed with code %s: %s",
+                process.returncode,
+                stderr.decode("utf-8", errors="replace"),
+            )
+            raise IOError(f"Clipboard paste failed: {stderr.decode()}")
+
+        return stdout.decode("utf-8", errors="replace")
+    except asyncio.TimeoutError:
         logger.error("Clipboard read timed out.", exc_info=True)
-        raise IOError("Clipboard paste command timed out.") from e
+        raise IOError("Clipboard paste command timed out.") from None
     except subprocess.CalledProcessError as e:
         logger.error(
             "Clipboard read failed with code %s: %s",
@@ -128,32 +139,37 @@ def _unsafe_read_clipboard() -> str:
         raise IOError(f"Unexpected clipboard read error: {e}") from e
 
 
-def _unsafe_write_clipboard(text: str):
-    """Writes to the system clipboard without locking."""
+async def _unsafe_write_clipboard(text: str):
+    """Writes to the system clipboard asynchronously."""
     cmd = settings.security.clipboard_copy_cmd
     try:
-        # SECURITY FIX: Use 'with' context manager and shell=False
-        with subprocess.Popen(
-            _get_command_args(cmd),
-            shell=False,
-            stdin=subprocess.PIPE,
-            text=True,
-            stderr=subprocess.PIPE,
-        ) as process:
-            _, stderr = process.communicate(input=text, timeout=2)
+        # SECURITY FIX: Use async subprocess with streaming
+        process = await asyncio.create_subprocess_exec(
+            *_get_command_args(cmd),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
 
-            if process.returncode != 0:
-                logger.error(
-                    "Clipboard write failed with code %s: %s",
-                    process.returncode,
-                    stderr,
-                )
-                raise IOError(f"Clipboard copy failed: {stderr}")
+        # Communicate with timeout, stream output
+        try:
+            _, stderr = await asyncio.wait_for(
+                process.communicate(input=text.encode("utf-8")), timeout=2
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            logger.error("Clipboard write timed out.", exc_info=True)
+            raise IOError("Clipboard copy command timed out.")
 
-    except subprocess.TimeoutExpired as e:
-        logger.error("Clipboard write timed out.", exc_info=True)
-        # Process is cleaned up by context manager mostly, but good to be explicit if stuck
-        raise IOError("Clipboard copy command timed out.") from e
+        if process.returncode != 0:
+            logger.error(
+                "Clipboard write failed with code %s: %s",
+                process.returncode,
+                stderr.decode("utf-8", errors="replace"),
+            )
+            raise IOError(f"Clipboard copy failed: {stderr.decode()}")
+
     except FileNotFoundError as e:
         logger.error("Clipboard command not found: %s", cmd, exc_info=True)
         raise IOError(f"Clipboard command not found: {cmd}") from e
@@ -166,7 +182,7 @@ async def clean_clipboard_in() -> str:
     """Get clipboard content and clean it."""
     try:
         async with _clipboard_lock:
-            original = await asyncio.to_thread(_unsafe_read_clipboard)
+            original = await _unsafe_read_clipboard()
         cleaned = await asyncio.to_thread(clean_text, original)
 
         if original != cleaned:
@@ -184,7 +200,7 @@ async def clean_clipboard_out(text: str) -> bool:
     try:
         cleaned = await asyncio.to_thread(clean_text, text)
         async with _clipboard_lock:
-            await asyncio.to_thread(_unsafe_write_clipboard, cleaned)
+            await _unsafe_write_clipboard(cleaned)
 
         if text != cleaned:
             hidden_chars = len(text) - len(cleaned)
@@ -199,13 +215,13 @@ async def clean_clipboard_round_trip() -> str:
     """Get clipboard, clean it, and put it back atomically."""
     async with _clipboard_lock:
         try:
-            original = await asyncio.to_thread(_unsafe_read_clipboard)
+            original = await _unsafe_read_clipboard()
             cleaned = await asyncio.to_thread(clean_text, original)
 
             if original == cleaned:
                 return "✅ Clipboard already clean."
 
-            await asyncio.to_thread(_unsafe_write_clipboard, cleaned)
+            await _unsafe_write_clipboard(cleaned)
             return "✅ Clipboard cleaned and updated"
         except (IOError, Exception) as e:  # pylint: disable=broad-exception-caught
             return f"Error: {str(e)}"

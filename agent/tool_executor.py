@@ -58,15 +58,19 @@ class ToolExecutor:
         """Map exceptions to ToolResults and log them appropriately."""
         if isinstance(error, ToolNotFoundError):
             self.logger.error("Tool not found: %s", action, extra={"tool_name": action})
-            return ToolResult(success=False, output=f"{error.message} (Tool: {action})")
+            res = ToolResult(success=False, output=f"{error.message} (Tool: {action})")
+            res.error = "tool_not_found"
+            return res
 
         if isinstance(error, ToolExecutionError):
             self.logger.error(
                 "Tool execution failed for tool %s", action, extra={"tool_name": action}
             )
-            return ToolResult(
+            res = ToolResult(
                 success=False, output=f"{error.user_hint}\nDetails: {error.message}"
             )
+            res.error = "tool_execution_error"
+            return res
 
         if isinstance(error, ToolSecurityError):
             self.logger.warning(
@@ -74,10 +78,12 @@ class ToolExecutor:
                 action,
                 extra={"tool_name": action},
             )
-            return ToolResult(
+            res = ToolResult(
                 success=False,
                 output=f"{error.user_hint}\nReason: {error.security_reason}",
             )
+            res.error = "security_blocked"
+            return res
 
         self.logger.error(
             "Unexpected internal error: %s",
@@ -85,10 +91,12 @@ class ToolExecutor:
             exc_info=True,
             extra={"tool_name": action},
         )
-        return ToolResult(
+        res = ToolResult(
             success=False,
             output=f"An unexpected internal error occurred.\nDetails: {str(error)}",
         )
+        res.error = "internal_error"
+        return res
 
     async def _execute_tool(self, tool_call: Dict) -> ToolResult:
         """Execute a single tool via the registry with timeout protection."""
@@ -273,6 +281,7 @@ class ToolExecutor:
                 output="Tool execution cancelled by user.",
                 tool_name=normalized["action"],
             )
+            result.error = "user_cancelled"
             result.tool_call_id = call_id
             return result, False
 

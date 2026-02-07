@@ -62,28 +62,35 @@ class ProperToolCalling:
                 "function": {
                     "name": schema.name,
                     "description": schema.description,
-                    "parameters": self._convert_parameters(schema.parameters),
+                    "parameters": self._convert_parameters(
+                        schema.parameters, schema.required_params
+                    ),
                 },
             }
             tools.append(tool_def)
 
         return tools
 
-    def _convert_parameters(self, params: Dict) -> Dict:
+    def _convert_parameters(self, params: Dict, required_params: Optional[List[str]]) -> Dict:
         """
         Convert tool parameters to JSON schema format.
 
         Args:
             params: Tool parameters from registry
+            required_params: Explicit required parameter names
 
         Returns:
             JSON schema parameters
         """
         if not params:
-            return {"type": "object", "properties": {}}
+            return {
+                "type": "object",
+                "properties": {},
+                "required": required_params or [],
+            }
 
         properties = {}
-        required = []
+        required = list(required_params or [])
 
         for param_name, param_info in params.items():
             if isinstance(param_info, dict):
@@ -95,7 +102,8 @@ class ProperToolCalling:
                 }
 
                 if param_info.get("required", False):
-                    required.append(param_name)
+                    if param_name not in required:
+                        required.append(param_name)
             else:
                 # Simple string parameter
                 properties[param_name] = {
