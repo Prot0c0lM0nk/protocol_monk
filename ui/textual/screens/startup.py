@@ -67,6 +67,17 @@ class MatrixHarness:
                     "tick": random.randint(0, 2),
                 }
             )
+        # Extra streams increase coverage so the full panel looks active.
+        for _ in range(max(8, self.width // 3)):
+            self._drops.append(
+                {
+                    "col": random.randint(0, self.width - 1),
+                    "head": random.randint(-self.height // 2, self.height),
+                    "length": random.randint(3, 10),
+                    "speed": random.randint(1, 3),
+                    "tick": random.randint(0, 2),
+                }
+            )
 
     def _pick_char(self, progress: float) -> str:
         if progress < 0.35:
@@ -114,7 +125,8 @@ class MatrixHarness:
     def step(self, progress: float) -> str:
         grid = [[" " for _ in range(self.width)] for _ in range(self.height)]
 
-        for col, drop in enumerate(self._drops):
+        for idx, drop in enumerate(self._drops):
+            col = drop.get("col", idx % self.width)
             drop["tick"] += 1
             if drop["tick"] >= drop["speed"]:
                 drop["tick"] = 0
@@ -128,6 +140,13 @@ class MatrixHarness:
             for tail in range(drop["length"]):
                 row = drop["head"] - tail
                 if 0 <= row < self.height:
+                    grid[row][col] = self._pick_char(progress)
+
+        # Low-intensity ambient rain to avoid empty dead zones in wide panels.
+        ambient = 0.028 if progress < 0.6 else 0.018
+        for row in range(self.height):
+            for col in range(self.width):
+                if grid[row][col] == " " and random.random() < ambient:
                     grid[row][col] = self._pick_char(progress)
 
         self._overlay_title(grid, progress)

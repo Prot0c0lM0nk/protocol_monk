@@ -184,7 +184,7 @@ class ProtocolMonkApp(App):
         if hasattr(self.screen, "show_thinking"):
             self.screen.show_thinking(message.is_thinking)
         try:
-            status_bar = self.query_one("StatusBar")
+            status_bar = self.query_one("#status-bar")
             status_bar.status = "Thinking" if message.is_thinking else "Ready"
         except Exception:
             pass
@@ -199,10 +199,10 @@ class ProtocolMonkApp(App):
         else:
             try:
                 # Fallback search for the widget
-                status_bar = self.query_one("StatusBar")
+                status_bar = self.query_one("#status-bar")
                 status_bar.update_metrics(message.stats)
-            except Exception:
-                pass
+            except Exception as error:
+                self.notify(f"Status bar dispatch failed: {error}", severity="error")
 
     def on_agent_system_message(self, message: AgentSystemMessage) -> None:
         if message.type == "error":

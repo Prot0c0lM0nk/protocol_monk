@@ -36,9 +36,9 @@ InputBar > Button:hover {
 
 StatusBar {
     dock: top;
-    width: 100%;
+    width: 50%;
     height: 1;
-    padding: 0 1;
+    padding: 0 0 0 0;
     layout: horizontal;
     background: #0f1722;
     color: #d5e6f8;
