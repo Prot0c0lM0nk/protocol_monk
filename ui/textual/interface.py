@@ -3,7 +3,7 @@ ui/textual/interface.py
 The Bridge: Connects the Async EventBus to the Textual App Loop.
 """
 
-import asyncio
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -15,9 +15,12 @@ from .messages import (
     AgentThinkingStatus,
     AgentToolResult,
     AgentSystemMessage,
-    AgentStatusUpdate,  # <--- NEW
+    AgentStatusUpdate,
 )
 from .screens.modals.selection import SelectionModal
+
+
+logger = logging.getLogger(__name__)
 
 
 class TextualUI(UI):
@@ -61,7 +64,6 @@ class TextualUI(UI):
         )
 
         # Selection tracking for model/provider switches
-        self._pending_selection = None
         self._pending_options = None
         self._pending_title = None
 
@@ -85,30 +87,31 @@ class TextualUI(UI):
 
     async def _on_thinking_stopped(self, data: Dict[str, Any]):
         self.app.post_message(AgentThinkingStatus(is_thinking=False))
-        # === NEW: PULL STATUS UPDATE ===
-        # Every time thinking stops, we update the status bar (tokens/context)
+        # Refresh status when response generation finishes.
         await self._refresh_status()
 
     async def _refresh_status(self):
         """Pull fresh stats from agent and push to UI."""
-        print(f"[Interface] _refresh_status called")
-        if hasattr(self.app, "agent") and self.app.agent:
-            try:
-                print(f"[Interface] Calling agent.get_status()")
-                stats = await self.app.agent.get_status()
-                print(f"[Interface] Got stats from agent: {stats}")
-            except Exception as error:
-                print(f"[Interface] Error getting status: {error}")
-                self.app.post_message(
-                    AgentSystemMessage(f"Status refresh failed: {error}", type="error")
-                )
-                return
-            stats["working_dir"] = getattr(self.app.agent, "working_dir", "")
-            stats["status"] = "Ready"
-            print(f"[Interface] Posting AgentStatusUpdate with stats: {stats}")
-            self.app.post_message(AgentStatusUpdate(stats))
-        else:
-            print(f"[Interface] No agent found in app")
+        if not (hasattr(self.app, "agent") and self.app.agent):
+            logger.debug("Skipping status refresh: app agent is unavailable.")
+            return
+
+        try:
+            stats = await self.app.agent.get_status()
+        except Exception as error:
+            logger.exception("Failed to get agent status.")
+            self.app.post_message(
+                AgentSystemMessage(f"Status refresh failed: {error}", type="error")
+            )
+            return
+
+        working_dir = getattr(self.app.agent, "working_dir", "")
+        if isinstance(working_dir, Path):
+            working_dir = str(working_dir)
+        stats["working_dir"] = working_dir
+        stats["status"] = "Ready"
+        self.app.post_message(AgentStatusUpdate(stats))
+
     async def _on_tool_result(self, data: Dict[str, Any]):
         res = data.get("result")
         name = data.get("tool_name", "Unknown")
@@ -148,11 +151,7 @@ class TextualUI(UI):
                     f"🔄 Model switched: {old_model} → {new_model}", type="info"
                 )
             )
-        try:
-            input_bar = self.app.screen.query_one("#msg-input")
-            input_bar.focus()
-        except Exception:
-            pass
+        self._focus_input()
         await self._refresh_status()
 
     async def _on_provider_switched(self, data: Dict[str, Any]):
@@ -165,11 +164,7 @@ class TextualUI(UI):
                     type="info",
                 )
             )
-        try:
-            input_bar = self.app.screen.query_one("#msg-input")
-            input_bar.focus()
-        except Exception:
-            pass
+        self._focus_input()
         await self._refresh_status()
 
     async def _on_response_complete(self, data: Dict[str, Any]):
@@ -195,22 +190,9 @@ class TextualUI(UI):
                     )
                     return
 
-        # If we already have a selection from a modal, respond immediately
-        if self._pending_selection:
-            selection = self._pending_selection
-            self._pending_selection = None
-            await self._event_bus.emit(
-                AgentEvents.INPUT_RESPONSE.value, {"input": selection}
-            )
-            return
-
         self.app.post_message(AgentSystemMessage(f"❓ {prompt_text}", type="info"))
         # Ensure input is focused for the prompt
-        try:
-            input_bar = self.app.screen.query_one("#msg-input")
-            input_bar.focus()
-        except Exception:
-            pass
+        self._focus_input()
         if hasattr(self.app, "get_user_input_wait"):
             response = await self.app.get_user_input_wait()
         else:
@@ -228,6 +210,13 @@ class TextualUI(UI):
         if provider:
             name = f"{name} ({provider})"
         return name
+
+    def _focus_input(self) -> None:
+        try:
+            input_bar = self.app.screen.query_one("#msg-input")
+            input_bar.focus()
+        except Exception:
+            logger.debug("Unable to focus input widget.", exc_info=True)
 
     async def _on_tool_confirmation_request(self, data: Dict[str, Any]):
         tool_call = data.get("tool_call", {})
@@ -281,8 +270,6 @@ class TextualUI(UI):
         return ""
 
     async def confirm_tool_execution(self, tool_data: Dict[str, Any]) -> bool:
-        from .screens.modals.tool_confirm import ToolConfirmModal
-
         if hasattr(self.app, "push_screen_wait"):
             payload = dict(tool_data or {})
             if "tool" not in payload and "tool_name" in payload:

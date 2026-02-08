@@ -61,11 +61,7 @@ class ChatArea(VerticalScroll):
 
     def compose(self) -> ComposeResult:
         """Create the initial chat area content."""
-        # Start with empty chat area - no initial greeting
-        # Messages will be added as they come in
-        # Return empty generator to satisfy Textual's compose requirement
-        if False:
-            yield  # This will never execute but satisfies the return type
+        yield from ()
 
     async def add_user_message(self, content: str) -> None:
         """Add a user message to the chat."""
@@ -97,14 +93,29 @@ class ChatArea(VerticalScroll):
             self._current_ai_text = chunk
             self._current_ai_message = AIMessage(self._current_ai_text)
             self.call_later(self.mount, self._current_ai_message)
+            self.call_after_refresh(self._sync_current_ai_message)
         else:
             # Append to existing message
             self._current_ai_text += chunk
-            self._current_ai_message.update(self._current_ai_text)
+            if self._current_ai_message.is_mounted:
+                self._current_ai_message.update(self._current_ai_text)
+            else:
+                self.call_after_refresh(self._sync_current_ai_message)
 
         # Scroll to make the new content visible
-        if self._current_ai_message:
+        if self._current_ai_message and self._current_ai_message.is_mounted:
             self._current_ai_message.scroll_visible()
+
+    def _sync_current_ai_message(self) -> None:
+        """Flush buffered text once the streaming markdown widget is mounted."""
+        message = self._current_ai_message
+        if message is None:
+            return
+        if not message.is_mounted:
+            self.call_after_refresh(self._sync_current_ai_message)
+            return
+        message.update(self._current_ai_text)
+        message.scroll_visible()
 
     def show_thinking(self, is_thinking: bool) -> None:
         """Show or hide the thinking indicator."""

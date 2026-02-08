@@ -52,6 +52,7 @@ class StatusBar(Horizontal):
         yield Static(" | ", classes="separator")
         yield Label("Dir:", classes="metric-label")
         yield Label(f"{self.working_dir}", id="working-dir-label")
+
     def on_mount(self) -> None:
         """Force an initial render so all labels are visible immediately."""
         self.call_after_refresh(self._render_all)
@@ -89,18 +90,24 @@ class StatusBar(Horizontal):
         """Called by App to update display values."""
         # Bypass watchers to avoid race conditions - update labels directly
         try:
-            self.query_one("#model-label", Label).update(str(stats.get("current_model", "Unknown")))
-            self.query_one("#provider-label", Label).update(str(stats.get("provider", "Unknown")))
-            self.query_one("#messages-label", Label).update(str(stats.get("conversation_length", 0)))
-            
+            self.query_one("#model-label", Label).update(
+                str(stats.get("current_model", "Unknown"))
+            )
+            self.query_one("#provider-label", Label).update(
+                str(stats.get("provider", "Unknown"))
+            )
+            self.query_one("#messages-label", Label).update(
+                str(stats.get("conversation_length", 0))
+            )
+
             tokens = f"{stats.get('estimated_tokens', 0):,}"
             limit = f"{stats.get('token_limit', 0):,}"
             self.query_one("#token-label", Label).update(f"{tokens}/{limit}")
-            
+
             status = str(stats.get("status", "Ready"))
             status_label = self.query_one("#status-label", Label)
             status_label.update(f"● {status}")
-            
+
             # Update status color
             if "thinking" in status.lower():
                 status_label.set_classes("status-thinking")
@@ -108,7 +115,7 @@ class StatusBar(Horizontal):
                 status_label.set_classes("status-error")
             else:
                 status_label.set_classes("status-idle")
-            
+
             # Truncate working directory if too long
             working_dir = str(stats.get("working_dir", ""))
             if len(working_dir) > 30:
@@ -118,9 +125,9 @@ class StatusBar(Horizontal):
                     working_dir = f"{parts[0]}/{parts[1]}/.../{parts[-1]}"
                 else:
                     working_dir = working_dir[:27] + "..."
-            
+
             self.query_one("#working-dir-label", Label).update(working_dir)
-            
+
             # Force refresh of the status bar
             self.refresh()
         except Exception:

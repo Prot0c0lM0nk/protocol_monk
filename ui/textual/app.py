@@ -5,6 +5,7 @@ Refactored for Event Bubbling and Modal Waiting.
 """
 
 import asyncio
+import logging
 import os
 from typing import Any, Optional
 
@@ -18,7 +19,6 @@ from agent.events import AgentEvents
 
 from .screens.main_chat import MainChatScreen
 from .screens.startup import CinematicStartupScreen
-from .interface import TextualUI
 from .messages import (
     AgentStreamChunk,
     AgentThinkingStatus,
@@ -26,6 +26,9 @@ from .messages import (
     AgentSystemMessage,
     AgentStatusUpdate,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ProtocolMonkApp(App):
@@ -58,8 +61,7 @@ class ProtocolMonkApp(App):
 
     def compose(self) -> ComposeResult:
         """The app uses pushed screens for full control of startup flow."""
-        if False:
-            yield
+        yield from ()
 
     def on_mount(self) -> None:
         """Initialize startup flow: cinematic intro first, then main chat."""
@@ -80,7 +82,7 @@ class ProtocolMonkApp(App):
                     CinematicStartupScreen(ready_task=self.agent_ready_task)
                 )
             except Exception:
-                pass
+                logger.debug("Startup intro failed; continuing to main chat.", exc_info=True)
 
         await self._wait_for_agent_ready()
 
@@ -188,27 +190,25 @@ class ProtocolMonkApp(App):
             status_bar = self.query_one("#status-bar")
             status_bar.status = "Thinking" if message.is_thinking else "Ready"
         except Exception:
-            pass
+            logger.debug("Status bar not available during thinking update.", exc_info=True)
 
     def on_agent_tool_result(self, message: AgentToolResult) -> None:
         if hasattr(self.screen, "add_tool_result"):
             self.screen.add_tool_result(message.tool_name, message.result)
 
     def on_agent_status_update(self, message: AgentStatusUpdate) -> None:
-        print(f"[App] on_agent_status_update called with stats: {message.stats}")
+        logger.debug("Status update received: %s", message.stats)
         if hasattr(self.screen, "update_status_bar"):
-            print(f"[App] Calling screen.update_status_bar()")
             self.screen.update_status_bar(message.stats)
-        else:
-            try:
-                # Fallback search for the widget
-                print(f"[App] Falling back to query_one('#status-bar')")
-                status_bar = self.query_one("#status-bar")
-                print(f"[App] Found status_bar: {status_bar}")
-                status_bar.update_metrics(message.stats)
-            except Exception as error:
-                print(f"[App] Status bar dispatch failed: {error}")
-                self.notify(f"Status bar dispatch failed: {error}", severity="error")
+            return
+
+        try:
+            status_bar = self.query_one("#status-bar")
+            status_bar.update_metrics(message.stats)
+        except Exception as error:
+            logger.exception("Status bar dispatch failed.")
+            self.notify(f"Status bar dispatch failed: {error}", severity="error")
+
     def on_agent_system_message(self, message: AgentSystemMessage) -> None:
         if message.type == "error":
             self.notify(message.message, severity="error")

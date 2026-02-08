@@ -3,13 +3,16 @@ ui/textual/screens/main_chat.py
 Main chat screen for Protocol Monk TUI
 """
 
-import asyncio
+import logging
 from typing import Optional
 from textual.screen import Screen
 from textual.widgets import Footer
 from ..widgets.chat_area import ChatArea
 from ..widgets.input_bar import InputBar
 from ..widgets.status_bar import StatusBar
+
+
+logger = logging.getLogger(__name__)
 
 
 class MainChatScreen(Screen):
@@ -64,44 +67,12 @@ class MainChatScreen(Screen):
 
     def update_status_bar(self, stats: dict) -> None:
         """Update the status bar with new stats."""
-        print(f"[MainChatScreen] update_status_bar called with: {stats}")
         try:
             status_bar = self.query_one("#status-bar", StatusBar)
-            print(f"[MainChatScreen] Found status_bar: {status_bar}")
             status_bar.update_metrics(stats)
         except Exception as error:
-            print(f"[MainChatScreen] Error finding/updating status bar: {error}")
+            logger.exception("Status bar update failed.")
             self.app.notify(
                 f"Status bar update failed: {error}",
                 severity="error",
             )
-
-    async def await_user_input(self, prompt: str = "") -> str:
-        """
-        Wait for user input from the input bar.
-        This is called by the agent when it needs user input.
-        """
-        input_bar = self.query_one(InputBar)
-
-        # Set a placeholder if prompt is provided
-        if prompt:
-            text_area = input_bar.query_one("#msg-input")
-            if text_area:
-                text_area.placeholder = prompt
-
-        # Focus the input
-        input_bar.focus_input()
-
-        # Create a future to wait for input
-        future = asyncio.Future()
-
-        # Store the future in the input bar so it can resolve it
-        input_bar.set_input_future(future)
-
-        try:
-            result = await future
-            return result
-        finally:
-            # Reset placeholder
-            if prompt and text_area:
-                text_area.placeholder = "Ask Protocol Monk..."
