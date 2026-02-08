@@ -186,11 +186,8 @@ class ProtocolMonkApp(App):
     def on_agent_thinking_status(self, message: AgentThinkingStatus) -> None:
         if hasattr(self.screen, "show_thinking"):
             self.screen.show_thinking(message.is_thinking)
-        try:
-            status_bar = self.query_one("#status-bar")
+        for status_bar in self.query("#status-bar"):
             status_bar.status = "Thinking" if message.is_thinking else "Ready"
-        except Exception:
-            logger.debug("Status bar not available during thinking update.", exc_info=True)
 
     def on_agent_tool_result(self, message: AgentToolResult) -> None:
         if hasattr(self.screen, "add_tool_result"):
@@ -202,12 +199,8 @@ class ProtocolMonkApp(App):
             self.screen.update_status_bar(message.stats)
             return
 
-        try:
-            status_bar = self.query_one("#status-bar")
+        for status_bar in self.query("#status-bar"):
             status_bar.update_metrics(message.stats)
-        except Exception as error:
-            logger.exception("Status bar dispatch failed.")
-            self.notify(f"Status bar dispatch failed: {error}", severity="error")
 
     def on_agent_system_message(self, message: AgentSystemMessage) -> None:
         if message.type == "error":
