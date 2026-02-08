@@ -31,16 +31,17 @@ InputBar > Button:hover {
 }
 
 StatusBar {
-    width: 100%;
-    height: 1;
+    dock: top;
+    width: auto;
+    height: 2;
     padding: 0 1;
-    layout: horizontal;
-    background: #0f1722;
+    background: #03070d;
     color: #d5e6f8;
 }
 
 StatusBar Label,
 StatusBar Static {
+    width: auto;
     padding: 0 1 0 0;
 }
 
@@ -60,6 +61,7 @@ StatusBar > .spacer {
 }
 
 #app-title {
+    width: auto;
     color: #9dd7ff;
     text-style: bold;
 }

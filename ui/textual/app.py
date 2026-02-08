@@ -195,16 +195,20 @@ class ProtocolMonkApp(App):
             self.screen.add_tool_result(message.tool_name, message.result)
 
     def on_agent_status_update(self, message: AgentStatusUpdate) -> None:
+        print(f"[App] on_agent_status_update called with stats: {message.stats}")
         if hasattr(self.screen, "update_status_bar"):
+            print(f"[App] Calling screen.update_status_bar()")
             self.screen.update_status_bar(message.stats)
         else:
             try:
                 # Fallback search for the widget
+                print(f"[App] Falling back to query_one('#status-bar')")
                 status_bar = self.query_one("#status-bar")
+                print(f"[App] Found status_bar: {status_bar}")
                 status_bar.update_metrics(message.stats)
             except Exception as error:
+                print(f"[App] Status bar dispatch failed: {error}")
                 self.notify(f"Status bar dispatch failed: {error}", severity="error")
-
     def on_agent_system_message(self, message: AgentSystemMessage) -> None:
         if message.type == "error":
             self.notify(message.message, severity="error")

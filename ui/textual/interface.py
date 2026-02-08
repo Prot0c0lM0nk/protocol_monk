@@ -91,18 +91,24 @@ class TextualUI(UI):
 
     async def _refresh_status(self):
         """Pull fresh stats from agent and push to UI."""
+        print(f"[Interface] _refresh_status called")
         if hasattr(self.app, "agent") and self.app.agent:
             try:
+                print(f"[Interface] Calling agent.get_status()")
                 stats = await self.app.agent.get_status()
+                print(f"[Interface] Got stats from agent: {stats}")
             except Exception as error:
+                print(f"[Interface] Error getting status: {error}")
                 self.app.post_message(
                     AgentSystemMessage(f"Status refresh failed: {error}", type="error")
                 )
                 return
             stats["working_dir"] = getattr(self.app.agent, "working_dir", "")
             stats["status"] = "Ready"
+            print(f"[Interface] Posting AgentStatusUpdate with stats: {stats}")
             self.app.post_message(AgentStatusUpdate(stats))
-
+        else:
+            print(f"[Interface] No agent found in app")
     async def _on_tool_result(self, data: Dict[str, Any]):
         res = data.get("result")
         name = data.get("tool_name", "Unknown")

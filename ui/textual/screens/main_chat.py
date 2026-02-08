@@ -64,10 +64,13 @@ class MainChatScreen(Screen):
 
     def update_status_bar(self, stats: dict) -> None:
         """Update the status bar with new stats."""
+        print(f"[MainChatScreen] update_status_bar called with: {stats}")
         try:
             status_bar = self.query_one("#status-bar", StatusBar)
+            print(f"[MainChatScreen] Found status_bar: {status_bar}")
             status_bar.update_metrics(stats)
         except Exception as error:
+            print(f"[MainChatScreen] Error finding/updating status bar: {error}")
             self.app.notify(
                 f"Status bar update failed: {error}",
                 severity="error",
