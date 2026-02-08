@@ -128,5 +128,6 @@ config/models/*
 RICH_DOCS/
 TEXTUAL_STUDY_NOTES/
 Textual_Docs/
-xml_tool_test copy
+xml_tool_test/
+NeuralSym/
 workspace/
