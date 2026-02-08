@@ -84,6 +84,7 @@ class AgentService:
         self._running = False
         self.max_autonomous_loops = 10
         self._tool_retry_counts: Dict[str, int] = {}
+        self._turn_lock = asyncio.Lock()
 
     async def async_initialize(self):
         """Subscribe to events and init subsytems."""
@@ -112,26 +113,27 @@ class AgentService:
         if not user_input:
             return
 
-        try:
-            # 1. Check Commands
-            handled = await self.command_dispatcher.dispatch(user_input)
-            if handled:
-                return  # Command dispatcher handles its own completion events
+        async with self._turn_lock:
+            try:
+                # 1. Check Commands
+                handled = await self.command_dispatcher.dispatch(user_input)
+                if handled:
+                    return  # Command dispatcher handles its own completion events
 
-            # 2. Process Chat (The Loop)
-            await self.context_manager.add_message("user", user_input)
-            await self._run_cognitive_loop()
+                # 2. Process Chat (The Loop)
+                await self.context_manager.add_message("user", user_input)
+                await self._run_cognitive_loop()
 
-        except Exception as e:
-            # CRITICAL: Catch crashes so we can unlock the UI
-            self.logger.exception("Fatal error in AgentService")
-            await self.event_bus.emit(
-                AgentEvents.ERROR.value,
-                {"message": f"Agent crashed: {e}", "context": "service_crash"},
-            )
-        finally:
-            # 3. Finish (Always unlock the UI)
-            await self.event_bus.emit(AgentEvents.RESPONSE_COMPLETE.value, {})
+            except Exception as e:
+                # CRITICAL: Catch crashes so we can unlock the UI
+                self.logger.exception("Fatal error in AgentService")
+                await self.event_bus.emit(
+                    AgentEvents.ERROR.value,
+                    {"message": f"Agent crashed: {e}", "context": "service_crash"},
+                )
+            finally:
+                # 3. Finish (Always unlock the UI)
+                await self.event_bus.emit(AgentEvents.RESPONSE_COMPLETE.value, {})
 
     async def _run_cognitive_loop(self):
         """

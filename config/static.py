@@ -184,7 +184,7 @@ class ApiConfig:
     def __init__(self):
         # Ollama API endpoint
         self.ollama_url = os.getenv(
-            "PROTOCOL_OLLAMA_URL", "http://localhost:11434/api/chat"
+            "PROTOCOL_OLLAMA_URL", "http://localhost:11434"
         )
 
         # Provider configuration

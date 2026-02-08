@@ -55,6 +55,9 @@ class ChatArea(VerticalScroll):
         self._current_ai_text = ""
         self._thinking_indicator: Optional[ThinkingIndicator] = None
         self._current_thinking_text = ""
+        self._stream_flush_interval = 0.04
+        self._stream_flush_scheduled = False
+        self._stream_dirty = False
         self._details: Dict[str, DetailRecord] = {}
         self._detail_order: list[str] = []
         self._detail_counter = 0
@@ -75,6 +78,7 @@ class ChatArea(VerticalScroll):
         self.finalize_response()
 
         # Create new AI message
+        self._current_ai_text = content
         self._current_ai_message = AIMessage(content)
         await self.mount(self._current_ai_message)
         self._current_ai_message.scroll_visible()
@@ -91,31 +95,38 @@ class ChatArea(VerticalScroll):
         if self._current_ai_message is None:
             # Start a new AI message if none exists
             self._current_ai_text = chunk
-            self._current_ai_message = AIMessage(self._current_ai_text)
+            self._current_ai_message = AIMessage("")
             self.call_later(self.mount, self._current_ai_message)
-            self.call_after_refresh(self._sync_current_ai_message)
         else:
             # Append to existing message
             self._current_ai_text += chunk
-            if self._current_ai_message.is_mounted:
-                self._current_ai_message.update(self._current_ai_text)
-            else:
-                self.call_after_refresh(self._sync_current_ai_message)
+        self._stream_dirty = True
+        self._schedule_stream_flush()
 
-        # Scroll to make the new content visible
-        if self._current_ai_message and self._current_ai_message.is_mounted:
-            self._current_ai_message.scroll_visible()
+    def _schedule_stream_flush(self) -> None:
+        if self._stream_flush_scheduled:
+            return
+        self._stream_flush_scheduled = True
+        self.set_timer(self._stream_flush_interval, self._flush_stream_buffer)
+
+    def _flush_stream_buffer(self) -> None:
+        self._stream_flush_scheduled = False
+        message = self._current_ai_message
+        if message is None:
+            self._stream_dirty = False
+            return
+        if not self._stream_dirty:
+            return
+        if not message.is_mounted:
+            self._schedule_stream_flush()
+            return
+        message.update(self._current_ai_text)
+        self._stream_dirty = False
+        message.scroll_visible()
 
     def _sync_current_ai_message(self) -> None:
         """Flush buffered text once the streaming markdown widget is mounted."""
-        message = self._current_ai_message
-        if message is None:
-            return
-        if not message.is_mounted:
-            self.call_after_refresh(self._sync_current_ai_message)
-            return
-        message.update(self._current_ai_text)
-        message.scroll_visible()
+        self._flush_stream_buffer()
 
     def show_thinking(self, is_thinking: bool) -> None:
         """Show or hide the thinking indicator."""
@@ -252,8 +263,20 @@ class ChatArea(VerticalScroll):
         # Hide thinking indicator
         self.show_thinking(False)
         self._emit_thinking_summary()
+        self._commit_pending_stream_text()
 
         # Reset current AI message pointer and accumulated text
         self._current_ai_message = None
         self._current_ai_text = ""
         self._current_thinking_text = ""
+        self._stream_dirty = False
+
+    def _commit_pending_stream_text(self) -> None:
+        """Flush remaining stream text before finalizing a turn."""
+        message = self._current_ai_message
+        if message is None:
+            return
+        if self._current_ai_text:
+            message.update(self._current_ai_text)
+        if message.is_mounted:
+            message.scroll_visible()

@@ -8,7 +8,6 @@ Note: The official ollama Python SDK is synchronous, so we wrap it in asyncio.
 """
 
 import asyncio
-import json
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
@@ -53,7 +52,7 @@ class OllamaModelClientSDK(BaseModelClient):
         super().__init__(model_name, provider_config)
 
         # Ollama-specific configuration
-        self.ollama_url = settings.api.ollama_url
+        self.ollama_url = self._normalize_ollama_host(settings.api.ollama_url)
 
         # Load the default options
         self.model_options = settings.model_options.chat_options.copy()
@@ -63,6 +62,18 @@ class OllamaModelClientSDK(BaseModelClient):
 
         # Initialize the Ollama client
         self.client = ollama.Client(host=self.ollama_url)
+
+    @staticmethod
+    def _normalize_ollama_host(host: str) -> str:
+        """Normalize configured Ollama URL to a base host for the official SDK."""
+        normalized = (host or "").strip().rstrip("/")
+        if normalized.endswith("/api/chat"):
+            normalized = normalized[: -len("/api/chat")]
+        elif normalized.endswith("/api/generate"):
+            normalized = normalized[: -len("/api/generate")]
+        elif normalized.endswith("/api"):
+            normalized = normalized[: -len("/api")]
+        return normalized or "http://localhost:11434"
 
     def _setup_model(self, model_name: str) -> None:
         """
@@ -104,6 +115,14 @@ class OllamaModelClientSDK(BaseModelClient):
             EmptyResponseError: For empty responses
         """
         try:
+            loop = asyncio.get_event_loop()
+
+            def _next_chunk(iterator):
+                try:
+                    return next(iterator), False
+                except StopIteration:
+                    return None, True
+
             # Prepare messages
             messages = conversation_context
 
@@ -126,16 +145,18 @@ class OllamaModelClientSDK(BaseModelClient):
             )
 
             if stream:
-                # Streaming response - wrap synchronous generator in async
-                loop = asyncio.get_event_loop()
-
-                # Run the synchronous Ollama chat in executor
+                # Streaming response: run blocking iterator advancement in executor.
                 stream_response = await loop.run_in_executor(
-                    None, lambda: ollama.chat(**request_params)
+                    None, lambda: iter(self.client.chat(**request_params))
                 )
 
-                # Process the synchronous stream
-                for chunk in stream_response:
+                while True:
+                    chunk, done = await loop.run_in_executor(
+                        None, _next_chunk, stream_response
+                    )
+                    if done:
+                        break
+
                     # Extract message
                     message = chunk.get("message", {})
 
@@ -156,9 +177,8 @@ class OllamaModelClientSDK(BaseModelClient):
                         yield chunk  # Return complete response with tool calls
             else:
                 # Non-streaming response
-                loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
-                    None, lambda: ollama.chat(**request_params)
+                    None, lambda: self.client.chat(**request_params)
                 )
 
                 # Extract content
@@ -180,8 +200,20 @@ class OllamaModelClientSDK(BaseModelClient):
                 details={"provider": "ollama", "model": self.model_name},
             ) from exc
         except Exception as e:
+            error_text = str(e).lower()
+
+            if "404 page not found" in error_text:
+                raise ModelError(
+                    message=(
+                        f"Ollama endpoint not found at {self.ollama_url}. "
+                        "Configure PROTOCOL_OLLAMA_URL as a base host "
+                        "(for example: http://localhost:11434)."
+                    ),
+                    details={"provider": "ollama", "model": self.model_name},
+                ) from e
+
             # Check for connection errors
-            if "connection" in str(e).lower() or "refused" in str(e).lower():
+            if "connection" in error_text or "refused" in error_text:
                 raise ModelError(
                     message=f"Cannot connect to Ollama server at {self.ollama_url}",
                     details={"provider": "ollama", "model": self.model_name},
