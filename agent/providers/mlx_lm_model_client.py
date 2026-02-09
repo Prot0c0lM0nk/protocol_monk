@@ -184,7 +184,6 @@ class MLXLMModelClient(BaseModelClient):
                 sampler=sampler,
             ):
                 yield response.text
-                yield response.text
 
         # Run the synchronous generator in a thread
         async def _async_generate():
