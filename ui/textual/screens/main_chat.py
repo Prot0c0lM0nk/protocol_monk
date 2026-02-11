@@ -40,10 +40,15 @@ class MainChatScreen(Screen):
         chat_area = self.query_one(ChatArea)
         chat_area.add_stream_chunk(chunk, is_thinking=is_thinking)
 
-    def show_thinking(self, is_thinking: bool) -> None:
+    def show_thinking(
+        self,
+        is_thinking: bool,
+        phase: str = "thinking",
+        detail: str = "",
+    ) -> None:
         """Show or hide the thinking indicator."""
         chat_area = self.query_one(ChatArea)
-        chat_area.show_thinking(is_thinking)
+        chat_area.show_thinking(is_thinking, phase=phase, detail=detail)
 
     def add_tool_result(self, tool_name: str, result) -> None:
         """Add a tool result to the chat area."""

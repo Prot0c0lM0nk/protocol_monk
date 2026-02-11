@@ -33,6 +33,15 @@ class StatusBar(Horizontal):
         self._token_label: Optional[Label] = None
         self._status_label: Optional[Label] = None
         self._working_dir_label: Optional[Label] = None
+        self._last_metrics = {
+            "current_model": "Unknown",
+            "provider": "Unknown",
+            "conversation_length": 0,
+            "estimated_tokens": 0,
+            "token_limit": 0,
+            "status": "Ready",
+            "working_dir": "",
+        }
 
     def compose(self) -> ComposeResult:
         yield Label("☦ Protocol Monk", id="app-title")
@@ -101,21 +110,27 @@ class StatusBar(Horizontal):
             self._cache_labels()
             if not self._labels_ready():
                 return
-            self._provider_label.update(str(self.provider))
-            self._model_label.update(str(self.model_name))
-            self._messages_label.update(str(self.messages))
-            self._token_label.update(f"{self.tokens}/{self.limit}")
-            self._status_label.update(f"● {self.status}")
-            self._working_dir_label.update(str(self.working_dir))
+            self.update_metrics(self._last_metrics)
         except Exception:
             # Widgets may not be ready yet (e.g., during initial compose)
             # This is expected and safe to ignore
             pass
 
     def _set_status_style(self, label: Label, status: str) -> None:
-        if "thinking" in status.lower():
+        lowered = status.lower()
+        if any(
+            marker in lowered
+            for marker in (
+                "thinking",
+                "running",
+                "processing",
+                "reflecting",
+                "awaiting",
+                "waiting",
+            )
+        ):
             label.set_classes("status-thinking")
-        elif "error" in status.lower():
+        elif "error" in lowered or "failed" in lowered:
             label.set_classes("status-error")
         else:
             label.set_classes("status-idle")
@@ -134,21 +149,29 @@ class StatusBar(Horizontal):
 
     def update_metrics(self, stats: dict) -> None:
         """Called by App to update display values."""
-        # Bypass watchers to avoid race conditions - update labels directly
+        if not isinstance(stats, dict):
+            return
+
+        # Merge incoming fields so status-only updates don't wipe other metrics.
+        for key, value in stats.items():
+            if value is not None:
+                self._last_metrics[key] = value
+
         try:
             self._cache_labels()
             if not self._labels_ready():
                 return
 
-            self._model_label.update(str(stats.get("current_model", "Unknown")))
-            self._provider_label.update(str(stats.get("provider", "Unknown")))
-            self._messages_label.update(str(stats.get("conversation_length", 0)))
+            merged = self._last_metrics
+            self._model_label.update(str(merged.get("current_model", "Unknown")))
+            self._provider_label.update(str(merged.get("provider", "Unknown")))
+            self._messages_label.update(str(merged.get("conversation_length", 0)))
 
-            tokens = f"{stats.get('estimated_tokens', 0):,}"
-            limit = f"{stats.get('token_limit', 0):,}"
+            tokens = self._format_int(merged.get("estimated_tokens", 0))
+            limit = self._format_int(merged.get("token_limit", 0))
             self._token_label.update(f"{tokens}/{limit}")
 
-            status = str(stats.get("status", "Ready"))
+            status = str(merged.get("status", "Ready"))
             status_label = self._status_label
             if status_label is None:
                 return
@@ -156,19 +179,29 @@ class StatusBar(Horizontal):
             self._set_status_style(status_label, status)
 
             # Truncate working directory if too long
-            working_dir = str(stats.get("working_dir", ""))
-            if len(working_dir) > 30:
-                # Show first part and last part: /Users/.../protocol_core_EDA_P1
-                parts = working_dir.split("/")
-                if len(parts) > 3:
-                    working_dir = f"{parts[0]}/{parts[1]}/.../{parts[-1]}"
-                else:
-                    working_dir = working_dir[:27] + "..."
-
-            self._working_dir_label.update(working_dir)
+            self._working_dir_label.update(
+                self._truncate_working_dir(str(merged.get("working_dir", "")))
+            )
         except Exception:
             # Widgets may not be ready yet - skip update
             pass
+
+    @staticmethod
+    def _format_int(value: object) -> str:
+        try:
+            return f"{int(value):,}"
+        except (TypeError, ValueError):
+            return str(value)
+
+    @staticmethod
+    def _truncate_working_dir(working_dir: str) -> str:
+        if len(working_dir) <= 30:
+            return working_dir
+        # Show first part and last part: /Users/.../protocol_core_EDA_P1
+        parts = working_dir.split("/")
+        if len(parts) > 3:
+            return f"{parts[0]}/{parts[1]}/.../{parts[-1]}"
+        return working_dir[:27] + "..."
 
     def watch_model_name(self, value: str) -> None:
         try:

@@ -16,6 +16,7 @@ from .messages import (
     AgentToolResult,
     AgentSystemMessage,
     AgentStatusUpdate,
+    AgentResponseBoundary,
 )
 from .screens.modals.selection import SelectionModal
 
@@ -32,6 +33,7 @@ class TextualUI(UI):
         super().__init__()
         self.app = app
         self._event_bus = event_bus or get_event_bus()
+        self._runtime_status = "Ready"
         self._setup_event_listeners()
 
     def _setup_event_listeners(self):
@@ -44,6 +46,15 @@ class TextualUI(UI):
             AgentEvents.THINKING_STOPPED.value, self._on_thinking_stopped
         )
         self._event_bus.subscribe(AgentEvents.TOOL_RESULT.value, self._on_tool_result)
+        self._event_bus.subscribe(
+            AgentEvents.TOOL_EXECUTION_START.value, self._on_tool_execution_start
+        )
+        self._event_bus.subscribe(
+            AgentEvents.TOOL_EXECUTION_PROGRESS.value, self._on_tool_execution_progress
+        )
+        self._event_bus.subscribe(
+            AgentEvents.TOOL_EXECUTION_COMPLETE.value, self._on_tool_execution_complete
+        )
         self._event_bus.subscribe(AgentEvents.ERROR.value, self._on_error)
         self._event_bus.subscribe(AgentEvents.INFO.value, self._on_info)
         self._event_bus.subscribe(
@@ -83,12 +94,16 @@ class TextualUI(UI):
         self.app.post_message(AgentStreamChunk(str(chunk), is_thinking=False))
 
     async def _on_thinking_started(self, data: Dict[str, Any]):
-        self.app.post_message(AgentThinkingStatus(is_thinking=True))
+        message = str(data.get("message", "")).strip() or "Contemplating..."
+        self.app.post_message(
+            AgentThinkingStatus(is_thinking=True, phase="thinking", detail=message)
+        )
+        self._set_runtime_status("Thinking")
 
     async def _on_thinking_stopped(self, data: Dict[str, Any]):
-        self.app.post_message(AgentThinkingStatus(is_thinking=False))
-        # Refresh status when response generation finishes.
-        await self._refresh_status()
+        self.app.post_message(AgentThinkingStatus(is_thinking=False, phase="thinking"))
+        if self._runtime_status == "Thinking":
+            self._set_runtime_status("Processing")
 
     async def _refresh_status(self):
         """Pull fresh stats from agent and push to UI."""
@@ -109,7 +124,7 @@ class TextualUI(UI):
         if isinstance(working_dir, Path):
             working_dir = str(working_dir)
         stats["working_dir"] = working_dir
-        stats["status"] = "Ready"
+        stats.setdefault("status", self._runtime_status)
         self.app.post_message(AgentStatusUpdate(stats))
 
     async def _on_tool_result(self, data: Dict[str, Any]):
@@ -127,6 +142,7 @@ class TextualUI(UI):
 
     async def _on_error(self, data: Dict[str, Any]):
         msg = data.get("message", "Unknown Error")
+        self._set_runtime_status("Error")
         self.app.post_message(AgentSystemMessage(msg, type="error"))
 
     async def _on_info(self, data: Dict[str, Any]):
@@ -168,10 +184,45 @@ class TextualUI(UI):
         await self._refresh_status()
 
     async def _on_response_complete(self, data: Dict[str, Any]):
+        self._set_runtime_status("Ready")
+        await self._refresh_status()
         self.app.post_message(AgentSystemMessage("", type="response_complete"))
+
+    async def _on_tool_execution_start(self, data: Dict[str, Any]):
+        count = int(data.get("count") or 1)
+        count = max(1, count)
+        self.app.post_message(AgentResponseBoundary("tool_execution"))
+        self.app.post_message(
+            AgentThinkingStatus(
+                is_thinking=True,
+                phase="tools",
+                detail=f"Executing {count} tool(s)...",
+            )
+        )
+        self._set_runtime_status(f"Running tools (0/{count})")
+
+    async def _on_tool_execution_progress(self, data: Dict[str, Any]):
+        current = int(data.get("current") or 0)
+        total = int(data.get("total") or 0)
+        tool_name = str(data.get("current_tool") or "tool")
+        if current > 0 and total > 0:
+            detail = f"Tool {current}/{total}: {tool_name}"
+            status = f"Running tools ({current}/{total})"
+        else:
+            detail = f"Running: {tool_name}"
+            status = "Running tools"
+        self.app.post_message(
+            AgentThinkingStatus(is_thinking=True, phase="tools", detail=detail)
+        )
+        self._set_runtime_status(status)
+
+    async def _on_tool_execution_complete(self, data: Dict[str, Any]):
+        self.app.post_message(AgentThinkingStatus(is_thinking=False, phase="tools"))
+        self._set_runtime_status("Reflecting")
 
     async def _on_input_requested(self, data: Dict[str, Any]):
         prompt_text = data.get("prompt", "Enter value: ")
+        self._set_runtime_status("Waiting for input")
         # If a selection list is pending, show modal now and respond
         if self._pending_options:
             title = self._pending_title or "Select an option"
@@ -188,6 +239,7 @@ class TextualUI(UI):
                         AgentEvents.INPUT_RESPONSE.value,
                         {"input": str(selected_index + 1)},
                     )
+                    self._set_runtime_status("Processing")
                     return
 
         self.app.post_message(AgentSystemMessage(f"❓ {prompt_text}", type="info"))
@@ -200,6 +252,7 @@ class TextualUI(UI):
         await self._event_bus.emit(
             AgentEvents.INPUT_RESPONSE.value, {"input": response or ""}
         )
+        self._set_runtime_status("Processing")
 
     def _format_option(self, item) -> str:
         if hasattr(item, "name"):
@@ -226,6 +279,14 @@ class TextualUI(UI):
         working_dir = getattr(getattr(self.app, "agent", None), "working_dir", None)
         if isinstance(working_dir, Path):
             working_dir = str(working_dir)
+        self._set_runtime_status(f"Awaiting approval: {tool_name}")
+        self.app.post_message(
+            AgentThinkingStatus(
+                is_thinking=True,
+                phase="approval",
+                detail=f"Awaiting approval for {tool_name}",
+            )
+        )
 
         approved = True
         if hasattr(self.app, "push_screen_wait"):
@@ -247,6 +308,12 @@ class TextualUI(UI):
                 "edits": None,
             },
         )
+        self.app.post_message(AgentThinkingStatus(is_thinking=False, phase="approval"))
+        self._set_runtime_status("Processing")
+
+    def _set_runtime_status(self, status: str) -> None:
+        self._runtime_status = status
+        self.app.post_message(AgentStatusUpdate({"status": status}))
 
     # --- BLOCKING INTERACTION ---
 

@@ -29,9 +29,54 @@ class AIMessage(Markdown):
 
 
 class ThinkingIndicator(Static):
-    """Thinking indicator widget."""
+    """Animated prayer-rope inspired activity indicator."""
 
-    pass
+    THINKING_FRAMES = ("☦", "†", "✠", "☩")
+    TOOL_FRAMES = ("✢", "✣", "✤", "✥")
+    APPROVAL_FRAMES = ("◐", "◓", "◑", "◒")
+    DEFAULT_TEXT = {
+        "thinking": "Contemplating...",
+        "tools": "Executing tools...",
+        "approval": "Awaiting approval...",
+    }
+
+    def __init__(self, phase: str = "thinking", detail: str = ""):
+        super().__init__("", classes="thinking-indicator")
+        self.phase = phase
+        self.detail = detail
+        self._frame_index = 0
+        self._timer = None
+
+    def on_mount(self) -> None:
+        self._timer = self.set_interval(0.18, self._advance_frame)
+        self._render_frame()
+
+    def on_unmount(self) -> None:
+        if self._timer is not None:
+            self._timer.stop()
+
+    def update_phase(self, phase: str = "thinking", detail: str = "") -> None:
+        self.phase = phase or "thinking"
+        self.detail = detail
+        self._frame_index = 0
+        self._render_frame()
+
+    def _frames(self) -> tuple[str, ...]:
+        if self.phase == "tools":
+            return self.TOOL_FRAMES
+        if self.phase == "approval":
+            return self.APPROVAL_FRAMES
+        return self.THINKING_FRAMES
+
+    def _advance_frame(self) -> None:
+        self._frame_index += 1
+        self._render_frame()
+
+    def _render_frame(self) -> None:
+        frames = self._frames()
+        glyph = frames[self._frame_index % len(frames)]
+        text = self.detail.strip() or self.DEFAULT_TEXT.get(self.phase, "Working...")
+        self.update(f"{glyph} {escape(text)}")
 
 
 class ToolResultWidget(Static):
@@ -96,7 +141,7 @@ class ChatArea(VerticalScroll):
             # Start a new AI message if none exists
             self._current_ai_text = chunk
             self._current_ai_message = AIMessage("")
-            self.call_later(self.mount, self._current_ai_message)
+            self.mount(self._current_ai_message)
         else:
             # Append to existing message
             self._current_ai_text += chunk
@@ -128,12 +173,20 @@ class ChatArea(VerticalScroll):
         """Flush buffered text once the streaming markdown widget is mounted."""
         self._flush_stream_buffer()
 
-    def show_thinking(self, is_thinking: bool) -> None:
+    def show_thinking(
+        self,
+        is_thinking: bool,
+        phase: str = "thinking",
+        detail: str = "",
+    ) -> None:
         """Show or hide the thinking indicator."""
         if is_thinking:
             if self._thinking_indicator is None:
-                self._thinking_indicator = ThinkingIndicator("🤔 Thinking...")
-                self.call_later(self.mount, self._thinking_indicator)
+                self._thinking_indicator = ThinkingIndicator(phase=phase, detail=detail)
+                self.mount(self._thinking_indicator)
+            else:
+                self._thinking_indicator.update_phase(phase=phase, detail=detail)
+            self.call_after_refresh(self.scroll_end, animate=False)
         else:
             if self._thinking_indicator is not None:
                 self._thinking_indicator.remove()
@@ -163,7 +216,7 @@ class ChatArea(VerticalScroll):
         tool_widget = ToolResultWidget(
             f"{success_icon} {escape(tool_name)} - {escape(summary)} {view_link}"
         )
-        self.call_later(self.mount, tool_widget)
+        self.mount(tool_widget)
         self.call_after_refresh(self.scroll_end, animate=False)
 
     def register_detail(
@@ -232,7 +285,7 @@ class ChatArea(VerticalScroll):
             syntax_hint=None,
         )
         bullet = ThinkingSummaryWidget(f"🧠 {escape(summary)} {self._view_link(record.id)}")
-        self.call_later(self.mount, bullet)
+        self.mount(bullet)
         self.call_after_refresh(self.scroll_end, animate=False)
 
     def _view_link(self, detail_id: str) -> str:

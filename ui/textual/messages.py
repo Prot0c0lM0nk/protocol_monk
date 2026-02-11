@@ -20,8 +20,15 @@ class AgentStreamChunk(Message):
 class AgentThinkingStatus(Message):
     """Indicates whether the agent is thinking/processing."""
 
-    def __init__(self, is_thinking: bool):
+    def __init__(
+        self,
+        is_thinking: bool,
+        phase: str = "thinking",
+        detail: str = "",
+    ):
         self.is_thinking = is_thinking
+        self.phase = phase
+        self.detail = detail
         super().__init__()
 
 
@@ -48,4 +55,12 @@ class AgentStatusUpdate(Message):
 
     def __init__(self, stats: Dict[str, Any]):
         self.stats = stats
+        super().__init__()
+
+
+class AgentResponseBoundary(Message):
+    """Marks a response boundary inside a single user turn."""
+
+    def __init__(self, reason: str = ""):
+        self.reason = reason
         super().__init__()

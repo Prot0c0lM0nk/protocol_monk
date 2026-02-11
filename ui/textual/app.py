@@ -25,6 +25,7 @@ from .messages import (
     AgentToolResult,
     AgentSystemMessage,
     AgentStatusUpdate,
+    AgentResponseBoundary,
 )
 
 
@@ -185,13 +186,19 @@ class ProtocolMonkApp(App):
 
     def on_agent_thinking_status(self, message: AgentThinkingStatus) -> None:
         if hasattr(self.screen, "show_thinking"):
-            self.screen.show_thinking(message.is_thinking)
-        for status_bar in self.query("#status-bar"):
-            status_bar.status = "Thinking" if message.is_thinking else "Ready"
+            self.screen.show_thinking(
+                message.is_thinking,
+                phase=message.phase,
+                detail=message.detail,
+            )
 
     def on_agent_tool_result(self, message: AgentToolResult) -> None:
         if hasattr(self.screen, "add_tool_result"):
             self.screen.add_tool_result(message.tool_name, message.result)
+
+    def on_agent_response_boundary(self, message: AgentResponseBoundary) -> None:
+        if hasattr(self.screen, "finalize_response"):
+            self.screen.finalize_response()
 
     def on_agent_status_update(self, message: AgentStatusUpdate) -> None:
         logger.debug("Status update received: %s", message.stats)
