@@ -200,10 +200,11 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
                 elif action == "3":
                     await self.agent.clear_conversation()
 
+        old_model = self.agent.current_model
         await self.agent.set_model(selected_model)
         await self.event_bus.emit(
             AgentEvents.MODEL_SWITCHED.value,
-            {"old_model": self.agent.current_model, "new_model": selected_model},
+            {"old_model": old_model, "new_model": selected_model},
         )
 
     async def _handle_provider_switch(self):

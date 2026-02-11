@@ -6,6 +6,7 @@ Custom Textual Messages for Agent-UI Communication
 from typing import Dict, Any
 from textual.message import Message
 from ui.base import ToolResult
+from .models.phase_state import THINKING, PhaseName
 
 
 class AgentStreamChunk(Message):
@@ -23,7 +24,7 @@ class AgentThinkingStatus(Message):
     def __init__(
         self,
         is_thinking: bool,
-        phase: str = "thinking",
+        phase: PhaseName = THINKING,
         detail: str = "",
     ):
         self.is_thinking = is_thinking

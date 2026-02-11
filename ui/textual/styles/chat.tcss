@@ -6,7 +6,7 @@ ChatArea {
     width: 100%;
     padding: 1 2;
     background: #03070d;
-    border-top: solid #101d2d;
+    border-top: solid #1a2738;
 }
 
 AIMessage {
@@ -15,8 +15,7 @@ AIMessage {
     padding: 1 2;
     margin: 0 0 1 0;
     background: #03070d;
-    color: #87ff00;
-    # border: round #875fd7;
+    color: #7fd7a8;
 }
 
 UserMessage {
@@ -24,9 +23,9 @@ UserMessage {
     height: auto;
     margin: 0 0 1 100;
     padding: 1 2;
-    background: #12151b;
-    color: #9ea4ad;
-    border: round #444d5d;
+    background: #111923;
+    color: #c3d3e4;
+    border: round #3b4f66;
 }
 
 ToolResultWidget {
@@ -34,8 +33,8 @@ ToolResultWidget {
     height: auto;
     padding: 0 1;
     margin-bottom: 1;
-    background: #061018;
-    color: #d3eeff;
+    background: #0a1621;
+    color: #d5e6f8;
     border: round #00b8d9;
 }
 
@@ -44,15 +43,25 @@ ThinkingSummaryWidget {
     height: auto;
     padding: 0 1;
     margin-bottom: 1;
-    background: #0d1117;
-    color: #d2d9e2;
-    border: round #5f7085;
+    background: #101720;
+    color: #d5e6f8;
+    border: round #5e7ea1;
+}
+
+ReasoningStripWidget {
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    background: #101720;
+    color: #d5e6f8;
+    border: round #5e7ea1;
 }
 
 ThinkingIndicator {
     width: 100%;
     margin: 0 0 1 0;
     padding: 0 1;
-    color: #5fd700;
+    color: #7fd7a8;
     text-style: italic;
 }

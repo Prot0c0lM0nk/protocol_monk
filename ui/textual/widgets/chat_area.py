@@ -32,12 +32,14 @@ class ThinkingIndicator(Static):
     """Animated prayer-rope inspired activity indicator."""
 
     THINKING_FRAMES = ("☦", "†", "✠", "☩")
+    PROCESSING_FRAMES = ("◴", "◷", "◶", "◵")
     TOOL_FRAMES = ("✢", "✣", "✤", "✥")
     APPROVAL_FRAMES = ("◐", "◓", "◑", "◒")
     DEFAULT_TEXT = {
         "thinking": "Contemplating...",
-        "tools": "Executing tools...",
-        "approval": "Awaiting approval...",
+        "planning": "Planning next step...",
+        "running_tools": "Executing tools...",
+        "awaiting_approval": "Awaiting approval...",
     }
 
     def __init__(self, phase: str = "thinking", detail: str = ""):
@@ -62,9 +64,11 @@ class ThinkingIndicator(Static):
         self._render_frame()
 
     def _frames(self) -> tuple[str, ...]:
-        if self.phase == "tools":
+        if self.phase == "planning":
+            return self.PROCESSING_FRAMES
+        if self.phase == "running_tools":
             return self.TOOL_FRAMES
-        if self.phase == "approval":
+        if self.phase == "awaiting_approval":
             return self.APPROVAL_FRAMES
         return self.THINKING_FRAMES
 
@@ -91,6 +95,72 @@ class ThinkingSummaryWidget(Static):
     pass
 
 
+class ReasoningStripWidget(Static):
+    """Per-turn hidden reasoning strip shown before assistant output."""
+
+    PHASE_GLYPHS = {
+        "thinking": "◇",
+        "planning": "◴",
+        "running_tools": "◷",
+        "awaiting_approval": "◶",
+        "waiting_input": "◵",
+        "error": "◵",
+        "ready": "◇",
+    }
+
+    def __init__(self, density: str = "compact"):
+        super().__init__("", classes="reasoning-strip")
+        self.char_count = 0
+        self.phase = "thinking"
+        self.detail_id: Optional[str] = None
+        self._finalized = False
+        self._density = density
+        self._render_state()
+
+    def update_progress(self, char_count: int, phase: str = "thinking") -> None:
+        self.char_count = max(0, int(char_count))
+        self.phase = phase or "thinking"
+        self._render_state()
+
+    def update_phase(self, phase: str) -> None:
+        if self._finalized:
+            return
+        self.phase = phase or "thinking"
+        self._render_state()
+
+    def finalize(self, detail_id: str, char_count: int) -> None:
+        self.detail_id = detail_id
+        self.char_count = max(0, int(char_count))
+        self._finalized = True
+        self._render_state()
+
+    def set_density(self, density: str) -> None:
+        self._density = "full" if density == "full" else "compact"
+        self._render_state()
+
+    def _render_state(self) -> None:
+        glyph = self.PHASE_GLYPHS.get(self.phase, "◇")
+        if self._density == "full":
+            if self._finalized:
+                summary = f"Reasoning captured for this turn ({self.char_count} chars)"
+            else:
+                summary = f"Reasoning capture in progress ({self.char_count} chars)"
+        else:
+            if self._finalized:
+                summary = f"Reasoning captured ({self.char_count} chars)"
+            else:
+                summary = f"Reasoning capture in progress ({self.char_count} chars)"
+
+        view_link = ""
+        if self.detail_id:
+            view_link = f" {self._view_link(self.detail_id)}"
+        self.update(f"{glyph} {escape(summary)}{view_link}")
+
+    @staticmethod
+    def _view_link(detail_id: str) -> str:
+        return f"[@click=app.open_detail('{detail_id}')]View[/]"
+
+
 class ChatArea(VerticalScroll):
     """Main chat area that displays conversation history."""
 
@@ -99,6 +169,8 @@ class ChatArea(VerticalScroll):
         self._current_ai_message: Optional[AIMessage] = None
         self._current_ai_text = ""
         self._thinking_indicator: Optional[ThinkingIndicator] = None
+        self._current_reasoning_strip: Optional[ReasoningStripWidget] = None
+        self._reasoning_density = "compact"
         self._current_thinking_text = ""
         self._stream_flush_interval = 0.04
         self._stream_flush_scheduled = False
@@ -135,6 +207,11 @@ class ChatArea(VerticalScroll):
 
         if is_thinking:
             self._current_thinking_text += chunk
+            self._ensure_reasoning_strip()
+            if self._current_reasoning_strip is not None:
+                self._current_reasoning_strip.update_progress(
+                    len(self._current_thinking_text), phase="thinking"
+                )
             return
 
         if self._current_ai_message is None:
@@ -186,6 +263,8 @@ class ChatArea(VerticalScroll):
                 self.mount(self._thinking_indicator)
             else:
                 self._thinking_indicator.update_phase(phase=phase, detail=detail)
+            if self._current_reasoning_strip is not None:
+                self._current_reasoning_strip.update_phase(phase)
             self.call_after_refresh(self.scroll_end, animate=False)
         else:
             if self._thinking_indicator is not None:
@@ -194,7 +273,7 @@ class ChatArea(VerticalScroll):
 
     def add_tool_result(self, tool_name: str, result) -> None:
         """Add a compact tool result bullet with expandable detail."""
-        success_icon = "✅" if result.success else "❌"
+        success_icon = "OK" if result.success else "ERR"
         raw_output = str(getattr(result, "output", "") or "")
         summary = self._summarize_text(raw_output) or "No output"
         syntax_hint = self._infer_tool_syntax(tool_name)
@@ -214,7 +293,7 @@ class ChatArea(VerticalScroll):
         )
         view_link = self._view_link(record.id)
         tool_widget = ToolResultWidget(
-            f"{success_icon} {escape(tool_name)} - {escape(summary)} {view_link}"
+            f"[{success_icon}] {escape(tool_name)} - {escape(summary)} {view_link}"
         )
         self.mount(tool_widget)
         self.call_after_refresh(self.scroll_end, animate=False)
@@ -250,11 +329,17 @@ class ChatArea(VerticalScroll):
         """Get a detail record by ID."""
         return self._details.get(detail_id)
 
-    def last_detail_id(self) -> Optional[str]:
+    def last_detail_id(self, kind: Optional[str] = None) -> Optional[str]:
         """Return the most recently added detail ID."""
         if not self._detail_order:
             return None
-        return self._detail_order[-1]
+        if kind is None:
+            return self._detail_order[-1]
+        for detail_id in reversed(self._detail_order):
+            record = self._details.get(detail_id)
+            if record and record.kind == kind:
+                return detail_id
+        return None
 
     def open_detail(self, detail_id: Optional[str] = None) -> None:
         """Open the detail modal for a record."""
@@ -270,13 +355,33 @@ class ChatArea(VerticalScroll):
 
         self.app.push_screen(DetailViewerModal(record))
 
-    def _emit_thinking_summary(self) -> None:
-        """Store one hidden reasoning detail per assistant turn."""
+    def open_latest_reasoning_detail(self) -> None:
+        """Open the newest reasoning record."""
+        reasoning_id = self.last_detail_id(kind="thinking")
+        self.open_detail(reasoning_id)
+
+    def toggle_reasoning_density(self) -> str:
+        """Toggle compact/full wording for reasoning strips."""
+        self._reasoning_density = "full" if self._reasoning_density == "compact" else "compact"
+        for strip in self.query(ReasoningStripWidget):
+            strip.set_density(self._reasoning_density)
+        return self._reasoning_density
+
+    def _ensure_reasoning_strip(self) -> None:
+        if self._current_reasoning_strip is not None:
+            return
+        strip = ReasoningStripWidget(density=self._reasoning_density)
+        self._current_reasoning_strip = strip
+        self.mount(strip)
+        self.call_after_refresh(self.scroll_end, animate=False)
+
+    def _finalize_reasoning_strip(self) -> None:
+        """Store one hidden reasoning detail per assistant turn and finalize strip."""
         full_text = self._current_thinking_text.strip()
         if not full_text:
             return
 
-        summary = f"Thinking captured ({len(full_text)} chars)"
+        summary = f"Reasoning captured ({len(full_text)} chars)"
         record = self.register_detail(
             kind="thinking",
             title="Reasoning Detail",
@@ -284,9 +389,12 @@ class ChatArea(VerticalScroll):
             full_text=full_text,
             syntax_hint=None,
         )
-        bullet = ThinkingSummaryWidget(f"🧠 {escape(summary)} {self._view_link(record.id)}")
-        self.mount(bullet)
-        self.call_after_refresh(self.scroll_end, animate=False)
+        self._ensure_reasoning_strip()
+        if self._current_reasoning_strip is not None:
+            self._current_reasoning_strip.finalize(
+                record.id, char_count=len(full_text)
+            )
+            self.call_after_refresh(self.scroll_end, animate=False)
 
     def _view_link(self, detail_id: str) -> str:
         return f"[@click=app.open_detail('{detail_id}')]View[/]"
@@ -315,12 +423,13 @@ class ChatArea(VerticalScroll):
         """Finalize the current AI response."""
         # Hide thinking indicator
         self.show_thinking(False)
-        self._emit_thinking_summary()
+        self._finalize_reasoning_strip()
         self._commit_pending_stream_text()
 
         # Reset current AI message pointer and accumulated text
         self._current_ai_message = None
         self._current_ai_text = ""
+        self._current_reasoning_strip = None
         self._current_thinking_text = ""
         self._stream_dirty = False
 

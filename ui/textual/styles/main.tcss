@@ -3,14 +3,15 @@
 /* === Global Resets === */
 Screen {
     layout: vertical;
-    /* We let the theme handle colors ($background), but you can force defaults here if needed */
+    background: #03070d;
+    color: #d5e6f8;
 }
 
 /* === Scrollbar Styling === */
 ScrollBar {
     width: 1;
-    background: $surface;
+    background: #0b1520;
 }
 ScrollBar > .thumb {
-    background: $primary;
+    background: #007db4;
 }

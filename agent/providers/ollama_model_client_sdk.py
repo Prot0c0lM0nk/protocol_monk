@@ -8,6 +8,7 @@ Note: The official ollama Python SDK is synchronous, so we wrap it in asyncio.
 """
 
 import asyncio
+import json
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
@@ -123,8 +124,8 @@ class OllamaModelClientSDK(BaseModelClient):
                 except StopIteration:
                     return None, True
 
-            # Prepare messages
-            messages = conversation_context
+            # Prepare messages (Ollama SDK requires tool_call.function.arguments as dict)
+            messages = self._normalize_messages_for_ollama(conversation_context)
 
             # Build request parameters
             request_params = {
@@ -224,6 +225,51 @@ class OllamaModelClientSDK(BaseModelClient):
                 message=f"Ollama error: {str(e)}",
                 details={"provider": "ollama", "model": self.model_name},
             ) from e
+
+    @staticmethod
+    def _normalize_messages_for_ollama(
+        conversation_context: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """
+        Normalize historical messages for Ollama SDK strict validation.
+
+        Ollama's pydantic model requires:
+          tool_calls[].function.arguments -> dict
+        while other providers may store this field as a JSON string.
+        """
+        normalized: List[Dict[str, Any]] = []
+        for raw_msg in conversation_context or []:
+            if not isinstance(raw_msg, dict):
+                continue
+
+            msg = dict(raw_msg)
+            tool_calls = msg.get("tool_calls")
+            if isinstance(tool_calls, list):
+                coerced_calls: List[Dict[str, Any]] = []
+                for raw_call in tool_calls:
+                    if not isinstance(raw_call, dict):
+                        continue
+                    call = dict(raw_call)
+                    function = call.get("function")
+                    if isinstance(function, dict):
+                        fn = dict(function)
+                        args = fn.get("arguments")
+                        if isinstance(args, str):
+                            try:
+                                parsed = json.loads(args)
+                                fn["arguments"] = parsed if isinstance(parsed, dict) else {}
+                            except json.JSONDecodeError:
+                                fn["arguments"] = {}
+                        elif args is None:
+                            fn["arguments"] = {}
+                        elif not isinstance(args, dict):
+                            fn["arguments"] = {}
+                        call["function"] = fn
+                    coerced_calls.append(call)
+                msg["tool_calls"] = coerced_calls
+
+            normalized.append(msg)
+        return normalized
 
     async def close(self) -> None:
         """

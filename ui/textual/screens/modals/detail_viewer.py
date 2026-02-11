@@ -21,31 +21,32 @@ class DetailViewerModal(ModalScreen[None]):
     CSS = """
     DetailViewerModal {
         align: center middle;
-        background: $background 80%;
+        background: #03070d 80%;
     }
 
     #detail-dialog {
         width: 90%;
         height: 85%;
-        border: thick $primary;
-        background: $surface;
+        border: thick #00b8d9;
+        background: #111923;
         padding: 1 2;
     }
 
     #detail-title {
         text-style: bold;
         margin-bottom: 1;
+        color: #d5e6f8;
     }
 
     #detail-summary {
-        color: #9aa3ad;
+        color: #8fa6bd;
         margin-bottom: 1;
     }
 
     #detail-scroll {
         height: 1fr;
-        border: solid $accent;
-        background: $background;
+        border: solid #f8c96c;
+        background: #0a1017;
         margin-bottom: 1;
         padding: 1;
     }
@@ -53,6 +54,10 @@ class DetailViewerModal(ModalScreen[None]):
     #detail-buttons {
         align: right middle;
         height: auto;
+    }
+
+    Button {
+        text-style: bold;
     }
     """
 

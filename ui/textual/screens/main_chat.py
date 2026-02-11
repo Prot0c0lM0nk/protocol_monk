@@ -65,10 +65,20 @@ class MainChatScreen(Screen):
         chat_area = self.query_one(ChatArea)
         chat_area.open_detail(detail_id)
 
-    def last_detail_id(self) -> Optional[str]:
+    def last_detail_id(self, kind: Optional[str] = None) -> Optional[str]:
         """Return the latest detail record ID in the current session."""
         chat_area = self.query_one(ChatArea)
-        return chat_area.last_detail_id()
+        return chat_area.last_detail_id(kind=kind)
+
+    def open_latest_reasoning_detail(self) -> None:
+        """Open the latest reasoning detail record."""
+        chat_area = self.query_one(ChatArea)
+        chat_area.open_latest_reasoning_detail()
+
+    def toggle_reasoning_density(self) -> str:
+        """Toggle compact/full reasoning strip labels."""
+        chat_area = self.query_one(ChatArea)
+        return chat_area.toggle_reasoning_density()
 
     def update_status_bar(self, stats: dict) -> None:
         """Update the status bar with new stats."""

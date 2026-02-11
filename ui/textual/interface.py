@@ -19,6 +19,16 @@ from .messages import (
     AgentResponseBoundary,
 )
 from .screens.modals.selection import SelectionModal
+from .models.phase_state import (
+    READY,
+    THINKING,
+    PLANNING,
+    RUNNING_TOOLS,
+    AWAITING_APPROVAL,
+    WAITING_INPUT,
+    ERROR,
+    normalize_phase,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -33,7 +43,8 @@ class TextualUI(UI):
         super().__init__()
         self.app = app
         self._event_bus = event_bus or get_event_bus()
-        self._runtime_status = "Ready"
+        self._runtime_phase = READY
+        self._runtime_phase_detail = ""
         self._setup_event_listeners()
 
     def _setup_event_listeners(self):
@@ -96,14 +107,13 @@ class TextualUI(UI):
     async def _on_thinking_started(self, data: Dict[str, Any]):
         message = str(data.get("message", "")).strip() or "Contemplating..."
         self.app.post_message(
-            AgentThinkingStatus(is_thinking=True, phase="thinking", detail=message)
+            AgentThinkingStatus(is_thinking=True, phase=THINKING, detail=message)
         )
-        self._set_runtime_status("Thinking")
+        self._set_runtime_phase(THINKING, message)
 
     async def _on_thinking_stopped(self, data: Dict[str, Any]):
-        self.app.post_message(AgentThinkingStatus(is_thinking=False, phase="thinking"))
-        if self._runtime_status == "Thinking":
-            self._set_runtime_status("Processing")
+        if self._runtime_phase == THINKING:
+            self._set_planning_state("Analyzing response...")
 
     async def _refresh_status(self):
         """Pull fresh stats from agent and push to UI."""
@@ -124,7 +134,9 @@ class TextualUI(UI):
         if isinstance(working_dir, Path):
             working_dir = str(working_dir)
         stats["working_dir"] = working_dir
-        stats.setdefault("status", self._runtime_status)
+        stats["phase"] = self._runtime_phase
+        stats["phase_detail"] = self._runtime_phase_detail
+        stats["status"] = self._runtime_phase
         self.app.post_message(AgentStatusUpdate(stats))
 
     async def _on_tool_result(self, data: Dict[str, Any]):
@@ -142,7 +154,8 @@ class TextualUI(UI):
 
     async def _on_error(self, data: Dict[str, Any]):
         msg = data.get("message", "Unknown Error")
-        self._set_runtime_status("Error")
+        self._set_runtime_phase(ERROR, str(msg))
+        self.app.post_message(AgentThinkingStatus(is_thinking=False, phase=ERROR))
         self.app.post_message(AgentSystemMessage(msg, type="error"))
 
     async def _on_info(self, data: Dict[str, Any]):
@@ -164,7 +177,7 @@ class TextualUI(UI):
         if hasattr(self.app, "post_message"):
             self.app.post_message(
                 AgentSystemMessage(
-                    f"🔄 Model switched: {old_model} → {new_model}", type="info"
+                    f"Model switched: {old_model} -> {new_model}", type="info"
                 )
             )
         self._focus_input()
@@ -176,7 +189,7 @@ class TextualUI(UI):
         if hasattr(self.app, "post_message"):
             self.app.post_message(
                 AgentSystemMessage(
-                    f"🔄 Provider switched: {old_provider} → {new_provider}",
+                    f"Provider switched: {old_provider} -> {new_provider}",
                     type="info",
                 )
             )
@@ -184,7 +197,8 @@ class TextualUI(UI):
         await self._refresh_status()
 
     async def _on_response_complete(self, data: Dict[str, Any]):
-        self._set_runtime_status("Ready")
+        self.app.post_message(AgentThinkingStatus(is_thinking=False, phase=PLANNING))
+        self._set_runtime_phase(READY, "")
         await self._refresh_status()
         self.app.post_message(AgentSystemMessage("", type="response_complete"))
 
@@ -195,11 +209,11 @@ class TextualUI(UI):
         self.app.post_message(
             AgentThinkingStatus(
                 is_thinking=True,
-                phase="tools",
+                phase=RUNNING_TOOLS,
                 detail=f"Executing {count} tool(s)...",
             )
         )
-        self._set_runtime_status(f"Running tools (0/{count})")
+        self._set_runtime_phase(RUNNING_TOOLS, f"0/{count} complete")
 
     async def _on_tool_execution_progress(self, data: Dict[str, Any]):
         current = int(data.get("current") or 0)
@@ -207,22 +221,22 @@ class TextualUI(UI):
         tool_name = str(data.get("current_tool") or "tool")
         if current > 0 and total > 0:
             detail = f"Tool {current}/{total}: {tool_name}"
-            status = f"Running tools ({current}/{total})"
+            progress = f"{current}/{total} complete"
         else:
             detail = f"Running: {tool_name}"
-            status = "Running tools"
+            progress = "In progress"
         self.app.post_message(
-            AgentThinkingStatus(is_thinking=True, phase="tools", detail=detail)
+            AgentThinkingStatus(is_thinking=True, phase=RUNNING_TOOLS, detail=detail)
         )
-        self._set_runtime_status(status)
+        self._set_runtime_phase(RUNNING_TOOLS, progress)
 
     async def _on_tool_execution_complete(self, data: Dict[str, Any]):
-        self.app.post_message(AgentThinkingStatus(is_thinking=False, phase="tools"))
-        self._set_runtime_status("Reflecting")
+        self._set_planning_state("Reviewing tool results...")
 
     async def _on_input_requested(self, data: Dict[str, Any]):
         prompt_text = data.get("prompt", "Enter value: ")
-        self._set_runtime_status("Waiting for input")
+        self._set_runtime_phase(WAITING_INPUT, "Awaiting user input")
+        self.app.post_message(AgentThinkingStatus(is_thinking=False, phase=WAITING_INPUT))
         # If a selection list is pending, show modal now and respond
         if self._pending_options:
             title = self._pending_title or "Select an option"
@@ -239,10 +253,15 @@ class TextualUI(UI):
                         AgentEvents.INPUT_RESPONSE.value,
                         {"input": str(selected_index + 1)},
                     )
-                    self._set_runtime_status("Processing")
+                    self._set_planning_state("Resuming after input...")
                     return
+                await self._event_bus.emit(
+                    AgentEvents.INPUT_RESPONSE.value, {"input": ""}
+                )
+                self._set_planning_state("Selection canceled")
+                return
 
-        self.app.post_message(AgentSystemMessage(f"❓ {prompt_text}", type="info"))
+        self.app.post_message(AgentSystemMessage(prompt_text, type="info"))
         # Ensure input is focused for the prompt
         self._focus_input()
         if hasattr(self.app, "get_user_input_wait"):
@@ -252,7 +271,7 @@ class TextualUI(UI):
         await self._event_bus.emit(
             AgentEvents.INPUT_RESPONSE.value, {"input": response or ""}
         )
-        self._set_runtime_status("Processing")
+        self._set_planning_state("Resuming after input...")
 
     def _format_option(self, item) -> str:
         if hasattr(item, "name"):
@@ -279,11 +298,11 @@ class TextualUI(UI):
         working_dir = getattr(getattr(self.app, "agent", None), "working_dir", None)
         if isinstance(working_dir, Path):
             working_dir = str(working_dir)
-        self._set_runtime_status(f"Awaiting approval: {tool_name}")
+        self._set_runtime_phase(AWAITING_APPROVAL, str(tool_name))
         self.app.post_message(
             AgentThinkingStatus(
                 is_thinking=True,
-                phase="approval",
+                phase=AWAITING_APPROVAL,
                 detail=f"Awaiting approval for {tool_name}",
             )
         )
@@ -308,12 +327,30 @@ class TextualUI(UI):
                 "edits": None,
             },
         )
-        self.app.post_message(AgentThinkingStatus(is_thinking=False, phase="approval"))
-        self._set_runtime_status("Processing")
+        self.app.post_message(
+            AgentThinkingStatus(is_thinking=False, phase=AWAITING_APPROVAL)
+        )
+        self._set_planning_state("Applying approval decision...")
 
-    def _set_runtime_status(self, status: str) -> None:
-        self._runtime_status = status
-        self.app.post_message(AgentStatusUpdate({"status": status}))
+    def _set_runtime_phase(self, phase: str, detail: str = "") -> None:
+        normalized = normalize_phase(str(phase))
+        self._runtime_phase = normalized
+        self._runtime_phase_detail = str(detail or "")
+        self.app.post_message(
+            AgentStatusUpdate(
+                {
+                    "phase": normalized,
+                    "phase_detail": self._runtime_phase_detail,
+                    "status": normalized,
+                }
+            )
+        )
+
+    def _set_planning_state(self, detail: str) -> None:
+        self.app.post_message(
+            AgentThinkingStatus(is_thinking=True, phase=PLANNING, detail=detail)
+        )
+        self._set_runtime_phase(PLANNING, detail)
 
     # --- BLOCKING INTERACTION ---
 
@@ -328,7 +365,7 @@ class TextualUI(UI):
         Reuses the main input bar to get a response.
         """
         # 1. Show the prompt in the chat so user knows what to do
-        self.app.post_message(AgentSystemMessage(f"❓ {prompt}", type="info"))
+        self.app.post_message(AgentSystemMessage(str(prompt), type="info"))
 
         # 2. Wait for input using the existing mechanism
         # Since the Agent loop is paused inside 'dispatch', this is safe.
@@ -360,7 +397,7 @@ class TextualUI(UI):
         self.app.post_message(AgentSystemMessage(msg, type="info"))
 
     async def start_thinking(self):
-        self.app.post_message(AgentThinkingStatus(True))
+        self.app.post_message(AgentThinkingStatus(True, phase=THINKING))
 
     async def stop_thinking(self):
-        self.app.post_message(AgentThinkingStatus(False))
+        self.app.post_message(AgentThinkingStatus(False, phase=THINKING))

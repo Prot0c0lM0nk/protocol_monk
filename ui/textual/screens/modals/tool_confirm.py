@@ -25,12 +25,12 @@ class ToolConfirmModal(ModalScreen[bool]):
     CSS = """
     ToolConfirmModal {
         align: center middle;
-        background: $background 80%; /* Semi-transparent dimming */
+        background: #03070d 80%;
     }
 
     #dialog {
-        background: $surface;
-        border: thick $primary;
+        background: #111923;
+        border: thick #00b8d9;
         width: 90%;
         height: 85%;
         padding: 1 2;
@@ -39,24 +39,25 @@ class ToolConfirmModal(ModalScreen[bool]):
     #question {
         text-style: bold;
         margin-bottom: 1;
+        color: #d5e6f8;
     }
 
     #summary {
-        color: #9aa3ad;
+        color: #8fa6bd;
         margin-bottom: 1;
     }
 
     #preview-scroll {
         height: 1fr;
-        border: solid $accent;
-        background: $background;
+        border: solid #f8c96c;
+        background: #0a1017;
         margin-bottom: 1;
         padding: 1;
     }
 
     #preview-content {
-        background: $background;
-        color: $text;
+        background: #0a1017;
+        color: #d5e6f8;
         height: auto;
     }
 
@@ -71,6 +72,7 @@ class ToolConfirmModal(ModalScreen[bool]):
 
     Button {
         width: 100%;
+        text-style: bold;
     }
     """
 

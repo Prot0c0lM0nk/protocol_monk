@@ -21,12 +21,12 @@ class SelectionModal(ModalScreen[Optional[int]]):
     CSS = """
     SelectionModal {
         align: center middle;
-        background: $background 80%;
+        background: #03070d 80%;
     }
 
     #dialog {
-        background: $surface;
-        border: thick $primary;
+        background: #111923;
+        border: thick #00b8d9;
         width: 80%;
         height: 70%;
         padding: 1 2;
@@ -35,11 +35,13 @@ class SelectionModal(ModalScreen[Optional[int]]):
     #title {
         text-style: bold;
         margin-bottom: 1;
+        color: #d5e6f8;
     }
 
     #list {
         height: 1fr;
-        border: solid $accent;
+        border: solid #f8c96c;
+        background: #0a1017;
         margin-bottom: 1;
     }
 
@@ -54,6 +56,7 @@ class SelectionModal(ModalScreen[Optional[int]]):
 
     Button {
         width: 100%;
+        text-style: bold;
     }
     """
 

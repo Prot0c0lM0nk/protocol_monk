@@ -16,52 +16,77 @@ class AgentCommandProvider(Provider):
 
     # === THE COMMAND DEFINITIONS ===
     # We define them in one place so both search and discover can see them.
-    # Format: (Display Name, Callback, Help Text)
+    # Format: (Group, Display Name, Callback, Help Text)
     DATA = [
-        # -- Real Agent Actions --
-        ("Quit Protocol Monk", "action_quit", "Exit the application gracefully"),
-        ("Refresh Status", "action_status", "Refresh status bar metrics"),
-        ("Clear Context", "action_clear", "Reset conversation memory"),
-        ("Switch Model", "action_model", "Switch the AI model"),
-        ("Switch Provider", "action_provider", "Switch between Ollama/OpenRouter"),
-        # -- UI Stress Tests (Manual Verification) --
-        ("Test: Error Toast", "test_error", "[DEBUG] Fire a fake error event"),
-        ("Test: Info Toast", "test_info", "[DEBUG] Fire a fake info event"),
+        # -- Chat --
+        ("Chat", "Clear Context", "action_clear", "Reset conversation memory"),
         (
+            "Chat",
+            "Open Latest Reasoning Detail",
+            "action_open_latest_reasoning",
+            "Open the latest hidden reasoning capture",
+        ),
+        (
+            "Chat",
+            "Toggle Reasoning Strip Density",
+            "action_toggle_reasoning_density",
+            "Switch compact/full labels for reasoning strips",
+        ),
+        # -- Tools --
+        ("Tools", "Switch Model", "action_model", "Switch the AI model"),
+        ("Tools", "Switch Provider", "action_provider", "Switch provider backend"),
+        # -- Session --
+        ("Session", "Refresh Status", "action_status", "Refresh status bar metrics"),
+        ("Session", "Quit Protocol Monk", "action_quit", "Exit the application"),
+        # -- UI --
+        ("UI", "Focus Input", "action_focus_input", "Focus message input editor"),
+        # -- UI Stress Tests (Manual Verification) --
+        ("UI", "Test: Error Toast", "test_error", "[DEBUG] Fire a fake error event"),
+        ("UI", "Test: Info Toast", "test_info", "[DEBUG] Fire a fake info event"),
+        (
+            "UI",
             "Test: Thinking On",
             "test_thinking_on",
             "[DEBUG] Force thinking indicator ON",
         ),
         (
+            "UI",
             "Test: Thinking Off",
             "test_thinking_off",
             "[DEBUG] Force thinking indicator OFF",
         ),
         (
+            "UI",
             "Test: Tool Confirmation",
             "test_tool_confirm",
             "[DEBUG] Pop the tool confirmation modal",
         ),
     ]
 
+    @staticmethod
+    def _display_name(group: str, name: str) -> str:
+        return f"{group}: {name}"
+
     async def discover(self) -> Hits:
         """Called when the palette is opened with NO text."""
-        for name, callback_name, help_text in self.DATA:
+        for group, name, callback_name, help_text in self.DATA:
+            display = self._display_name(group, name)
             # We use DiscoveryHit for the initial list
             yield DiscoveryHit(
-                display=name, command=getattr(self, callback_name), help=help_text
+                display=display, command=getattr(self, callback_name), help=help_text
             )
 
     async def search(self, query: str) -> Hits:
         """Called when the user starts TYPING."""
         matcher = self.matcher(query)
 
-        for name, callback_name, help_text in self.DATA:
-            score = matcher.match(name)
+        for group, name, callback_name, help_text in self.DATA:
+            display = self._display_name(group, name)
+            score = matcher.match(display)
             if score > 0:
                 yield Hit(
                     score=score,
-                    match_display=matcher.highlight(name),
+                    match_display=matcher.highlight(display),
                     action=getattr(self, callback_name),
                     help=help_text,
                 )
@@ -110,6 +135,24 @@ class AgentCommandProvider(Provider):
 
     async def action_provider(self):
         await self._inject_command("/provider")
+
+    async def action_open_latest_reasoning(self):
+        if hasattr(self.app, "action_open_latest_reasoning"):
+            self.app.action_open_latest_reasoning()
+        else:
+            self.app.notify("Latest reasoning detail unavailable.", severity="warning")
+
+    async def action_toggle_reasoning_density(self):
+        if hasattr(self.app, "action_toggle_reasoning_density"):
+            self.app.action_toggle_reasoning_density()
+        else:
+            self.app.notify("Reasoning density toggle unavailable.", severity="warning")
+
+    async def action_focus_input(self):
+        if hasattr(self.app, "action_focus_input"):
+            self.app.action_focus_input()
+        else:
+            self.app.notify("Input focus action unavailable.", severity="warning")
 
     # --- 2. DEBUG TESTS (Event Emission) ---
 

@@ -1,4 +1,17 @@
 /* ui/textual/styles/components.tcss */
+/* Neon Monastic palette
+   base-0: #03070d
+   base-1: #0a1017
+   base-2: #111923
+   text-0: #d5e6f8
+   text-muted: #8fa6bd
+   accent-cyan: #00b8d9
+   accent-cyan-soft: #5e7ea1
+   action-green: #7fd7a8
+   action-green-soft: #f6e58d
+   warning-amber: #f8c96c
+   error-red: #ff8e8e
+*/
 
 InputBar {
     dock: bottom;
@@ -26,7 +39,7 @@ InputBar > Button {
 }
 
 InputBar > Button:hover {
-    background: #00d7ff;
+    background: #00b8d9;
     color: #000000;
 }
 
@@ -46,12 +59,12 @@ StatusBar Static {
 }
 
 StatusBar > .separator {
-    color: #5e7ea1;
+    color: #4d6a85;
     padding: 0;
 }
 
 StatusBar > .metric-label {
-    color: #8ab5da;
+    color: #8fa6bd;
     text-style: bold;
 }
 
@@ -70,7 +83,8 @@ StatusBar > .spacer {
 #model-label,
 #messages-label,
 #token-label,
-#working-dir-label {
+#working-dir-label,
+#status-detail-label {
     color: #d5e6f8;
 }
 
@@ -94,22 +108,42 @@ StatusBar > .spacer {
 }
 
 #working-dir-label {
-    width: 40;
+    width: 22;
 }
 
 #status-label {
-    color: #7fd7a8;
-    min-width: 20;
+    min-width: 14;
 }
 
-.status-thinking {
-    color: #f6e58d;
+#status-detail-label {
+    width: 34;
+    color: #8fa6bd;
 }
 
 .status-error {
     color: #ff8e8e;
 }
 
-.status-idle {
+.status-ready {
     color: #7fd7a8;
+}
+
+.status-thinking {
+    color: #f6e58d;
+}
+
+.status-planning {
+    color: #f8c96c;
+}
+
+.status-tools {
+    color: #00b8d9;
+}
+
+.status-waiting {
+    color: #f8c96c;
+}
+
+.status-detail {
+    color: #8fa6bd;
 }

@@ -226,3 +226,27 @@ class ProtocolMonkApp(App):
 
         target_id = detail_id.strip() if isinstance(detail_id, str) else ""
         self.screen.open_detail(target_id or None)
+
+    def action_open_latest_reasoning(self) -> None:
+        """Open the latest reasoning detail modal."""
+        if not hasattr(self.screen, "open_latest_reasoning_detail"):
+            self.notify("Reasoning details are unavailable on this screen.", severity="warning")
+            return
+        self.screen.open_latest_reasoning_detail()
+
+    def action_toggle_reasoning_density(self) -> None:
+        """Toggle compact/full labels for reasoning strips."""
+        if not hasattr(self.screen, "toggle_reasoning_density"):
+            self.notify("Reasoning density toggle is unavailable here.", severity="warning")
+            return
+        density = self.screen.toggle_reasoning_density()
+        label = "full" if density == "full" else "compact"
+        self.notify(f"Reasoning strip density: {label}", severity="information")
+
+    def action_focus_input(self) -> None:
+        """Move focus to the message input text area."""
+        try:
+            input_widget = self.screen.query_one("#msg-input")
+            input_widget.focus()
+        except Exception:
+            self.notify("Input field not available on this screen.", severity="warning")
