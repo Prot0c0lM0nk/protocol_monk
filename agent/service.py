@@ -82,7 +82,6 @@ class AgentService:
 
         # State
         self._running = False
-        self.max_autonomous_loops = 10
         self._tool_retry_counts: Dict[str, int] = {}
         self._turn_lock = asyncio.Lock()
 
@@ -138,11 +137,11 @@ class AgentService:
     async def _run_cognitive_loop(self):
         """
         The internal Think-Act loop (formerly TAORLoop).
-        Runs until the agent decides to stop or max loops reached.
+        Runs until the agent decides to stop.
         """
         self.logger.debug("--- STARTING COGNITIVE LOOP ---")
         loop_count = 0
-        while loop_count < self.max_autonomous_loops:
+        while True:
             loop_count += 1
             self.logger.debug(f"Loop iteration: {loop_count}")
 
