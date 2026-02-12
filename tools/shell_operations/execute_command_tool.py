@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -153,9 +154,11 @@ class ExecuteCommandTool(BaseTool):
                         process = await asyncio.create_subprocess_shell(
                             command,
                             cwd=self.working_dir,
+                            stdin=asyncio.subprocess.DEVNULL,
                             stdout=log_file,
                             stderr=log_file,
                             env=env,
+                            start_new_session=True,
                             executable=(
                                 "/bin/bash" if os.path.exists("/bin/bash") else None
                             ),
@@ -166,9 +169,11 @@ class ExecuteCommandTool(BaseTool):
                             args[0],
                             *args[1:],
                             cwd=self.working_dir,
+                            stdin=asyncio.subprocess.DEVNULL,
                             stdout=log_file,
                             stderr=log_file,
                             env=env,
+                            start_new_session=True,
                         )
                 finally:
                     log_file.close()
@@ -193,9 +198,11 @@ class ExecuteCommandTool(BaseTool):
                 process = await asyncio.create_subprocess_shell(
                     command,
                     cwd=self.working_dir,
+                    stdin=asyncio.subprocess.DEVNULL,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     env=env,
+                    start_new_session=True,
                     executable=("/bin/bash" if os.path.exists("/bin/bash") else None),
                 )
             else:
@@ -204,9 +211,11 @@ class ExecuteCommandTool(BaseTool):
                     args[0],
                     *args[1:],
                     cwd=self.working_dir,
+                    stdin=asyncio.subprocess.DEVNULL,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     env=env,
+                    start_new_session=True,
                 )
 
             self.logger.debug("Started process PID %s: %s", process.pid, command)
@@ -248,8 +257,14 @@ class ExecuteCommandTool(BaseTool):
         Best-effort subprocess cleanup for timeout/cancellation paths.
         """
         if process is not None and process.returncode is None:
-            with contextlib.suppress(ProcessLookupError):
-                process.kill()
+            # We launch commands in a new session so we can terminate the full
+            # process group (shell + children) and avoid orphaned workers.
+            if os.name == "posix":
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+            else:
+                with contextlib.suppress(ProcessLookupError):
+                    process.kill()
             with contextlib.suppress(asyncio.CancelledError, ProcessLookupError):
                 await process.wait()
 
