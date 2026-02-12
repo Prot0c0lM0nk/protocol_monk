@@ -81,14 +81,27 @@ read_file(filepath="src/main.py", line_start=51, line_end=100)  # Wasteful
 **Grace Period Interaction:**  
 Reading `src/main.py` again will **automatically expire** the previous read of `src/main.py` after 40 messages. **This is expected behavior.**
 
-### 3. LINE EDITING RULES (ALL TOOLS)
+### 3. EXECUTE_COMMAND USAGE (TECHNICAL SPECIFICATION)
+
+**Parameters:**
+- `command`: Required shell command string
+- `description`: Optional reason/context for auditability
+- `timeout`: Optional timeout in seconds
+- `spawn`: Optional boolean for background execution (**explicit only**)
+
+**Execution Rules:**
+- Background mode is **explicit-only**: use `spawn=true` when you intentionally want detached execution.
+- Do **not** rely on shell text heuristics like `&`/`nohup` alone to imply background mode.
+- Prefer `read_file` for reading local files; use `execute_command` for shell-native operations.
+
+### 4. LINE EDITING RULES (ALL TOOLS)
 
 - **Line numbers are 1-based and INCLUSIVE**
 - `replace_lines(line_start=10, line_end=15)` replaces lines 10, 11, 12, 13, 14, 15
 - `delete_lines(line_start=10, line_end=15)` deletes those same 6 lines
 - **Always verify line numbers with `read_file` first**
 
-### 4. CONTENT STAGING (SCRATCH SYSTEM)
+### 5. CONTENT STAGING (SCRATCH SYSTEM)
 
 For large content in `create_file`, `replace_lines`, `append_to_file`, `insert_in_file`:
 - Content **>4 KB** is automatically staged to scratch system

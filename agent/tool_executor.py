@@ -109,11 +109,16 @@ class ToolExecutor:
                 timeout=settings.model.request_timeout,
             )
         except asyncio.TimeoutError:
-            raise ToolExecutionError(
-                "Tool execution timed out",
+            timeout_error = ToolExecutionError(
+                "Tool execution timed out.",
                 tool_name=action,
+                user_hint=(
+                    "Tool execution timed out. "
+                    "Try a shorter command, add limits, or use spawn mode when appropriate."
+                ),
                 details={"timeout_seconds": settings.model.request_timeout},
-            ) from None
+            )
+            return await self._handle_tool_exception(timeout_error, action)
         except Exception as e:
             return await self._handle_tool_exception(e, action)
 

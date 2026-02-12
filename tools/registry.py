@@ -142,6 +142,12 @@ class ToolRegistry:
             init_args = {k: v for k, v in dependencies.items() if k in tool_params}
 
             tool_instance = tool_class(**init_args)
+            if not self._is_valid_tool_schema(tool_instance):
+                self.logger.error(
+                    "Rejected tool '%s' due to invalid schema contract.",
+                    tool_class.__name__,
+                )
+                return
             self._tools[tool_instance.schema.name] = tool_instance
             self.logger.debug("Registered tool: %s", tool_instance.schema.name)
 
@@ -152,6 +158,58 @@ class ToolRegistry:
                 e,
                 exc_info=True,
             )
+
+    def _is_valid_tool_schema(self, tool_instance: BaseTool) -> bool:
+        """
+        Validate schema consistency for tool registration.
+
+        Contract:
+        - Parameters must be a dictionary.
+        - Required parameters must exist in parameters.
+        - Parameter specs must be dictionaries with "type" and "description".
+        """
+        schema = tool_instance.schema
+        params = schema.parameters
+        required = schema.required_params
+
+        if not isinstance(params, dict):
+            self.logger.error(
+                "Tool '%s' schema.parameters must be a dict.", schema.name
+            )
+            return False
+
+        if not isinstance(required, list):
+            self.logger.error(
+                "Tool '%s' schema.required_params must be a list.", schema.name
+            )
+            return False
+
+        for required_param in required:
+            if required_param not in params:
+                self.logger.error(
+                    "Tool '%s' required param '%s' missing from parameters.",
+                    schema.name,
+                    required_param,
+                )
+                return False
+
+        for param_name, spec in params.items():
+            if not isinstance(spec, dict):
+                self.logger.error(
+                    "Tool '%s' parameter '%s' spec must be a dict.",
+                    schema.name,
+                    param_name,
+                )
+                return False
+            if "type" not in spec or "description" not in spec:
+                self.logger.error(
+                    "Tool '%s' parameter '%s' must include type and description.",
+                    schema.name,
+                    param_name,
+                )
+                return False
+
+        return True
 
     def _get_tool_dependencies(self) -> Dict[str, Any]:
         """

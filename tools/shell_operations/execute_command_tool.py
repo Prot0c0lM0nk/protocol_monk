@@ -27,11 +27,6 @@ DEFAULT_TIMEOUT = 30
 # Default timeout for long-running git operations (in seconds)
 GIT_TIMEOUT = 60
 
-# Spawn mode patterns (semantic detection, not heuristics)
-SHELL_BACKGROUND_PATTERN = "&"
-NOHUP_PATTERN = "nohup"
-
-
 class ExecuteCommandTool(BaseTool):
     """Tool for executing shell commands."""
 
@@ -61,7 +56,7 @@ class ExecuteCommandTool(BaseTool):
                 },
                 "description": {
                     "type": "string",
-                    "description": "Reason for running this command",
+                    "description": "Optional reason for running this command",
                 },
                 "timeout": {
                     "type": "number",
@@ -74,7 +69,7 @@ class ExecuteCommandTool(BaseTool):
                     "default": False,
                 },
             },
-            required_params=["command", "description"],
+            required_params=["command"],
         )
 
     async def execute(self, **kwargs) -> ToolResult:
@@ -99,7 +94,7 @@ class ExecuteCommandTool(BaseTool):
             self.logger.warning("Blocked dangerous command: %s", command)
             return ToolResult.security_blocked(safety_message)
 
-        # Determine spawn mode based on command patterns
+        # Spawn mode is explicit-only to avoid accidental background execution.
         spawn_mode = self._detect_spawn_mode(command, explicit_spawn)
 
         if spawn_mode:
@@ -113,10 +108,8 @@ class ExecuteCommandTool(BaseTool):
         """
         Detect if command should run in spawn mode.
 
-        Spawn mode is used when:
-        1. Explicit spawn flag is set
-        2. Command contains shell background operator (&) as a token (not &&)
-        3. Command contains nohup (detached execution)
+        Spawn mode is explicit-only. We do not infer spawn from command text
+        (such as '&' or 'nohup') because it can misclassify normal commands.
 
         Args:
             command: The command string to analyze.
@@ -125,22 +118,8 @@ class ExecuteCommandTool(BaseTool):
         Returns:
             bool: True if spawn mode should be used.
         """
-        if explicit_spawn:
-            return True
-
-        # Check for shell background operator & (not &&, &&&, etc.)
-        # This should be a standalone token or at the end
-        import re
-        # Match: " &" (space before) or " &" (space before, optional space after)
-        # or command ending with " &"
-        if re.search(r'\s&\s*$', command) or re.search(r'\s&\s', command):
-            return True
-
-        # Check for nohup (detached execution)
-        if NOHUP_PATTERN in command:
-            return True
-
-        return False
+        del command  # command text intentionally ignored for spawn detection
+        return bool(explicit_spawn)
 
     async def _run_command_async(
         self, command: str, timeout: int, spawn: bool = False
@@ -156,6 +135,10 @@ class ExecuteCommandTool(BaseTool):
         Returns:
             ToolResult: The result of the execution.
         """
+        process = None
+        stdout_task = None
+        stderr_task = None
+
         try:
             env = os.environ.copy()
             needs_shell = self._requires_shell(command)
@@ -239,13 +222,7 @@ class ExecuteCommandTool(BaseTool):
             try:
                 await asyncio.wait_for(process.wait(), timeout=timeout)
             except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
-                stdout_task.cancel()
-                stderr_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await stdout_task
-                    await stderr_task
+                await self._cleanup_process(process, stdout_task, stderr_task)
                 return ToolResult.timeout(f"Command timed out after {timeout}s")
 
             stdout_task_result, stderr_task_result = await asyncio.gather(
@@ -257,9 +234,34 @@ class ExecuteCommandTool(BaseTool):
                 command, process.returncode, stdout_task_result, stderr_task_result
             )
 
+        except asyncio.CancelledError:
+            # Ensure subprocess pipes/process are cleaned up before propagating cancel.
+            await self._cleanup_process(process, stdout_task, stderr_task)
+            raise
         except Exception as e:  # pylint: disable=broad-exception-caught
+            await self._cleanup_process(process, stdout_task, stderr_task)
             self.logger.error("Command execution error: %s", e, exc_info=True)
             return ToolResult.internal_error(f"Execution failed: {str(e)}")
+
+    async def _cleanup_process(self, process, stdout_task, stderr_task) -> None:
+        """
+        Best-effort subprocess cleanup for timeout/cancellation paths.
+        """
+        if process is not None and process.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                process.kill()
+            with contextlib.suppress(asyncio.CancelledError, ProcessLookupError):
+                await process.wait()
+
+        for task in (stdout_task, stderr_task):
+            if task is not None and not task.done():
+                task.cancel()
+
+        for task in (stdout_task, stderr_task):
+            if task is None:
+                continue
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     async def _stream_output(
         self, stream, stream_name: str, logger
@@ -357,8 +359,7 @@ class ExecuteCommandTool(BaseTool):
         Returns:
             bool: True if shell is required.
         """
-        # Note: We now exclude '&' from shell indicators since it triggers spawn mode
-        shell_indicators = ["|", ">", "<", ";", "$", "`", "*", "?"]
+        shell_indicators = ["|", ">", "<", ";", "$", "`", "*", "?", "&"]
         return any(indicator in command for indicator in shell_indicators)
 
     def _format_result(

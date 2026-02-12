@@ -57,10 +57,7 @@ class ToolResult:
 
         self.output = output
         self.data = data or {}
-        self.success = self.status in (
-            ExecutionStatus.SUCCESS,
-            ExecutionStatus.COMMAND_FAILED,
-        )
+        self.success = self.status == ExecutionStatus.SUCCESS
 
     @classmethod
     def success_result(cls, output: str, data: Dict = None):
