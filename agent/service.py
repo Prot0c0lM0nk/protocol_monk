@@ -7,7 +7,6 @@ Strictly Event-Driven. No UI coupling.
 
 import asyncio
 import logging
-import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -17,12 +16,14 @@ from agent.model_manager import RuntimeModelManager
 from agent.scratch_manager import ScratchManager
 from agent.tool_executor import ToolExecutor
 from agent.command_dispatcher import CommandDispatcher
-from agent.logic.parsers import ToolCallExtractor
 from agent.logic.streaming import ResponseStreamHandler
 from agent.events import EventBus, AgentEvents, get_event_bus
+from agent.tool_pipeline.manager import ToolPipelineManager
+from agent.neuralsym import NeuralSymBridge
+from agent.tool_pipeline.types import ToolPipelineMode
 from agent.context import model_error_prompts
 from config.static import settings
-from exceptions import ContextValidationError
+from exceptions import ModelError, ModelTimeoutError
 from utils.enhanced_logger import EnhancedLogger
 from utils.proper_tool_calling import ProperToolCalling
 
@@ -77,8 +78,34 @@ class AgentService:
             ui=None,  # Explicitly None
         )
 
+        # Initialize NeuralSym bridge for learned guidance
+        self.neuralsym: Optional[NeuralSymBridge] = None
+        if settings.neuralsym.enabled:
+            try:
+                self.neuralsym = NeuralSymBridge(
+                    project_path=settings.filesystem.working_dir,
+                    lfm_model=settings.neuralsym.lfm_model,
+                    lfm_provider=settings.neuralsym.lfm_provider,
+                    enabled=True,
+                )
+                # Connect to tool executor for learning
+                self.tool_executor.neuralsym = self.neuralsym
+                self.logger.info("NeuralSym bridge initialized")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize NeuralSym: {e}")
+                self.neuralsym = None
+
         self.command_dispatcher = CommandDispatcher(self)
         self.stream_handler = ResponseStreamHandler(self.event_bus)
+        self.pipeline_manager = ToolPipelineManager(
+            tool_registry=tool_registry,
+            proper_tool_caller=self.proper_tool_caller,
+        )
+        self.pipeline_manager.set_mode(ToolPipelineMode.NATIVE.value)
+        self._tool_pipeline_mode = ToolPipelineMode.NATIVE.value
+        self._pending_tool_pipeline_mode: Optional[str] = None
+        self._latest_user_input: str = ""
+        self._mode_lock = asyncio.Lock()
 
         # State
         self._running = False
@@ -90,6 +117,15 @@ class AgentService:
         if hasattr(self.tool_executor.tool_registry, "async_initialize"):
             await self.tool_executor.tool_registry.async_initialize()
         await self.context_manager.async_initialize()
+        initial_mode = settings.tool_pipeline.mode
+        if initial_mode != ToolPipelineMode.NATIVE.value:
+            result = await self._apply_tool_pipeline_mode(initial_mode, source="startup")
+            if not result.get("success"):
+                self.logger.warning(
+                    "Failed to activate startup pipeline mode '%s': %s",
+                    initial_mode,
+                    result.get("message"),
+                )
 
         # Subscribe to INPUT
         self.event_bus.subscribe(AgentEvents.USER_INPUT.value, self.on_user_input)
@@ -111,6 +147,7 @@ class AgentService:
         user_input = event_data.get("input", "")
         if not user_input:
             return
+        self._latest_user_input = str(user_input)
 
         async with self._turn_lock:
             try:
@@ -133,6 +170,10 @@ class AgentService:
             finally:
                 # 3. Finish (Always unlock the UI)
                 await self.event_bus.emit(AgentEvents.RESPONSE_COMPLETE.value, {})
+                if self._pending_tool_pipeline_mode:
+                    pending = self._pending_tool_pipeline_mode
+                    self._pending_tool_pipeline_mode = None
+                    await self._apply_tool_pipeline_mode(pending, source="deferred")
 
     async def _run_cognitive_loop(self):
         """
@@ -144,6 +185,20 @@ class AgentService:
         while True:
             loop_count += 1
             self.logger.debug(f"Loop iteration: {loop_count}")
+            
+            # Generate and inject NeuralSym guidance before each turn
+            if self.neuralsym and self.neuralsym.guidance_context.has_guidance:
+                guidance_msg = self.neuralsym.get_guidance_message()
+                if guidance_msg:
+                    await self.context_manager.add_temporary_system_prompt(
+                        guidance_msg["content"]
+                    )
+
+            # FunctionGemma mode injects tool-list wrappers every turn.
+            if self._tool_pipeline_mode == ToolPipelineMode.FUNCTIONGEMMA.value:
+                await self.context_manager.add_temporary_system_prompt(
+                    self.pipeline_manager.build_tool_list_prompt()
+                )
 
             # A. Prepare Context
             self.logger.debug("Getting context...")
@@ -155,11 +210,7 @@ class AgentService:
 
             # B. Get Response (Stream)
             self.logger.debug("Streaming response from model...")
-            tools_schema = (
-                self.proper_tool_caller.get_tools_schema()
-                if self.proper_tool_caller
-                else None
-            )
+            tools_schema = self.pipeline_manager.get_main_model_tools_schema()
 
             try:
                 # Add explicit debug log here
@@ -167,17 +218,39 @@ class AgentService:
                     f"Calling stream handler with {len(context)} messages"
                 )
                 response_obj = await self.stream_handler.stream(
-                    self.model_client, context, tools_schema
+                    self.model_client,
+                    context,
+                    tools_schema,
+                    hide_tool_wrappers=(
+                        self._tool_pipeline_mode == ToolPipelineMode.FUNCTIONGEMMA.value
+                    ),
                 )
                 self.logger.debug(
                     f"Stream complete. Response type: {type(response_obj)}"
                 )
             except Exception as e:
-                self.logger.exception("Streaming failed!")
+                should_continue = await self._handle_stream_failure(e)
+                if should_continue:
+                    continue
                 break
 
             # C. Parse
-            actions, has_actions = ToolCallExtractor.extract(response_obj)
+            parsed = await self.pipeline_manager.parse_response(
+                response_obj,
+                latest_user_text=self._latest_user_input,
+            )
+            if parsed.error:
+                self.logger.error("Tool pipeline parse error: %s", parsed.error)
+                await self.event_bus.emit(
+                    AgentEvents.ERROR.value,
+                    {
+                        "message": f"Tool pipeline parse error: {parsed.error}",
+                        "context": "tool_pipeline",
+                    },
+                )
+                break
+            actions = parsed.actions
+            has_actions = parsed.has_actions
 
             # Use the new safe logger method
             if hasattr(self.enhanced_logger, "log_turn"):
@@ -189,31 +262,7 @@ class AgentService:
                 )
 
             # D. Record Assistant Message
-            if has_actions:
-                # FIX: Extract ONLY the tool_calls list, not the full object
-                tool_calls_payload = []
-
-                if isinstance(response_obj, dict) and "message" in response_obj:
-                    # Standard Ollama/OpenAI API dict format
-                    tool_calls_payload = response_obj["message"].get("tool_calls", [])
-                elif hasattr(response_obj, "tool_calls"):
-                    # Pydantic object format
-                    tool_calls_payload = response_obj.tool_calls
-                elif isinstance(response_obj, dict) and "tool_calls" in response_obj:
-                    # Flattened dict format
-                    tool_calls_payload = response_obj["tool_calls"]
-                else:
-                    # Fallback: trust the extractor or empty
-                    tool_calls_payload = actions if isinstance(actions, list) else []
-
-                await self.context_manager.add_tool_call_message(tool_calls_payload)
-            else:
-                # Just text
-                if isinstance(response_obj, str) and response_obj.strip():
-                    await self.context_manager.add_assistant_message(response_obj)
-                else:
-                    # Fallback if response_obj was complex but yielded no actions (rare)
-                    pass
+            await self._record_assistant_output(parsed, len(actions))
 
             if not has_actions:
                 # Agent is done talking
@@ -253,10 +302,18 @@ class AgentService:
                         summary.should_finish = True
 
             for result in summary.results:
+                result_content = result.output
+                if self._tool_pipeline_mode == ToolPipelineMode.FUNCTIONGEMMA.value:
+                    result_content = self.pipeline_manager.wrap_tool_result(
+                        result.tool_name,
+                        result.success,
+                        result.tool_call_id,
+                        result.output,
+                    )
                 await self.context_manager.add_tool_result_message(
                     tool_name=result.tool_name,
                     tool_call_id=result.tool_call_id,
-                    content=result.output,
+                    content=result_content,
                 )
 
             # Check if we should stop
@@ -264,6 +321,22 @@ class AgentService:
                 break
 
             # Loop continues to reflect on tool results...
+
+    async def _record_assistant_output(self, parsed, actions_count: int) -> None:
+        """Record assistant output and optional tool-call history."""
+        if parsed.has_actions:
+            if parsed.assistant_text.strip():
+                await self.context_manager.add_assistant_message(parsed.assistant_text)
+            if parsed.persist_tool_call_message:
+                await self.context_manager.add_tool_call_message(parsed.tool_calls_payload)
+            else:
+                self.logger.debug(
+                    "PIPELINE_DIAG skip_tool_call_persist mode=%s actions=%d",
+                    self._tool_pipeline_mode,
+                    actions_count,
+                )
+        elif parsed.assistant_text.strip():
+            await self.context_manager.add_assistant_message(parsed.assistant_text)
 
     async def _get_clean_context(self):
         try:
@@ -300,6 +373,7 @@ class AgentService:
             "conversation_length": stats["total_messages"],
             "estimated_tokens": stats["total_tokens"],
             "token_limit": self.context_manager.max_tokens,
+            "tool_pipeline_mode": self._tool_pipeline_mode,
         }
 
     async def set_model(self, model_name: str):
@@ -309,3 +383,259 @@ class AgentService:
         model_info = self.model_manager.get_available_models().get(model_name)
         if model_info:
             await self.context_manager.update_max_tokens(model_info.context_window)
+
+    def get_tool_pipeline_mode(self) -> str:
+        return self._tool_pipeline_mode
+
+    async def request_tool_pipeline_mode(
+        self, mode: str, source: str = "ui"
+    ) -> Dict[str, Any]:
+        """
+        Runtime mode switch request. If a turn is active, queue for next idle state.
+        """
+        normalized = self.pipeline_manager.normalize(mode).value
+        if (
+            normalized == ToolPipelineMode.FUNCTIONGEMMA.value
+            and self.current_provider == "mlx_lm"
+        ):
+            message = (
+                "FunctionGemma tool mode is disabled while provider is 'mlx_lm'. "
+                "Use /toolmode off or switch provider first."
+            )
+            await self.event_bus.emit(
+                AgentEvents.WARNING.value,
+                {"message": message, "context": "tool_pipeline"},
+            )
+            await self.event_bus.emit(
+                AgentEvents.INFO.value,
+                {
+                    "message": f"Tool pipeline mode remains '{self._tool_pipeline_mode}'.",
+                    "context": "tool_pipeline",
+                },
+            )
+            return {
+                "success": False,
+                "queued": False,
+                "applied": False,
+                "active_mode": self._tool_pipeline_mode,
+                "message": message,
+            }
+
+        ok, reason = self.pipeline_manager.validate_mode_preconditions(normalized)
+        if not ok:
+            return {
+                "success": False,
+                "queued": False,
+                "applied": False,
+                "active_mode": self._tool_pipeline_mode,
+                "message": reason,
+            }
+
+        if self._turn_lock.locked():
+            self._pending_tool_pipeline_mode = normalized
+            return {
+                "success": True,
+                "queued": True,
+                "applied": False,
+                "active_mode": self._tool_pipeline_mode,
+                "pending_mode": self._pending_tool_pipeline_mode,
+                "message": f"Queued tool pipeline mode '{normalized}' from {source}.",
+            }
+
+        return await self._apply_tool_pipeline_mode(normalized, source=source)
+
+    async def _apply_tool_pipeline_mode(self, mode: str, source: str) -> Dict[str, Any]:
+        """
+        Apply runtime pipeline mode immediately (idle path).
+        """
+        async with self._mode_lock:
+            normalized = self.pipeline_manager.normalize(mode).value
+            if (
+                normalized == ToolPipelineMode.FUNCTIONGEMMA.value
+                and self.current_provider == "mlx_lm"
+            ):
+                return {
+                    "success": False,
+                    "queued": False,
+                    "applied": False,
+                    "active_mode": self._tool_pipeline_mode,
+                    "message": (
+                        "FunctionGemma tool mode is disabled while provider is 'mlx_lm'."
+                    ),
+                }
+            if normalized == self._tool_pipeline_mode:
+                return {
+                    "success": True,
+                    "queued": False,
+                    "applied": True,
+                    "active_mode": self._tool_pipeline_mode,
+                    "message": f"Tool pipeline already '{normalized}'.",
+                }
+
+            ok, reason = self.pipeline_manager.validate_mode_preconditions(normalized)
+            if not ok:
+                return {
+                    "success": False,
+                    "queued": False,
+                    "applied": False,
+                    "active_mode": self._tool_pipeline_mode,
+                    "message": reason,
+                }
+
+            prompt_file = self.pipeline_manager.get_prompt_file_for_mode(normalized)
+            switched, switch_msg = await self.context_manager.set_base_system_prompt_file(
+                prompt_file
+            )
+            if not switched:
+                return {
+                    "success": False,
+                    "queued": False,
+                    "applied": False,
+                    "active_mode": self._tool_pipeline_mode,
+                    "message": switch_msg,
+                }
+
+            self.pipeline_manager.set_mode(normalized)
+            self._tool_pipeline_mode = normalized
+            self.logger.info(
+                "Tool pipeline switched to '%s' (source=%s)", normalized, source
+            )
+            await self.event_bus.emit(
+                AgentEvents.INFO.value,
+                {
+                    "message": f"Tool pipeline mode: {normalized}",
+                    "context": "tool_pipeline",
+                },
+            )
+            return {
+                "success": True,
+                "queued": False,
+                "applied": True,
+                "active_mode": self._tool_pipeline_mode,
+                "message": f"Switched tool pipeline to '{normalized}'.",
+            }
+
+    async def _handle_stream_failure(self, error: Exception) -> bool:
+        """
+        Handle stream errors and decide whether the turn should retry.
+        Returns True to retry loop, False to stop current turn.
+        """
+        self.logger.exception("Streaming failed")
+        if not self._is_mlx_stream_error(error):
+            await self.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": f"Model stream failed: {error}",
+                    "context": "stream_error",
+                },
+            )
+            return False
+
+        await self.event_bus.emit(
+            AgentEvents.WARNING.value,
+            {
+                "message": (
+                    "MLX server request failed. Choose retry, switch provider, or abort."
+                ),
+                "context": "mlx_server",
+            },
+        )
+        choice = await self._prompt_mlx_failure_action()
+        if choice == "retry":
+            await self.event_bus.emit(
+                AgentEvents.INFO.value,
+                {"message": "Retrying MLX server request.", "context": "mlx_server"},
+            )
+            return True
+
+        if choice == "switch":
+            switched = await self._switch_to_fallback_provider()
+            if switched:
+                await self.event_bus.emit(
+                    AgentEvents.INFO.value,
+                    {
+                        "message": "Switched provider. Retrying current turn.",
+                        "context": "mlx_server",
+                    },
+                )
+                return True
+
+            await self.event_bus.emit(
+                AgentEvents.WARNING.value,
+                {
+                    "message": "No fallback provider available. Aborting current turn.",
+                    "context": "mlx_server",
+                },
+            )
+            return False
+
+        await self.event_bus.emit(
+            AgentEvents.INFO.value,
+            {"message": "Aborted current turn.", "context": "mlx_server"},
+        )
+        return False
+
+    def _is_mlx_stream_error(self, error: Exception) -> bool:
+        if self.current_provider != "mlx_lm":
+            return False
+        if isinstance(error, (ModelError, ModelTimeoutError)):
+            return True
+        text = str(error).lower()
+        return "mlx" in text and "server" in text
+
+    async def _prompt_mlx_failure_action(self) -> str:
+        prompt = (
+            "MLX server request failed. Choose action: "
+            "1) retry  2) switch provider  3) abort"
+        )
+        await self.event_bus.emit(
+            AgentEvents.INPUT_REQUESTED.value,
+            {
+                "prompt": prompt,
+                "data": ["retry", "switch provider", "abort"],
+            },
+        )
+        try:
+            response = await self.event_bus.wait_for(
+                AgentEvents.INPUT_RESPONSE.value,
+                timeout=60.0,
+            )
+        except asyncio.TimeoutError:
+            return "abort"
+
+        raw = str(response.get("input", "")).strip().lower()
+        if raw in {"1", "retry", "r"}:
+            return "retry"
+        if raw in {"2", "switch", "switch provider", "s"}:
+            return "switch"
+        return "abort"
+
+    async def _switch_to_fallback_provider(self) -> bool:
+        chain = [p.strip() for p in settings.api.provider_chain if str(p).strip()]
+        alternatives = [p for p in chain if p and p != self.current_provider]
+        if not alternatives:
+            return False
+
+        target_provider = alternatives[0]
+        old_provider = self.current_provider
+        try:
+            self.model_manager.switch_provider(target_provider)
+            self.model_client.switch_provider(target_provider)
+            self.current_provider = target_provider
+            await self.event_bus.emit(
+                AgentEvents.PROVIDER_SWITCHED.value,
+                {
+                    "old_provider": old_provider,
+                    "new_provider": target_provider,
+                },
+            )
+            return True
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            await self.event_bus.emit(
+                AgentEvents.ERROR.value,
+                {
+                    "message": f"Failed to switch provider from '{old_provider}' to '{target_provider}': {exc}",
+                    "context": "mlx_server",
+                },
+            )
+            return False

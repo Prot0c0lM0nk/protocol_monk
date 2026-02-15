@@ -234,6 +234,28 @@ Tokens: {stats.get('estimated_tokens', 0):,} / {stats.get('token_limit', 0):,}""
                 AgentEvents.PROVIDER_SWITCHED.value,
                 {"old_provider": old_provider, "new_provider": selected},
             )
+            if (
+                selected == "mlx_lm"
+                and self.agent.get_tool_pipeline_mode() == "functiongemma"
+            ):
+                result = await self.agent.request_tool_pipeline_mode(
+                    "native", source="provider_switch_guard"
+                )
+                mode_msg = str(
+                    result.get(
+                        "message",
+                        "FunctionGemma mode is disabled for mlx_lm provider.",
+                    )
+                )
+                event_type = (
+                    AgentEvents.INFO.value
+                    if result.get("success")
+                    else AgentEvents.WARNING.value
+                )
+                await self.event_bus.emit(
+                    event_type,
+                    {"message": mode_msg, "context": "tool_pipeline"},
+                )
             # Chain model switch
             await self.event_bus.emit(
                 AgentEvents.INFO.value,

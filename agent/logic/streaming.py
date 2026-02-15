@@ -106,11 +106,7 @@ class ResponseStreamHandler:
 
         except Exception as e:
             logger.exception("Stream error")
-            await self.event_bus.emit(
-                AgentEvents.ERROR.value,
-                {"message": "Model stream failed.", "context": "stream_error"},
-            )
-            return "Error during generation."
+            raise
 
         finally:
             await self.event_bus.emit(AgentEvents.THINKING_STOPPED.value, {})

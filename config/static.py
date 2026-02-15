@@ -215,6 +215,7 @@ class ApiConfig:
                 "api_key": os.getenv("OPENROUTER_API_KEY"),
             },
             "mlx_lm": {
+                "url": os.getenv("PROTOCOL_MLX_LM_URL", "http://127.0.0.1:8080"),
                 "timeout": int(os.getenv("PROTOCOL_MLX_LM_TIMEOUT", "420")),
                 "max_retries": int(os.getenv("PROTOCOL_MLX_LM_RETRIES", "3")),
                 "retry_delay": float(os.getenv("PROTOCOL_MLX_LM_RETRY_DELAY", "1.0")),
@@ -253,6 +254,77 @@ class FileSystemConfig:
             "PROTOCOL_SYSTEM_PROMPT_FILE", "system_prompt.txt"
         )
         self.system_prompt_file = self.project_root / self.system_prompt_filename
+
+
+# =============================================================================
+# TOOL PIPELINE CONFIGURATION
+# =============================================================================
+
+
+class ToolPipelineConfig:
+    """Runtime-selectable tool pipeline configuration."""
+
+    def __init__(self, filesystem_config: FileSystemConfig):
+        raw_mode = os.getenv("PROTOCOL_TOOL_PIPELINE_MODE", "native").strip().lower()
+        self.mode = raw_mode if raw_mode in {"native", "functiongemma"} else "native"
+
+        self.function_model = os.getenv(
+            "PROTOCOL_FUNCTION_MODEL", "functiongemma:270m-it-fp16"
+        ).strip()
+        self.function_provider = os.getenv(
+            "PROTOCOL_FUNCTION_PROVIDER", "mlx_lm"
+        ).strip()
+
+        self.function_system_prompt_filename = os.getenv(
+            "PROTOCOL_FUNCTION_SYSTEM_PROMPT_FILE",
+            "system_prompt_functiongemma.txt",
+        )
+        self.function_system_prompt_file = (
+            filesystem_config.project_root / self.function_system_prompt_filename
+        )
+
+        self.function_converter_prompt_filename = os.getenv(
+            "PROTOCOL_FUNCTION_CONVERTER_PROMPT_FILE",
+            "functiongemma_converter_prompt.txt",
+        )
+        self.function_converter_prompt_file = (
+            filesystem_config.project_root / self.function_converter_prompt_filename
+        )
+
+class NeuralSymConfig:
+    """Configuration for NeuralSym learned guidance system."""
+
+    def __init__(self, filesystem_config: "FileSystemConfig"):
+        self.enabled = os.getenv("PROTOCOL_NEURALSYM_ENABLED", "true").lower() == "true"
+        
+        self.lfm_model = os.getenv(
+            "PROTOCOL_NEURALSYM_LFM_MODEL",
+            "LiquidAI/LFM2.5-1.2B-Instruct-MLX-bf16"
+        ).strip()
+        
+        self.lfm_provider = os.getenv(
+            "PROTOCOL_NEURALSYM_LFM_PROVIDER",
+            "mlx_lm"
+        ).strip()
+        
+        self.generate_before = os.getenv(
+            "PROTOCOL_NEURALSYM_GENERATE_BEFORE", "true"
+        ).lower() == "true"
+        
+        self.generate_after = os.getenv(
+            "PROTOCOL_NEURALSYM_GENERATE_AFTER", "true"
+        ).lower() == "true"
+        
+        self.guidance_position = os.getenv(
+            "PROTOCOL_NEURALSYM_POSITION", "after_tools"
+        ).strip()
+        
+        self.max_recent_interactions = int(
+            os.getenv("PROTOCOL_NEURALSYM_MAX_RECENT", "10")
+        )
+        
+        # Data path is project-local
+        self.data_path = filesystem_config.working_dir / ".neuralsym"
 
 
 # =============================================================================
@@ -542,6 +614,8 @@ class ProtocolConfig:
         self.model = ModelManager()
         self.api = ApiConfig()
         self.filesystem = FileSystemConfig()
+        self.tool_pipeline = ToolPipelineConfig(self.filesystem)
+        self.neuralsym = NeuralSymConfig(self.filesystem)
         self.model_options = ModelOptionsConfig(self.filesystem)
         self.security = SecurityConfig()
         self.debug = DebugConfig(self.filesystem)

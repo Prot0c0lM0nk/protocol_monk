@@ -15,6 +15,18 @@ class ToolCallExtractor:
     """Extracts tool calls from various model response formats."""
 
     @staticmethod
+    def _safe_arguments(value: Any) -> Dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, dict) else {}
+            except json.JSONDecodeError:
+                return {}
+        return {}
+
+    @staticmethod
     def extract(response_data: Union[str, Dict, Any]) -> Tuple[List[Dict], bool]:
         """
         Parse response and return (actions, has_actions).
@@ -33,10 +45,8 @@ class ToolCallExtractor:
                     actions.append(
                         {
                             "action": func.name,
-                            "parameters": (
-                                json.loads(func.arguments)
-                                if isinstance(func.arguments, str)
-                                else func.arguments
+                            "parameters": ToolCallExtractor._safe_arguments(
+                                getattr(func, "arguments", "{}")
                             ),
                             "id": getattr(tool_call, "id", None),
                         }
@@ -45,17 +55,38 @@ class ToolCallExtractor:
 
         # CASE 1: Dictionary (Structured API Call)
         if isinstance(response_data, dict):
+            message = response_data.get("message")
+            if isinstance(message, dict):
+                nested_tool_calls = message.get("tool_calls")
+                if isinstance(nested_tool_calls, list):
+                    for tc in nested_tool_calls:
+                        if not isinstance(tc, dict):
+                            continue
+                        func = tc.get("function", {})
+                        if not isinstance(func, dict):
+                            continue
+                        actions.append(
+                            {
+                                "action": func.get("name"),
+                                "parameters": ToolCallExtractor._safe_arguments(
+                                    func.get("arguments", "{}")
+                                ),
+                                "id": tc.get("id"),
+                            }
+                        )
+                    return actions, len(actions) > 0
+
             # Check for standard 'tool_calls' array (OpenAI/OpenRouter style)
             if "tool_calls" in response_data:
                 for tc in response_data["tool_calls"]:
                     func = tc.get("function", {})
+                    if not isinstance(func, dict):
+                        continue
                     actions.append(
                         {
                             "action": func.get("name"),
-                            "parameters": (
-                                json.loads(func.get("arguments", "{}"))
-                                if isinstance(func.get("arguments"), str)
-                                else func.get("arguments")
+                            "parameters": ToolCallExtractor._safe_arguments(
+                                func.get("arguments", "{}")
                             ),
                             "id": tc.get("id"),
                         }
@@ -74,6 +105,43 @@ class ModelResponseParser:
     """Handles text accumulation and stream parsing."""
 
     @staticmethod
+    def _is_valid_json(value: str) -> bool:
+        try:
+            json.loads(value)
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _merge_argument_fragments(existing_args: str, incoming_args: str) -> str:
+        """
+        Merge streaming function.arguments safely across providers.
+
+        Some providers stream incremental fragments, others send cumulative/full
+        arguments repeatedly. This logic avoids producing invalid duplicated JSON.
+        """
+        existing = str(existing_args or "")
+        incoming = str(incoming_args or "")
+
+        if not incoming:
+            return existing
+        if not existing:
+            return incoming
+        if incoming == existing:
+            return existing
+        if incoming.startswith(existing):
+            # Cumulative payload: replace with fuller incoming string.
+            return incoming
+        if existing.startswith(incoming):
+            # Incoming is an earlier subset; keep the fuller existing value.
+            return existing
+        if ModelResponseParser._is_valid_json(incoming):
+            # Incoming already complete; prefer complete JSON over mixed fragments.
+            return incoming
+
+        return existing + incoming
+
+    @staticmethod
     def merge_tool_call_chunks(accumulator: Dict, new_chunk: Dict) -> Dict:
         """Merge a new tool call chunk into the accumulator."""
         if accumulator is None:
@@ -82,7 +150,7 @@ class ModelResponseParser:
         if "tool_calls" not in accumulator:
             accumulator["tool_calls"] = []
 
-        for i, new_tc in enumerate(new_chunk["tool_calls"]):
+        for i, new_tc in enumerate(new_chunk.get("tool_calls", [])):
             if i < len(accumulator["tool_calls"]):
                 # Merge with existing
                 existing = accumulator["tool_calls"][i]
@@ -98,8 +166,10 @@ class ModelResponseParser:
                         existing["function"]["name"] = new_tc["function"]["name"]
                     if new_tc["function"].get("arguments"):
                         existing["function"]["arguments"] = (
-                            existing["function"].get("arguments", "")
-                            + new_tc["function"]["arguments"]
+                            ModelResponseParser._merge_argument_fragments(
+                                existing["function"].get("arguments", ""),
+                                new_tc["function"]["arguments"],
+                            )
                         )
             else:
                 # Add new
