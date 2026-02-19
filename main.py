@@ -1,7 +1,5 @@
 import asyncio
 import logging
-import uuid
-import time
 import os
 from pathlib import Path
 
@@ -11,7 +9,6 @@ from protocol_monk.config.settings import load_settings
 # 2. Import Protocol Layer
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
-from protocol_monk.agent.structs import UserRequest
 
 # 3. Import Context & Tools
 from protocol_monk.agent.context.store import ContextStore
@@ -100,20 +97,15 @@ async def main():
             logger.info("Phase 3: Starting Services...")
             await agent_service.start()
 
-            logger.info("Phase 4: Simulating User Input...")
+            # Start CLI
+            from protocol_monk.ui.cli import PromptToolkitCLI
+            cli = PromptToolkitCLI(bus, settings)
+            await cli.start()
 
-            simulated_input = UserRequest(
-                text="Append ' - from Protocol Monk' to the file named hello.txt",
-                source="simulation",
-                request_id=str(uuid.uuid4()),
-                timestamp=time.time(),
-            )
+            logger.info("Phase 4: Starting CLI...")
+            await cli.run()
 
-            await bus.emit(EventTypes.USER_INPUT_SUBMITTED, simulated_input)
-
-            # Keep alive briefly to allow processing
-            await asyncio.sleep(15.0)
-            logger.info("Simulation Complete. Shutting down.")
+            logger.info("Shutdown complete.")
 
     except Exception as e:
         # [FIX] Lazy logging for exceptions
