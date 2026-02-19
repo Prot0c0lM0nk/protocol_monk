@@ -16,6 +16,10 @@ class DeleteLinesTool(BaseTool):
         return "Delete specific line numbers."
 
     @property
+    def requires_confirmation(self) -> bool:
+        return True
+
+    @property
     def parameter_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",

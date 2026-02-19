@@ -39,9 +39,10 @@ class BaseTool(ABC):
     def requires_confirmation(self) -> bool:
         """
         Whether this tool requires user confirmation before execution.
-        Default is False. Override in subclasses for sensitive operations.
+        Default is True. Subclasses may override only if a tool is explicitly
+        approved to run without confirmation.
         """
-        return False
+        return True
 
     @abstractmethod
     async def run(self, **kwargs) -> Any:

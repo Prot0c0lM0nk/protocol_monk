@@ -18,6 +18,10 @@ class InsertInFileTool(BaseTool):
         return "Insert content after a specific line."
 
     @property
+    def requires_confirmation(self) -> bool:
+        return True
+
+    @property
     def parameter_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",

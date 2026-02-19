@@ -16,6 +16,10 @@ class ReplaceLinesTool(BaseTool):
         return "Delete lines from start to end and insert new content."
 
     @property
+    def requires_confirmation(self) -> bool:
+        return True
+
+    @property
     def parameter_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",

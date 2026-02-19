@@ -24,6 +24,10 @@ class CreateFileTool(BaseTool):
         return "Create a new file with specified content."
 
     @property
+    def requires_confirmation(self) -> bool:
+        return True
+
+    @property
     def parameter_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",

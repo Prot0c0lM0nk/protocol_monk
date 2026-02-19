@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from protocol_monk.config.settings import Settings
 from protocol_monk.exceptions.context import ContextError
-from protocol_monk.agent.structs import Message, ContextStats
+from protocol_monk.agent.structs import Message, ContextStats, ToolResult
 from .store import ContextStore
 from .file_tracker import FileTracker
 from . import logic
@@ -104,6 +104,30 @@ class ContextCoordinator:
         self._tracker._loaded_files.clear()
 
         # Note: System prompt remains intact
+
+    async def add_tool_result(self, result: ToolResult) -> ContextStats:
+        """
+        Add a tool execution result so the next model pass can consume it.
+        """
+        if result.success:
+            content = str(result.output) if result.output is not None else ""
+        else:
+            content = f"Tool '{result.tool_name}' failed: {result.error or 'Unknown error'}"
+
+        msg = Message(
+            role="tool",
+            content=content,
+            timestamp=time.time(),
+            metadata={
+                "tool_name": result.tool_name,
+                "tool_call_id": result.call_id,
+                "success": result.success,
+                "duration": result.duration,
+            },
+        )
+        self._store.add(msg)
+        self._ensure_limits()
+        return self._get_stats()
 
 
 class ContextStore:

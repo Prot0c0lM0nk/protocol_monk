@@ -48,6 +48,7 @@ class AgentService:
 
         # We hold the confirmation future here so we can cancel it if needed
         self._current_confirmation: Optional[asyncio.Future] = None
+        self._auto_confirm = bool(getattr(settings, "auto_confirm", False))
 
     async def start(self) -> None:
         """
@@ -99,18 +100,26 @@ class AgentService:
                 settings=self._settings,
             )
 
-            # 5. [FIX] Trigger Action Loop (THE HANDS)
-            if response.tool_calls:
+            # 5. Think/Act loop: tool results are added back to context,
+            # then the model gets another pass to produce a final answer.
+            # We cap rounds to prevent runaway loops.
+            max_tool_rounds = 3
+            rounds = 0
+            while response.tool_calls and rounds < max_tool_rounds:
+                rounds += 1
                 await self._set_status(
                     AgentState.EXECUTING,
                     f"Executing {len(response.tool_calls)} tools...",
                 )
 
+                user_rejected = False
                 for tool_req in response.tool_calls:
                     # Create a confirmation future if the tool requires confirmation
                     confirmation_future = None
-                    if tool_req.requires_confirmation:
-                        self._logger.info(f"Creating confirmation future for tool: {tool_req.name}")
+                    if tool_req.requires_confirmation and not self._auto_confirm:
+                        self._logger.info(
+                            f"Creating confirmation future for tool: {tool_req.name}"
+                        )
                         confirmation_future = asyncio.Future()
                         # Store the tool_call_id for matching with incoming confirmations
                         confirmation_future._tool_call_id = tool_req.call_id
@@ -123,15 +132,47 @@ class AgentService:
                         bus=self._bus,
                         executor=self._executor,
                         confirmation_future=confirmation_future,
+                        auto_approve=self._auto_confirm,
                     )
 
                     # Clear the confirmation future after execution
                     if self._current_confirmation == confirmation_future:
                         self._current_confirmation = None
 
-                    # Log the result to context so the agent knows what happened
-                    # (Optional: Add tool output back to conversation history?)
-                    # self._context.add_tool_result(...) -> Future enhancement
+                    if result.error == "User rejected execution":
+                        user_rejected = True
+                        await self._bus.emit(
+                            EventTypes.INFO,
+                            {
+                                "message": "Tool execution rejected. Returning control to user."
+                            },
+                        )
+                        break
+
+                    # Persist tool outputs to context so next model pass can use them
+                    await self._context.add_tool_result(result)
+
+                if user_rejected:
+                    break
+
+                await self._set_status(AgentState.THINKING, "Processing tool results...")
+                history = self._context._store.get_full_history()
+                response = await run_thinking_loop(
+                    context_history=history,
+                    provider=self._provider,
+                    bus=self._bus,
+                    registry=self._registry,
+                    settings=self._settings,
+                )
+
+            if response.tool_calls:
+                await self._bus.emit(
+                    EventTypes.WARNING,
+                    {
+                        "message": "Tool loop limit reached",
+                        "details": f"Stopped after {max_tool_rounds} tool rounds",
+                    },
+                )
 
             # 6. State: -> IDLE
             await self._set_status(AgentState.IDLE, "Ready")
@@ -167,11 +208,11 @@ class AgentService:
                 })
                 return
 
-            if not hasattr(payload, 'decision') or payload.decision not in ["approved", "rejected", "modified"]:
+            if not hasattr(payload, 'decision') or payload.decision not in ["approved", "rejected"]:
                 self._logger.error(f"Invalid confirmation decision: {payload.decision}")
                 await self._bus.emit(EventTypes.ERROR, {
                     "message": "Invalid confirmation decision",
-                    "details": f"Decision must be approved, rejected, or modified, got {payload.decision}"
+                    "details": f"Decision must be approved or rejected, got {payload.decision}"
                 })
                 return
 
@@ -304,12 +345,12 @@ class AgentService:
         try:
             # Update settings or configuration
             self._logger.info(f"Toggling auto-confirm to: {auto_confirm}")
-            # Note: This would typically update a setting in a config manager
+            self._auto_confirm = bool(auto_confirm)
             await self._bus.emit(EventTypes.AUTO_CONFIRM_CHANGED, {
-                "auto_confirm": auto_confirm
+                "auto_confirm": self._auto_confirm
             })
             await self._bus.emit(EventTypes.INFO, {
-                "message": f"Auto-confirm {'enabled' if auto_confirm else 'disabled'}"
+                "message": f"Auto-confirm {'enabled' if self._auto_confirm else 'disabled'}"
             })
         except Exception as e:
             self._logger.error(f"Error toggling auto-confirm: {e}", exc_info=True)

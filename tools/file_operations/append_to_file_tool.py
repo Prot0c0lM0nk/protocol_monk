@@ -21,6 +21,10 @@ class AppendToFileTool(BaseTool):
         return "Add content to the END of a file."
 
     @property
+    def requires_confirmation(self) -> bool:
+        return True
+
+    @property
     def parameter_schema(self) -> Dict[str, Any]:
         return {
             "type": "object",

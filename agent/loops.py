@@ -136,6 +136,7 @@ async def run_action_loop(
     bus: EventBus,
     executor: ToolExecutor,
     confirmation_future: Optional[asyncio.Future] = None,
+    auto_approve: bool = False,
 ) -> ToolResult:
     """
     Manages tool execution including the Confirmation Barrier.
@@ -167,60 +168,66 @@ async def run_action_loop(
 
     # 2. Confirmation Barrier
     if tool_req.requires_confirmation:
-        if not confirmation_future:
-            # Should not happen if Service wired correctly
-            return ToolResult(
-                tool_req.name,
-                tool_req.call_id,
-                False,
-                None,
-                0,
-                "Internal Error: Missing confirmation future",
+        if auto_approve:
+            await bus.emit(
+                EventTypes.INFO,
+                {
+                    "message": f"Auto-approved tool execution: {tool_req.name}",
+                    "tool_call_id": tool_req.call_id,
+                },
+            )
+        else:
+            if not confirmation_future:
+                # Should not happen if Service wired correctly
+                return ToolResult(
+                    tool_req.name,
+                    tool_req.call_id,
+                    False,
+                    None,
+                    0,
+                    "Internal Error: Missing confirmation future",
+                )
+
+            await bus.emit(
+                EventTypes.TOOL_CONFIRMATION_REQUESTED,
+                {
+                    "tool_name": tool_req.name,
+                    "parameters": tool_req.parameters,
+                    "tool_call_id": tool_req.call_id,
+                    "reason": "Sensitive Operation",
+                },
             )
 
-        await bus.emit(
-            EventTypes.TOOL_CONFIRMATION_REQUESTED,
-            {
-                "tool_name": tool_req.name,
-                "parameters": tool_req.parameters,
-                "tool_call_id": tool_req.call_id,
-                "reason": "Sensitive Operation",
-            },
-        )
-
-        await bus.emit(
-            EventTypes.STATUS_CHANGED,
-            {"status": AgentState.PAUSED, "message": "Waiting for approval..."},
-        )
-
-        # WAIT HERE
-        try:
-            decision_payload = (
-                await confirmation_future
-            )  # Waiting for user decision indefinitely is ok.
-        except asyncio.CancelledError:
-            return ToolResult(
-                tool_req.name, tool_req.call_id, False, None, 0, "Cancelled"
+            await bus.emit(
+                EventTypes.STATUS_CHANGED,
+                {"status": AgentState.PAUSED, "message": "Waiting for approval..."},
             )
 
-        # Resume
-        await bus.emit(
-            EventTypes.STATUS_CHANGED,
-            {"status": AgentState.EXECUTING, "message": "Resuming..."},
-        )
+            # WAIT HERE
+            try:
+                decision_payload = (
+                    await confirmation_future
+                )  # Waiting for user decision indefinitely is ok.
+            except asyncio.CancelledError:
+                return ToolResult(
+                    tool_req.name, tool_req.call_id, False, None, 0, "Cancelled"
+                )
 
-        if decision_payload.decision == "rejected":
-            return ToolResult(
-                tool_req.name,
-                tool_req.call_id,
-                False,
-                None,
-                0,
-                "User rejected execution",
+            # Resume
+            await bus.emit(
+                EventTypes.STATUS_CHANGED,
+                {"status": AgentState.EXECUTING, "message": "Resuming..."},
             )
 
-        if decision_payload.decision == "modified":
-            tool_req.parameters = decision_payload.modified_parameters
+            if decision_payload.decision == "rejected":
+                return ToolResult(
+                    tool_req.name,
+                    tool_req.call_id,
+                    False,
+                    None,
+                    0,
+                    "User rejected execution",
+                )
 
     # 3. Execution
     await bus.emit(
