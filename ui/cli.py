@@ -36,7 +36,7 @@ class PromptToolkitCLI:
         self._current_state = "idle"
         self._response_buffer = ""
         self._current_tool_call_id = None
-        self._auto_confirm = bool(getattr(settings, "auto_confirm", True))
+        self._auto_confirm = bool(getattr(settings, "auto_confirm", False))
 
         # Status symbols
         self._status_symbols = {

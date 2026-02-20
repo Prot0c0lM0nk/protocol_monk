@@ -114,9 +114,16 @@ class AgentService:
 
                 user_rejected = False
                 for tool_req in response.tool_calls:
+                    tool_def = self._registry.get_tool(tool_req.name)
+                    requires_confirmation = bool(
+                        tool_def and tool_def.requires_confirmation
+                    )
+                    # Always trust local tool policy over provider payload.
+                    tool_req.requires_confirmation = requires_confirmation
+
                     # Create a confirmation future if the tool requires confirmation
                     confirmation_future = None
-                    if tool_req.requires_confirmation and not self._auto_confirm:
+                    if requires_confirmation and not self._auto_confirm:
                         self._logger.info(
                             f"Creating confirmation future for tool: {tool_req.name}"
                         )
