@@ -90,6 +90,18 @@ class ModelDiscovery:
             return {}
 
     @staticmethod
+    def _model_info(details: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Return model info map across ollama-python shapes:
+        - model_info (alias form)
+        - modelinfo (field-name form)
+        """
+        info = details.get("model_info")
+        if not isinstance(info, dict):
+            info = details.get("modelinfo")
+        return info if isinstance(info, dict) else {}
+
+    @staticmethod
     def _coerce_positive_int(value: Any) -> int | None:
         """Convert int-like values to positive integers."""
         if value is None:
@@ -151,7 +163,7 @@ class ModelDiscovery:
         if nested:
             return nested
 
-        model_info = details.get("model_info") or {}
+        model_info = self._model_info(details)
         info_caps = self._normalize_capabilities(model_info.get("capabilities"))
         if info_caps:
             return info_caps
@@ -163,7 +175,7 @@ class ModelDiscovery:
     ) -> int:
         """Extract context window from known show() payload variants."""
         nested_details = details.get("details") or {}
-        model_info = details.get("model_info") or {}
+        model_info = self._model_info(details)
 
         candidates = [
             details.get("context_length"),
@@ -192,7 +204,7 @@ class ModelDiscovery:
     def _extract_family(model_name: str, details: Dict[str, Any]) -> str:
         """Infer family/architecture for grouping and token estimation."""
         nested_details = details.get("details") or {}
-        model_info = details.get("model_info") or {}
+        model_info = ModelDiscovery._model_info(details)
 
         direct_candidates = [
             nested_details.get("family"),
