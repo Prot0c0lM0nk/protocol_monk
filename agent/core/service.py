@@ -105,6 +105,17 @@ class AgentService:
                 pass_id=response.pass_id,
                 tokens=response.tokens,
                 tool_call_count=len(response.tool_calls),
+                tool_calls=[
+                    {
+                        "id": req.call_id,
+                        "type": "function",
+                        "function": {
+                            "name": req.name,
+                            "arguments": req.parameters,
+                        },
+                    }
+                    for req in response.tool_calls
+                ],
             )
 
             # 5. Think/Act loop: tool results are added back to context,
@@ -185,6 +196,17 @@ class AgentService:
                     pass_id=response.pass_id,
                     tokens=response.tokens,
                     tool_call_count=len(response.tool_calls),
+                    tool_calls=[
+                        {
+                            "id": req.call_id,
+                            "type": "function",
+                            "function": {
+                                "name": req.name,
+                                "arguments": req.parameters,
+                            },
+                        }
+                        for req in response.tool_calls
+                    ],
                 )
 
             if response.tool_calls and rounds >= max_tool_rounds and not stopped_by_rejection:

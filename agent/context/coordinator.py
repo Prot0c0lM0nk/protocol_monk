@@ -1,7 +1,7 @@
 import json
 import time
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from protocol_monk.config.settings import Settings
 from protocol_monk.agent.structs import Message, ContextStats, ToolResult
@@ -145,6 +145,7 @@ class ContextCoordinator:
         pass_id: str = "",
         tokens: int = 0,
         tool_call_count: int = 0,
+        tool_calls: Optional[List[Dict[str, Any]]] = None,
     ) -> ContextStats:
         """
         Persist each assistant pass in-order so follow-up model calls keep continuity.
@@ -172,6 +173,7 @@ class ContextCoordinator:
                 "tool_call_count": tool_call_count,
                 "content_length": len(content),
                 "thinking_length": len(thinking),
+                "tool_calls": tool_calls or [],
             },
         )
         self._store.add(msg)
