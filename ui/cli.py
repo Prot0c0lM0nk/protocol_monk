@@ -237,26 +237,34 @@ class PromptToolkitCLI:
         )
 
         # Show confirmation dialog
-        result = await radiolist_dialog(
-            title="Tool Execution",
-            text=f"Execute tool: {tool_name}\n\nParameters:\n{params_text}",
-            values=[
-                ("approve", "Yes"),
-                ("approve_auto", "Yes + Auto-Approve Edits"),
-                ("reject", "No (Return Control)"),
-            ],
-        ).run_async()
+        result = None
+        try:
+            result = await radiolist_dialog(
+                title="Tool Execution",
+                text=f"Execute tool: {tool_name}\n\nParameters:\n{params_text}",
+                values=[
+                    ("approve", "Yes"),
+                    ("approve_auto", "Yes + Auto-Approve Edits"),
+                    ("reject", "No (Return Control)"),
+                ],
+            ).run_async()
+        except Exception as exc:
+            logger.error("Confirmation dialog error: %s", exc, exc_info=True)
+            result = "reject"
 
         if result == "approve":
             await self._emit_tool_confirmation(tool_call_id, "approved")
-        elif result == "approve_auto":
+            return
+        if result == "approve_auto":
             await self._bus.emit(
                 EventTypes.SYSTEM_COMMAND_ISSUED,
                 {"command": "toggle_auto_confirm", "auto_confirm": True},
             )
             await self._emit_tool_confirmation(tool_call_id, "approved")
-        elif result == "reject":
-            await self._emit_tool_confirmation(tool_call_id, "rejected")
+            return
+
+        # Deterministic fallback: if dialog closes / returns None, reject explicitly.
+        await self._emit_tool_confirmation(tool_call_id, "rejected")
 
     async def _handle_tool_start(self, data: dict) -> None:
         """Handle TOOL_EXECUTION_START."""
@@ -267,8 +275,11 @@ class PromptToolkitCLI:
         """Handle TOOL_RESULT."""
         success = data.get("success", False)
         output = data.get("output")
-        if success and output:
+        error = data.get("error")
+        if output:
             print(f"Output: {output}")
+        if not success and error:
+            print(f"[Tool Error] {error}")
 
     async def _handle_tool_complete(self, data: dict) -> None:
         """Handle TOOL_EXECUTION_COMPLETE."""

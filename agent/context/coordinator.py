@@ -1,3 +1,4 @@
+import json
 import time
 import uuid
 from typing import List, Optional
@@ -108,10 +109,19 @@ class ContextCoordinator:
         """
         Add a tool execution result so the next model pass can consume it.
         """
-        if result.success:
-            content = str(result.output) if result.output is not None else ""
-        else:
-            content = f"Tool '{result.tool_name}' failed: {result.error or 'Unknown error'}"
+        envelope = {
+            "type": "tool_result",
+            "tool_name": result.tool_name,
+            "tool_call_id": result.call_id,
+            "success": result.success,
+            "duration_seconds": result.duration,
+            "output_kind": result.output_kind,
+            "error_code": result.error_code,
+            "error": result.error,
+            "error_details": result.error_details,
+            "output": result.output,
+        }
+        content = json.dumps(envelope, ensure_ascii=False, default=str)
 
         msg = Message(
             role="tool",

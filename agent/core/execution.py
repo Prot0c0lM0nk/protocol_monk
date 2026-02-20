@@ -1,7 +1,6 @@
 import asyncio
 import time
 import logging
-from typing import Any
 
 from protocol_monk.agent.structs import ToolRequest, ToolResult
 from protocol_monk.tools.registry import ToolRegistry
@@ -35,6 +34,8 @@ class ToolExecutor:
                 output=None,
                 error=f"Tool not found: {request.name}",
                 duration=0.0,
+                error_code="tool_not_found",
+                output_kind="none",
             )
 
         try:
@@ -54,6 +55,7 @@ class ToolExecutor:
                 output=result,
                 duration=duration,
                 error=None,
+                output_kind=type(result).__name__,
             )
 
         except asyncio.TimeoutError:
@@ -66,6 +68,8 @@ class ToolExecutor:
                 output=None,
                 duration=duration,
                 error=f"Execution timed out after {self._timeout} seconds.",
+                error_code="timeout",
+                output_kind="none",
             )
 
         except ToolError as e:
@@ -76,9 +80,12 @@ class ToolExecutor:
                 tool_name=request.name,
                 call_id=request.call_id,
                 success=False,
-                output=None,
+                output=e.details or None,
                 duration=duration,
                 error=e.user_hint,
+                error_code=e.__class__.__name__,
+                output_kind="tool_error_details" if e.details else "none",
+                error_details=e.details or None,
             )
 
         except Exception as e:
@@ -92,4 +99,6 @@ class ToolExecutor:
                 output=None,
                 duration=duration,
                 error=f"System Error: {str(e)}",
+                error_code="system_error",
+                output_kind="none",
             )

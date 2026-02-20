@@ -1,7 +1,7 @@
 import subprocess
 from typing import Dict, Any, List
-from pathlib import Path
 
+from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
 from protocol_monk.config.settings import Settings
 
@@ -53,7 +53,11 @@ class GitOperationTool(BaseTool):
         commit_msg = kwargs.get("commit_message")
 
         if operation not in self._git_commands:
-            return f"Error: Unknown operation '{operation}'"
+            raise ToolError(
+                f"Unknown operation '{operation}'",
+                user_hint=f"Unknown git operation '{operation}'.",
+                details={"operation": operation},
+            )
 
         command = self._git_commands[operation].copy()
         if operation == "commit" and commit_msg:
@@ -70,6 +74,19 @@ class GitOperationTool(BaseTool):
                 timeout=60,
             )
 
+            if result.returncode != 0:
+                raise ToolError(
+                    f"Git command failed with exit code {result.returncode}",
+                    user_hint=f"Git {operation} failed (exit {result.returncode}).",
+                    details={
+                        "operation": operation,
+                        "command": command,
+                        "exit_code": result.returncode,
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                    },
+                )
+
             output = f"Exit Code: {result.returncode}\n"
             if result.stdout:
                 output += f"{result.stdout}\n"
@@ -78,4 +95,10 @@ class GitOperationTool(BaseTool):
             return output
 
         except Exception as e:
-            return f"Git Error: {str(e)}"
+            if isinstance(e, ToolError):
+                raise
+            raise ToolError(
+                f"Git Error: {str(e)}",
+                user_hint=f"Git {operation} failed unexpectedly.",
+                details={"operation": operation, "error": str(e)},
+            )

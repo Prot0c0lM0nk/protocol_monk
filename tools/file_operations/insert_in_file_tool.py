@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import os
-from pathlib import Path
 from typing import Dict, Any
 
+from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
 
 
@@ -45,7 +45,10 @@ class InsertInFileTool(BaseTool):
         content = kwargs.get("content")
 
         if not all([filepath, target_line, content]):
-            raise ValueError("Missing required params")
+            raise ToolError(
+                "Missing required params",
+                user_hint="filepath, after_line, and content are required.",
+            )
 
         cleaned_path = self.path_validator.validate_path(filepath, must_exist=True)
         original_content = cleaned_path.read_text(encoding="utf-8")
@@ -54,7 +57,11 @@ class InsertInFileTool(BaseTool):
         try:
             insert_idx = lines.index(target_line) + 1
         except ValueError:
-            raise ValueError(f"Target line not found: '{target_line}'")
+            raise ToolError(
+                f"Target line not found: '{target_line}'",
+                user_hint="The specified anchor line was not found in the file.",
+                details={"target_line": target_line, "path": str(cleaned_path)},
+            )
 
         new_lines = content.splitlines()
         updated_lines = lines[:insert_idx] + new_lines + lines[insert_idx:]

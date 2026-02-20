@@ -1,8 +1,9 @@
 import sys
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
+from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
 from protocol_monk.config.settings import Settings
 # We delegate the actual shell execution to our existing robust tool
@@ -60,12 +61,13 @@ class RunPythonTool(BaseTool):
         name = kwargs.get("script_name", "temp_python_script.py")
 
         if not content:
-            return "Error: Missing parameter 'script_content'"
+            raise ToolError(
+                "Missing parameter 'script_content'",
+                user_hint="Please provide Python code in 'script_content'.",
+            )
 
         # 1. Write Script (Safely)
         file_path = self._write_temp_script(name, content)
-        if not file_path:
-             return f"Error: Failed to write script '{name}' inside workspace."
 
         # 2. Execute Script
         try:
@@ -85,7 +87,7 @@ class RunPythonTool(BaseTool):
             # 3. Cleanup
             self._cleanup(file_path)
 
-    def _write_temp_script(self, name: str, content: str) -> Optional[Path]:
+    def _write_temp_script(self, name: str, content: str) -> Path:
         """Safely write content to workspace."""
         try:
             # Use path_validator from BaseTool to ensure we don't write outside workspace
@@ -96,8 +98,12 @@ class RunPythonTool(BaseTool):
             self.logger.info("Created temporary Python script: %s", file_path)
             return file_path
         except Exception as e:
-            self.logger.error("Failed to write temp script: %s", e)
-            return None
+            self.logger.error("Failed to write temp script: %s", e, exc_info=True)
+            raise ToolError(
+                f"Failed to write script '{name}'",
+                user_hint=f"Could not write temporary script '{name}' in workspace.",
+                details={"script_name": name, "error": str(e)},
+            )
 
     def _cleanup(self, file_path: Path):
         """Remove the temporary file."""

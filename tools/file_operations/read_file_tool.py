@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-import logging
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
 
-from protocol_monk.agent.structs import ToolResult
+from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
-from protocol_monk.tools.path_validator import PathValidator
 
 
 class ReadFileTool(BaseTool):
@@ -51,7 +49,10 @@ class ReadFileTool(BaseTool):
     def _execute_sync(self, **kwargs) -> str:
         filepath = kwargs.get("filepath")
         if not filepath:
-            raise ValueError("Missing required parameter: 'filepath'")
+            raise ToolError(
+                "Missing required parameter: 'filepath'",
+                user_hint="Please provide a filepath for read_file.",
+            )
 
         # Validator is initialized in BaseTool
         cleaned_path = self.path_validator.validate_path(filepath, must_exist=False)
@@ -76,17 +77,37 @@ class ReadFileTool(BaseTool):
             file_stat = full_path.stat()
             if file_stat.st_size > self.MAX_FILE_SIZE_BYTES:
                 size_kb = self.MAX_FILE_SIZE_BYTES / 1024
-                raise ValueError(f"File too large (> {size_kb:.2f} KB).")
+                raise ToolError(
+                    f"File too large (> {size_kb:.2f} KB).",
+                    user_hint="File is too large to read in one call.",
+                    details={
+                        "path": str(full_path),
+                        "max_size_bytes": self.MAX_FILE_SIZE_BYTES,
+                        "actual_size_bytes": file_stat.st_size,
+                    },
+                )
 
             content = full_path.read_text(encoding="utf-8")
             return content.splitlines()
 
         except FileNotFoundError:
-            raise ValueError(f"File not found: {full_path.name}")
+            raise ToolError(
+                f"File not found: {full_path.name}",
+                user_hint=f"The file '{full_path.name}' does not exist.",
+                details={"path": str(full_path)},
+            )
         except PermissionError:
-            raise ValueError(f"Permission denied: {full_path.name}")
+            raise ToolError(
+                f"Permission denied: {full_path.name}",
+                user_hint=f"No permission to read '{full_path.name}'.",
+                details={"path": str(full_path)},
+            )
         except UnicodeDecodeError:
-            raise ValueError("Encoding error. File may be binary.")
+            raise ToolError(
+                "Encoding error. File may be binary.",
+                user_hint="File is not UTF-8 text (possibly binary).",
+                details={"path": str(full_path)},
+            )
 
     def _extract_range(
         self, lines: List[str], start: Optional[int], end: Optional[int]
@@ -99,7 +120,13 @@ class ReadFileTool(BaseTool):
         end_idx = min(total_lines, end_idx)
 
         if start and start_idx >= total_lines:
-            raise ValueError(f"Start line {start} exceeds length ({total_lines})")
+            raise ToolError(
+                f"Start line {start} exceeds length ({total_lines})",
+                user_hint=(
+                    f"Requested start line {start} is beyond file length {total_lines}."
+                ),
+                details={"line_start": start, "total_lines": total_lines},
+            )
 
         return lines[start_idx:end_idx], start_idx + 1, end_idx
 

@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from typing import Any, Optional
+from typing import Any, Dict
 
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
@@ -46,8 +46,8 @@ class AgentService:
         # [FIX] Initialize the Executor (The Hands)
         self._executor = ToolExecutor(timeout_seconds=settings.tool_timeout)
 
-        # We hold the confirmation future here so we can cancel it if needed
-        self._current_confirmation: Optional[asyncio.Future] = None
+        # Track pending confirmation futures by tool_call_id.
+        self._pending_confirmations: Dict[str, asyncio.Future] = {}
         self._auto_confirm = bool(getattr(settings, "auto_confirm", False))
 
     async def start(self) -> None:
@@ -136,37 +136,36 @@ class AgentService:
                             f"Creating confirmation future for tool: {tool_req.name}"
                         )
                         confirmation_future = asyncio.Future()
-                        # Store the tool_call_id for matching with incoming confirmations
-                        confirmation_future._tool_call_id = tool_req.call_id
-                        self._current_confirmation = confirmation_future
+                        self._pending_confirmations[tool_req.call_id] = confirmation_future
 
                     # Execute the tool with the confirmation future
-                    result = await run_action_loop(
-                        tool_req=tool_req,
-                        registry=self._registry,
-                        bus=self._bus,
-                        executor=self._executor,
-                        confirmation_future=confirmation_future,
-                        auto_approve=self._auto_confirm,
-                    )
+                    try:
+                        result = await run_action_loop(
+                            tool_req=tool_req,
+                            registry=self._registry,
+                            bus=self._bus,
+                            executor=self._executor,
+                            confirmation_future=confirmation_future,
+                            auto_approve=self._auto_confirm,
+                        )
+                    finally:
+                        self._pending_confirmations.pop(tool_req.call_id, None)
 
-                    # Clear the confirmation future after execution
-                    if self._current_confirmation == confirmation_future:
-                        self._current_confirmation = None
+                    # Persist every tool outcome so the next turn/model pass can reason over it.
+                    await self._context.add_tool_result(result)
 
-                    if result.error == "User rejected execution":
+                    if result.error_code == "user_rejected":
                         user_rejected = True
                         stopped_by_rejection = True
                         await self._bus.emit(
                             EventTypes.INFO,
                             {
-                                "message": "Tool execution rejected. Returning control to user."
+                                "message": (
+                                    "Tool execution rejected. Skipping follow-up model pass for this turn."
+                                )
                             },
                         )
                         break
-
-                    # Persist tool outputs to context so next model pass can use them
-                    await self._context.add_tool_result(result)
 
                 if user_rejected:
                     break
@@ -239,14 +238,11 @@ class AgentService:
                 })
                 return
 
-            # Resolve the pending confirmation future if it exists and matches the call_id
-            if (self._current_confirmation and
-                not self._current_confirmation.done() and
-                hasattr(self._current_confirmation, '_tool_call_id') and
-                self._current_confirmation._tool_call_id == payload.tool_call_id):
-
+            future = self._pending_confirmations.get(payload.tool_call_id)
+            # Resolve the pending confirmation future if it exists.
+            if future and not future.done():
                 self._logger.info(f"Resolving confirmation future for call_id: {payload.tool_call_id}")
-                self._current_confirmation.set_result(payload)
+                future.set_result(payload)
             else:
                 self._logger.warning(f"No pending confirmation found for call_id: {payload.tool_call_id}")
                 await self._bus.emit(EventTypes.WARNING, {
@@ -313,10 +309,18 @@ class AgentService:
         Handle task cancellation command.
         """
         try:
-            if self._current_confirmation and not self._current_confirmation.done():
-                self._logger.info("Cancelling current confirmation task")
-                self._current_confirmation.cancel()
-                self._current_confirmation = None
+            active_futures = [
+                future
+                for future in self._pending_confirmations.values()
+                if not future.done()
+            ]
+            if active_futures:
+                self._logger.info(
+                    "Cancelling %d pending confirmation task(s)", len(active_futures)
+                )
+                for future in active_futures:
+                    future.cancel()
+                self._pending_confirmations.clear()
                 await self._set_status(AgentState.IDLE, "Task cancelled by user")
                 await self._bus.emit(EventTypes.INFO, {
                     "message": "Task cancelled successfully"

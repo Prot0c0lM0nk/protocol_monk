@@ -11,7 +11,6 @@ from protocol_monk.agent.structs import (
     AgentResponse,
     ToolRequest,
     ToolResult,
-    AgentStatus,
 )
 from protocol_monk.agent.core.execution import ToolExecutor
 from protocol_monk.agent.core.state_machine import AgentState
@@ -50,6 +49,34 @@ async def run_thinking_loop(
 
     # Use model name and parameters from settings
     model_name = settings.active_model_name
+    context_limit = int(getattr(settings, "context_window_limit", 0) or 0)
+
+    estimated_context_tokens = sum(
+        len(getattr(msg, "content", "") or "") // 4 for msg in context_history
+    )
+    await bus.emit(
+        EventTypes.INFO,
+        {
+            "message": "Thinking loop context diagnostics",
+            "data": {
+                "estimated_tokens": estimated_context_tokens,
+                "context_limit": context_limit,
+                "message_count": len(context_history),
+                "model_name": model_name,
+            },
+        },
+    )
+    if context_limit > 0 and estimated_context_tokens >= context_limit:
+        await bus.emit(
+            EventTypes.WARNING,
+            {
+                "message": "Context may overflow model window",
+                "details": (
+                    f"estimated_tokens={estimated_context_tokens} "
+                    f"limit={context_limit} model={model_name}"
+                ),
+            },
+        )
 
     try:
         async for signal in provider.stream_chat(
@@ -178,6 +205,8 @@ async def run_action_loop(
             output=None,
             duration=0,
             error=f"Tool {tool_req.name} not registered.",
+            error_code="tool_not_registered",
+            output_kind="none",
         )
 
     # Update request with actual confirmation policy
@@ -213,6 +242,8 @@ async def run_action_loop(
                     None,
                     0,
                     "Internal Error: Missing confirmation future",
+                    error_code="missing_confirmation_future",
+                    output_kind="none",
                 )
 
             await bus.emit(
@@ -237,7 +268,14 @@ async def run_action_loop(
                 )  # Waiting for user decision indefinitely is ok.
             except asyncio.CancelledError:
                 return ToolResult(
-                    tool_req.name, tool_req.call_id, False, None, 0, "Cancelled"
+                    tool_req.name,
+                    tool_req.call_id,
+                    False,
+                    None,
+                    0,
+                    "Cancelled",
+                    error_code="confirmation_cancelled",
+                    output_kind="none",
                 )
 
             # Resume
@@ -254,6 +292,8 @@ async def run_action_loop(
                     None,
                     0,
                     "User rejected execution",
+                    error_code="user_rejected",
+                    output_kind="none",
                 )
 
     # 3. Execution
@@ -271,6 +311,10 @@ async def run_action_loop(
             "tool_call_id": result.call_id,
             "output": result.output,
             "success": result.success,
+            "error": result.error,
+            "error_code": result.error_code,
+            "output_kind": result.output_kind,
+            "error_details": result.error_details,
         },
     )
 

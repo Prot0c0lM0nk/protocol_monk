@@ -1,13 +1,8 @@
-import shlex
 import subprocess
-import os
-import time
 from typing import Dict, Any, Tuple
-from pathlib import Path
 
-# Correct imports for this architecture
+from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
-from protocol_monk.agent.structs import ToolResult
 from protocol_monk.config.settings import Settings
 
 
@@ -63,12 +58,19 @@ class ExecuteCommandTool(BaseTool):
         timeout = kwargs.get("timeout", 30)
 
         if not command:
-            return "Error: Command cannot be empty"
+            raise ToolError(
+                "Command cannot be empty",
+                user_hint="Please provide a shell command to execute.",
+            )
 
         # Security Check
         is_safe, safety_message = self._analyze_command_safety(command)
         if not is_safe:
-            raise ValueError(f"Security Blocked: {safety_message}")
+            raise ToolError(
+                f"Security Blocked: {safety_message}",
+                user_hint=f"Blocked unsafe command pattern: {safety_message}.",
+                details={"command": command, "reason": safety_message},
+            )
 
         try:
             # We enforce CWD to be the workspace
@@ -82,6 +84,18 @@ class ExecuteCommandTool(BaseTool):
                 check=False,
             )
 
+            if result.returncode != 0:
+                raise ToolError(
+                    f"Command failed with exit code {result.returncode}",
+                    user_hint=f"Command failed (exit {result.returncode}).",
+                    details={
+                        "command": command,
+                        "exit_code": result.returncode,
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                    },
+                )
+
             output = f"Exit Code: {result.returncode}\n"
             if result.stdout:
                 output += f"STDOUT:\n{result.stdout}\n"
@@ -91,9 +105,19 @@ class ExecuteCommandTool(BaseTool):
             return output
 
         except subprocess.TimeoutExpired:
-            return f"Error: Command timed out after {timeout}s"
+            raise ToolError(
+                f"Command timed out after {timeout}s",
+                user_hint=f"Command timed out after {timeout}s.",
+                details={"command": command, "timeout": timeout},
+            )
         except Exception as e:
-            return f"System Error: {str(e)}"
+            if isinstance(e, ToolError):
+                raise
+            raise ToolError(
+                f"Command execution error: {str(e)}",
+                user_hint="Shell command failed unexpectedly.",
+                details={"command": command, "error": str(e)},
+            )
 
     def _analyze_command_safety(self, command: str) -> Tuple[bool, str]:
         import re
