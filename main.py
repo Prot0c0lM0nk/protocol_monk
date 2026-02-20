@@ -15,11 +15,7 @@ from protocol_monk.agent.context.store import ContextStore
 from protocol_monk.agent.context.file_tracker import FileTracker
 from protocol_monk.agent.context.coordinator import ContextCoordinator
 from protocol_monk.tools.registry import ToolRegistry
-
-# Import Tools
-from protocol_monk.tools.file_operations.read_file_tool import ReadFileTool
-from protocol_monk.tools.file_operations.create_file_tool import CreateFileTool
-from protocol_monk.tools.file_operations.append_to_file_tool import AppendToFileTool
+from protocol_monk.tools.defaults import register_default_tools
 
 # 4. Import Agent Layer
 from protocol_monk.agent.core.service import AgentService
@@ -61,9 +57,7 @@ async def main():
 
         # B. Tools (The Hands)
         registry = ToolRegistry()
-        registry.register(ReadFileTool(settings))
-        registry.register(CreateFileTool(settings))
-        registry.register(AppendToFileTool(settings))
+        register_default_tools(registry, settings)
 
         # [FIX] Lazy logging
         logger.info("Registered Tools: %s", registry.list_tool_names())
