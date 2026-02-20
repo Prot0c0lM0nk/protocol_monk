@@ -23,6 +23,7 @@ from protocol_monk.agent.core.service import AgentService
 # 5. Import Utils & Providers
 from protocol_monk.utils.scratch import ScratchManager
 from protocol_monk.utils.logger import EventLogger
+from protocol_monk.utils.session_transcript import SessionTranscriptSink
 from protocol_monk.providers.ollama import OllamaProvider
 
 logging.basicConfig(
@@ -40,6 +41,18 @@ async def main():
         app_root = Path(os.getcwd()) / "protocol_monk"
         settings = load_settings(app_root)
 
+        root_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+        logging.getLogger().setLevel(root_level)
+
+        # Silence noisy third-party chatter during interactive sessions.
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("ollama").setLevel(logging.WARNING)
+        if root_level > logging.DEBUG:
+            logging.getLogger("ModelDiscovery").setLevel(logging.WARNING)
+            logging.getLogger("Settings").setLevel(logging.WARNING)
+            logging.getLogger("ToolRegistry").setLevel(logging.WARNING)
+
         # Initialize model discovery (async)
         await settings.initialize()
 
@@ -51,9 +64,15 @@ async def main():
         # A. Nervous System
         bus = EventBus()
 
-        # Start the EventLogger
-        event_logger = EventLogger(bus)
-        await event_logger.start()
+        # Capture full session event history for replay/debug.
+        transcript_sink = SessionTranscriptSink(bus, settings.workspace_root)
+        await transcript_sink.start()
+        logger.info("Session transcript: %s", transcript_sink.path)
+
+        # Start the EventLogger only in debug runs to avoid duplicate UI output.
+        if settings.log_level == "DEBUG":
+            event_logger = EventLogger(bus)
+            await event_logger.start()
 
         # B. Tools (The Hands)
         registry = ToolRegistry()

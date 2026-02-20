@@ -3,7 +3,6 @@ import uuid
 from typing import List, Optional
 
 from protocol_monk.config.settings import Settings
-from protocol_monk.exceptions.context import ContextError
 from protocol_monk.agent.structs import Message, ContextStats, ToolResult
 from .store import ContextStore
 from .file_tracker import FileTracker
@@ -123,6 +122,46 @@ class ContextCoordinator:
                 "tool_call_id": result.call_id,
                 "success": result.success,
                 "duration": result.duration,
+            },
+        )
+        self._store.add(msg)
+        self._ensure_limits()
+        return self._get_stats()
+
+    async def add_assistant_pass(
+        self,
+        content: str,
+        thinking: str = "",
+        pass_id: str = "",
+        tokens: int = 0,
+        tool_call_count: int = 0,
+    ) -> ContextStats:
+        """
+        Persist each assistant pass in-order so follow-up model calls keep continuity.
+        """
+        content = content or ""
+        thinking = thinking or ""
+
+        if content and thinking:
+            combined = f"{content}\n\n[reasoning]\n{thinking}"
+        elif content:
+            combined = content
+        elif thinking:
+            combined = f"[reasoning]\n{thinking}"
+        else:
+            combined = ""
+
+        msg = Message(
+            role="assistant",
+            content=combined,
+            timestamp=time.time(),
+            metadata={
+                "id": str(uuid.uuid4()),
+                "pass_id": pass_id,
+                "tokens": tokens,
+                "tool_call_count": tool_call_count,
+                "content_length": len(content),
+                "thinking_length": len(thinking),
             },
         )
         self._store.add(msg)

@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from typing import List, Optional, Any, Dict
 
 from protocol_monk.protocol.bus import EventBus
@@ -37,9 +38,12 @@ async def run_thinking_loop(
     """
     await bus.emit(EventTypes.THINKING_STARTED)
 
+    pass_id = str(uuid.uuid4())
     full_text = ""
+    full_thinking = ""
     tool_requests: List[ToolRequest] = []
     token_usage = 0
+    chunk_sequence = 0
 
     # Get tool definitions to send to provider
     tool_definitions = registry.get_openai_tools()
@@ -56,17 +60,30 @@ async def run_thinking_loop(
         ):
             if signal.type == "content":
                 full_text += signal.data
-                await bus.emit(EventTypes.STREAM_CHUNK, {"chunk": signal.data})
+                chunk_sequence += 1
+                await bus.emit(
+                    EventTypes.STREAM_CHUNK,
+                    {
+                        "chunk": signal.data,
+                        "channel": "content",
+                        "pass_id": pass_id,
+                        "sequence": chunk_sequence,
+                    },
+                )
 
             elif signal.type == "thinking":
-                # We wrap thinking in tags for the UI if needed, or just emit raw
-                # Spec says emit STREAM_CHUNK for thinking too, or distinct event?
-                # Spec: THINKING_STARTED/STOPPED is state.
-                # We can emit thinking chunks as special stream chunks or info.
-                # For UI compatibility, let's treat it as stream for now but maybe prefixed?
-                # Or better: Just log it for now.
-                logger.debug(f"Thinking: {signal.data}")
-                # Optional: await bus.emit(EventTypes.STREAM_CHUNK, {"chunk": f"<thinking>{signal.data}</thinking>"})
+                full_thinking += signal.data
+                chunk_sequence += 1
+                await bus.emit(
+                    EventTypes.STREAM_CHUNK,
+                    {
+                        "chunk": signal.data,
+                        "thinking": signal.data,
+                        "channel": "thinking",
+                        "pass_id": pass_id,
+                        "sequence": chunk_sequence,
+                    },
+                )
 
             elif signal.type == "tool_call":
                 req: ToolRequest = signal.data
@@ -92,11 +109,21 @@ async def run_thinking_loop(
         content=full_text,
         tool_calls=tool_requests,
         tokens=token_usage if token_usage > 0 else len(full_text) // 4,
+        thinking=full_thinking,
+        pass_id=pass_id,
     )
 
     await bus.emit(
         EventTypes.RESPONSE_COMPLETE,
-        {"content": response.content, "tokens": response.tokens},
+        {
+            "pass_id": response.pass_id,
+            "content": response.content,
+            "thinking": response.thinking,
+            "tokens": response.tokens,
+            "tool_calls": response.tool_calls,
+            # Keep compatibility for any existing consumers while transitioning.
+            "has_tool_calls": bool(response.tool_calls),
+        },
     )
 
     return response

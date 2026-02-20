@@ -99,12 +99,20 @@ class AgentService:
                 registry=self._registry,
                 settings=self._settings,
             )
+            await self._context.add_assistant_pass(
+                content=response.content,
+                thinking=response.thinking,
+                pass_id=response.pass_id,
+                tokens=response.tokens,
+                tool_call_count=len(response.tool_calls),
+            )
 
             # 5. Think/Act loop: tool results are added back to context,
             # then the model gets another pass to produce a final answer.
             # We cap rounds to prevent runaway loops.
             max_tool_rounds = 3
             rounds = 0
+            stopped_by_rejection = False
             while response.tool_calls and rounds < max_tool_rounds:
                 rounds += 1
                 await self._set_status(
@@ -148,6 +156,7 @@ class AgentService:
 
                     if result.error == "User rejected execution":
                         user_rejected = True
+                        stopped_by_rejection = True
                         await self._bus.emit(
                             EventTypes.INFO,
                             {
@@ -171,8 +180,15 @@ class AgentService:
                     registry=self._registry,
                     settings=self._settings,
                 )
+                await self._context.add_assistant_pass(
+                    content=response.content,
+                    thinking=response.thinking,
+                    pass_id=response.pass_id,
+                    tokens=response.tokens,
+                    tool_call_count=len(response.tool_calls),
+                )
 
-            if response.tool_calls:
+            if response.tool_calls and rounds >= max_tool_rounds and not stopped_by_rejection:
                 await self._bus.emit(
                     EventTypes.WARNING,
                     {

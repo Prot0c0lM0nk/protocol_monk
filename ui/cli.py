@@ -5,8 +5,7 @@ from typing import Any
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.shortcuts import radiolist_dialog
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.patch_stdout import patch_stdout
 
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
@@ -23,10 +22,10 @@ class PromptToolkitCLI:
     CLI implementation using prompt_toolkit.
 
     Features:
-    - Multiline input (ESC+Enter to submit)
+    - Stable single-line input for day-to-day usage
     - Tool confirmation dialogs
     - State symbols in prompt
-    - Buffered responses (show complete at end)
+    - Buffered responses shown per pass
     """
 
     def __init__(self, bus: EventBus, settings: Settings):
@@ -35,8 +34,10 @@ class PromptToolkitCLI:
         self._running = False
         self._current_state = "idle"
         self._response_buffer = ""
+        self._thinking_buffer = ""
         self._current_tool_call_id = None
         self._auto_confirm = bool(getattr(settings, "auto_confirm", False))
+        self._verbose_ui = str(getattr(settings, "log_level", "INFO")).upper() == "DEBUG"
 
         # Status symbols
         self._status_symbols = {
@@ -47,16 +48,8 @@ class PromptToolkitCLI:
             "error": "error",
         }
 
-        # Key bindings
-        kb = KeyBindings()
-
-        @kb.add("escape", "enter")
-        def _(event):
-            """Submit multiline input."""
-            event.app.exit(result=event.app.current_buffer.document.text)
-
-        # Create prompt session
-        self._session = PromptSession(key_bindings=kb)
+        # Create prompt session with default bindings for reliable editing behavior.
+        self._session = PromptSession(multiline=False)
 
     async def start(self) -> None:
         """Subscribe to all relevant events."""
@@ -104,7 +97,7 @@ class PromptToolkitCLI:
 
         print("\n" + "="*60)
         print("Protocol Monk CLI")
-        print("Press ESC+Enter to submit multiline input")
+        print("Press Enter to submit")
         print("Type 'quit' or 'exit' to stop")
         print("="*60 + "\n")
 
@@ -119,7 +112,9 @@ class PromptToolkitCLI:
             try:
                 # Get prompt with current state
                 prompt = self._get_prompt()
-                user_text = await self._session.prompt_async(prompt)
+                # Ensure background prints don't corrupt the current input buffer.
+                with patch_stdout():
+                    user_text = await self._session.prompt_async(prompt)
 
                 # Handle exit commands
                 if user_text.lower().strip() in ("quit", "exit", "q"):
@@ -167,7 +162,7 @@ class PromptToolkitCLI:
     def _get_prompt(self) -> str:
         """Get the current prompt with state symbol."""
         symbol = self._status_symbols.get(self._current_state, "?")
-        return HTML(f"<ansiblue>({symbol})</ansiblue> > ")
+        return f"({symbol}) > "
 
     async def _emit_user_input(self, text: str) -> None:
         """Emit user input event."""
@@ -203,14 +198,30 @@ class PromptToolkitCLI:
     async def _handle_stream_chunk(self, data: dict) -> None:
         """Handle STREAM_CHUNK events - buffer for later display."""
         chunk = data.get("chunk", "")
-        if chunk:
+        channel = data.get("channel", "content")
+        if not chunk:
+            return
+        if channel == "thinking":
+            self._thinking_buffer += chunk
+        else:
             self._response_buffer += chunk
 
     async def _handle_response_complete(self, data: dict) -> None:
-        """Handle RESPONSE_COMPLETE - display the full buffered response."""
-        if self._response_buffer:
-            print("\n" + self._response_buffer + "\n")
-            self._response_buffer = ""
+        """Handle RESPONSE_COMPLETE - display model reasoning and response for this pass."""
+        response_text = self._response_buffer.strip()
+        thinking_text = self._thinking_buffer.strip()
+        self._response_buffer = ""
+        self._thinking_buffer = ""
+
+        if not response_text:
+            response_text = str(data.get("content", "")).strip()
+        if not thinking_text:
+            thinking_text = str(data.get("thinking", "")).strip()
+
+        if thinking_text:
+            print("\n[Reasoning]\n" + thinking_text + "\n")
+        if response_text:
+            print("\n" + response_text + "\n")
 
     async def _handle_tool_confirmation_requested(self, data: dict) -> None:
         """Handle TOOL_CONFIRMATION_REQUESTED using prompt_toolkit dialog."""
@@ -279,6 +290,8 @@ class PromptToolkitCLI:
 
     async def _handle_info(self, data: dict) -> None:
         """Handle INFO events."""
+        if not self._verbose_ui:
+            return
         message = data.get("message", str(data))
         print(f"[INFO] {message}")
 

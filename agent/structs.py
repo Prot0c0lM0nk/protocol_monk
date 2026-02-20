@@ -64,6 +64,8 @@ class AgentResponse:
     content: str
     tool_calls: List["ToolRequest"]
     tokens: int
+    thinking: str = ""
+    pass_id: str = ""
 
 
 # --- 3. Tool Lifecycle ---

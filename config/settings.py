@@ -245,10 +245,17 @@ def load_settings(base_path: Optional[Path] = None) -> Settings:
     from pathlib import Path
 
     if base_path is not None:
+        project_root = base_path.parent
+
+        workspace = os.getenv("WORKSPACE")
+        if workspace and not Path(workspace).is_absolute():
+            resolved_workspace = (project_root / workspace).resolve()
+            os.environ["WORKSPACE"] = str(resolved_workspace)
+
         # Handle relative paths
         prompt_path = os.getenv("SYSTEM_PROMPT_PATH")
         if prompt_path and not Path(prompt_path).is_absolute():
-            resolved = (base_path / prompt_path).resolve()
+            resolved = (project_root / prompt_path).resolve()
             os.environ["SYSTEM_PROMPT_PATH"] = str(resolved)
 
     return Settings()
