@@ -128,6 +128,11 @@ class OpenRouterProvider(BaseProvider):
                         if extracted:
                             yield ProviderSignal(type="content", data=extracted)
 
+                    reasoning_text = self._extract_reasoning_from_chunk(choice)
+                    if reasoning_text:
+                        telemetry["reasoning_emitted"] = True
+                        yield ProviderSignal(type="thinking", data=reasoning_text)
+
                     self._merge_tool_call_chunks(
                         pending_tool_calls, delta.get("tool_calls") or []
                     )
@@ -175,6 +180,55 @@ class OpenRouterProvider(BaseProvider):
             if part.get("type") == "text" and part.get("text"):
                 content_chunks.append(str(part["text"]))
         return "".join(content_chunks)
+
+    @classmethod
+    def _extract_reasoning_from_chunk(cls, choice: Dict[str, Any]) -> str:
+        parts: List[str] = []
+
+        delta = choice.get("delta")
+        if isinstance(delta, dict):
+            parts.extend(cls._extract_reasoning_from_payload(delta))
+
+        message = choice.get("message")
+        if isinstance(message, dict):
+            parts.extend(cls._extract_reasoning_from_payload(message))
+
+        return "".join(parts)
+
+    @staticmethod
+    def _extract_reasoning_from_payload(payload: Dict[str, Any]) -> List[str]:
+        parts: List[str] = []
+
+        direct = payload.get("reasoning")
+        if isinstance(direct, str) and direct:
+            parts.append(direct)
+
+        alias = payload.get("reasoning_content")
+        if isinstance(alias, str) and alias:
+            parts.append(alias)
+
+        details = payload.get("reasoning_details")
+        if isinstance(details, list):
+            for detail in details:
+                if not isinstance(detail, dict):
+                    continue
+                text = detail.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+
+                summary = detail.get("summary")
+                if isinstance(summary, str) and summary:
+                    parts.append(summary)
+                elif isinstance(summary, list):
+                    for item in summary:
+                        if isinstance(item, str) and item:
+                            parts.append(item)
+                        elif isinstance(item, dict):
+                            item_text = item.get("text")
+                            if isinstance(item_text, str) and item_text:
+                                parts.append(item_text)
+
+        return parts
 
     def _merge_tool_call_chunks(
         self, pending: Dict[int, Dict[str, Any]], tool_calls: List[Any]
