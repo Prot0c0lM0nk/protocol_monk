@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.shortcuts import radiolist_dialog
+from prompt_toolkit.shortcuts import button_dialog
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from protocol_monk.protocol.bus import EventBus
@@ -36,6 +36,7 @@ class PromptToolkitCLI:
         self._response_buffer = ""
         self._thinking_buffer = ""
         self._current_tool_call_id = None
+        self._confirmation_tasks: dict[str, asyncio.Task] = {}
         self._auto_confirm = bool(getattr(settings, "auto_confirm", False))
         self._verbose_ui = str(getattr(settings, "log_level", "INFO")).upper() == "DEBUG"
 
@@ -157,6 +158,9 @@ class PromptToolkitCLI:
     async def stop(self) -> None:
         """Stop the CLI."""
         self._running = False
+        for task in list(self._confirmation_tasks.values()):
+            task.cancel()
+        self._confirmation_tasks.clear()
         logger.info("PromptToolkitCLI stopped")
 
     def _get_prompt(self) -> str:
@@ -230,24 +234,57 @@ class PromptToolkitCLI:
         tool_call_id = data.get("tool_call_id", "")
 
         self._current_tool_call_id = tool_call_id
-
-        # Format parameters for display
-        params_text = "\n".join(
-            f"  {k}: {v}" for k, v in parameters.items()
+        task = asyncio.create_task(
+            self._run_confirmation_dialog(tool_name, parameters, tool_call_id)
         )
+        self._confirmation_tasks[tool_call_id] = task
 
-        # Show confirmation dialog
+        def _cleanup(_: asyncio.Task, call_id: str = tool_call_id) -> None:
+            self._confirmation_tasks.pop(call_id, None)
+
+        task.add_done_callback(_cleanup)
+
+    def _format_parameters_for_dialog(self, parameters: dict) -> str:
+        """Keep dialog payload compact to avoid sluggish full-screen redraws."""
+        lines = []
+        for key, value in parameters.items():
+            text = str(value)
+            if len(text) > 400:
+                text = f"{text[:400]}... [truncated {len(text) - 400} chars]"
+            lines.append(f"  {key}: {text}")
+        return "\n".join(lines)
+
+    async def _run_confirmation_dialog(
+        self, tool_name: str, parameters: dict, tool_call_id: str
+    ) -> None:
+        """Run confirmation dialog and always emit a terminal decision."""
+        params_text = self._format_parameters_for_dialog(parameters)
         result = None
         try:
-            result = await radiolist_dialog(
-                title="Tool Execution",
-                text=f"Execute tool: {tool_name}\n\nParameters:\n{params_text}",
-                values=[
-                    ("approve", "Yes"),
-                    ("approve_auto", "Yes + Auto-Approve Edits"),
-                    ("reject", "No (Return Control)"),
-                ],
-            ).run_async()
+            dialog_text = (
+                f"Execute tool: {tool_name}\n\n"
+                "Choose an action (mouse click or keyboard Tab/Enter):\n\n"
+                f"Parameters:\n{params_text}"
+            )
+            with patch_stdout():
+                result = await asyncio.wait_for(
+                    button_dialog(
+                        title="Tool Execution",
+                        text=dialog_text,
+                        buttons=[
+                            ("Yes", "approve"),
+                            ("Yes + Auto-Approve Edits", "approve_auto"),
+                            ("No (Return Control)", "reject"),
+                        ],
+                    ).run_async(),
+                    timeout=20.0,
+                )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Confirmation dialog timed out for %s; falling back to text prompt.",
+                tool_call_id,
+            )
+            result = await self._prompt_confirmation_text(tool_name)
         except Exception as exc:
             logger.error("Confirmation dialog error: %s", exc, exc_info=True)
             result = "reject"
@@ -265,6 +302,32 @@ class PromptToolkitCLI:
 
         # Deterministic fallback: if dialog closes / returns None, reject explicitly.
         await self._emit_tool_confirmation(tool_call_id, "rejected")
+
+    async def _prompt_confirmation_text(self, tool_name: str) -> str:
+        """Fallback prompt when dialog input is not being consumed."""
+        print(
+            f"\n[Approval Fallback] {tool_name}\n"
+            "Enter: y=approve, a=approve+auto, n=reject"
+        )
+        choices = {
+            "y": "approve",
+            "yes": "approve",
+            "a": "approve_auto",
+            "aa": "approve_auto",
+            "n": "reject",
+            "no": "reject",
+            "r": "reject",
+        }
+        while True:
+            try:
+                with patch_stdout():
+                    raw = await self._session.prompt_async("(y/a/n) > ")
+            except (EOFError, KeyboardInterrupt):
+                return "reject"
+            choice = raw.strip().lower()
+            if choice in choices:
+                return choices[choice]
+            print("Invalid choice. Use y, a, or n.")
 
     async def _handle_tool_start(self, data: dict) -> None:
         """Handle TOOL_EXECUTION_START."""

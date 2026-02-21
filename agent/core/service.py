@@ -4,7 +4,12 @@ from typing import Any, Dict
 
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
-from protocol_monk.agent.structs import UserRequest, AgentStatus, ConfirmationResponse
+from protocol_monk.agent.structs import (
+    UserRequest,
+    AgentStatus,
+    ConfirmationResponse,
+    ToolResult,
+)
 from protocol_monk.agent.context.coordinator import ContextCoordinator
 from protocol_monk.agent.core.state_machine import StateMachine, AgentState
 from protocol_monk.tools.registry import ToolRegistry
@@ -121,7 +126,7 @@ class AgentService:
             # 5. Think/Act loop: tool results are added back to context,
             # then the model gets another pass to produce a final answer.
             # We cap rounds to prevent runaway loops.
-            max_tool_rounds = 50
+            max_tool_rounds = 400
             rounds = 0
             stopped_by_rejection = False
             while response.tool_calls and rounds < max_tool_rounds:
@@ -132,7 +137,7 @@ class AgentService:
                 )
 
                 user_rejected = False
-                for tool_req in response.tool_calls:
+                for tool_index, tool_req in enumerate(response.tool_calls):
                     tool_def = self._registry.get_tool(tool_req.name)
                     requires_confirmation = bool(
                         tool_def and tool_def.requires_confirmation
@@ -166,6 +171,28 @@ class AgentService:
                     await self._context.add_tool_result(result)
 
                     if result.error_code == "user_rejected":
+                        # Close the current tool-call batch in-order. The provider expects
+                        # each assistant tool_call id to eventually receive a terminal tool
+                        # result, even when we stop the turn on rejection.
+                        for skipped_req in response.tool_calls[tool_index + 1 :]:
+                            await self._context.add_tool_result(
+                                ToolResult(
+                                    tool_name=skipped_req.name,
+                                    call_id=skipped_req.call_id,
+                                    success=False,
+                                    output=None,
+                                    duration=0,
+                                    error=(
+                                        "Skipped because an earlier tool call in this batch "
+                                        "was rejected."
+                                    ),
+                                    error_code="skipped_due_to_rejection",
+                                    output_kind="none",
+                                    error_details={
+                                        "blocked_by_tool_call_id": tool_req.call_id
+                                    },
+                                )
+                            )
                         user_rejected = True
                         stopped_by_rejection = True
                         await self._bus.emit(
