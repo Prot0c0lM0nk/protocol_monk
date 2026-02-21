@@ -121,7 +121,7 @@ class AgentService:
             # 5. Think/Act loop: tool results are added back to context,
             # then the model gets another pass to produce a final answer.
             # We cap rounds to prevent runaway loops.
-            max_tool_rounds = 3
+            max_tool_rounds = 50
             rounds = 0
             stopped_by_rejection = False
             while response.tool_calls and rounds < max_tool_rounds:
