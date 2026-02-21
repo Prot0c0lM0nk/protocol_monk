@@ -24,7 +24,7 @@ from protocol_monk.agent.core.service import AgentService
 from protocol_monk.utils.scratch import ScratchManager
 from protocol_monk.utils.logger import EventLogger
 from protocol_monk.utils.session_transcript import SessionTranscriptSink
-from protocol_monk.providers.ollama import OllamaProvider
+from protocol_monk.providers.factory import create_provider
 
 logging.basicConfig(
     level=logging.INFO,
@@ -83,7 +83,22 @@ async def main():
         registry.seal()
 
         # C. The Provider (The Model Interface)
-        provider = OllamaProvider(settings)
+        provider = create_provider(settings)
+        logger.info(
+            "Selected provider: %s | Active model: %s",
+            settings.llm_provider,
+            settings.active_model_name,
+        )
+        await bus.emit(
+            EventTypes.INFO,
+            {
+                "message": "Provider configured",
+                "data": {
+                    "provider": settings.llm_provider,
+                    "active_model": settings.active_model_name,
+                },
+            },
+        )
 
         # D. Scratch Manager (Cleanup)
         # [FIX] Removed unused 'scratch_manager' variable (using _ instead)

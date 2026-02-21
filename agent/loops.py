@@ -119,9 +119,32 @@ async def run_thinking_loop(
 
             elif signal.type == "metrics":
                 # Capture token counts
-                data = signal.data
+                data = signal.data or {}
                 if "eval_count" in data:
                     token_usage = data["eval_count"]
+                else:
+                    usage = data.get("usage")
+                    if isinstance(usage, dict):
+                        total_tokens = usage.get("total_tokens")
+                        if isinstance(total_tokens, int) and total_tokens > 0:
+                            token_usage = total_tokens
+
+                metrics_summary = {
+                    "provider": data.get("provider"),
+                    "request_model": data.get("request_model"),
+                    "response_model": data.get("model"),
+                    "usage": data.get("usage"),
+                    "finish_reasons": data.get("finish_reasons"),
+                    "chunk_count": data.get("chunk_count"),
+                }
+                await bus.emit(
+                    EventTypes.INFO,
+                    {
+                        "message": "Provider metrics",
+                        "data": metrics_summary,
+                    },
+                )
+                logger.debug("Provider metrics payload: %s", data)
 
             elif signal.type == "error":
                 logger.error(f"Provider Error Signal: {signal.data}")

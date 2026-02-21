@@ -1,0 +1,82 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-02-21T00:00:00",
+  "default_model": "mistralai/ministral-14b-2512",
+  "models": {
+    "qwen/qwen3.5-397b-a17b": {
+      "name": "qwen/qwen3.5-397b-a17b",
+      "family": "qwen",
+      "is_cloud": true,
+      "context_window": 262144,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "capabilities": [
+        "completion",
+        "tools"
+      ],
+      "parameters": {},
+      "user_overrides": {},
+      "discovered_at": "2026-02-21T00:00:00"
+    },
+    "z-ai/glm-5": {
+      "name": "z-ai/glm-5",
+      "family": "glm",
+      "is_cloud": true,
+      "context_window": 204800,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "capabilities": [
+        "completion",
+        "tools"
+      ],
+      "parameters": {},
+      "user_overrides": {},
+      "discovered_at": "2026-02-21T00:00:00"
+    },
+    "z-ai/glm-4.7-flash": {
+      "name": "z-ai/glm-4.7-flash",
+      "family": "glm",
+      "is_cloud": true,
+      "context_window": 202752,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "capabilities": [
+        "completion",
+        "tools"
+      ],
+      "parameters": {},
+      "user_overrides": {},
+      "discovered_at": "2026-02-21T00:00:00"
+    },
+    "mistralai/ministral-14b-2512": {
+      "name": "mistralai/ministral-14b-2512",
+      "family": "mistral",
+      "is_cloud": true,
+      "context_window": 262144,
+      "supports_thinking": false,
+      "supports_tools": true,
+      "capabilities": [
+        "completion",
+        "tools"
+      ],
+      "parameters": {},
+      "user_overrides": {},
+      "discovered_at": "2026-02-21T00:00:00"
+    },
+    "liquid/lfm2-8b-a1b": {
+      "name": "liquid/lfm2-8b-a1b",
+      "family": "liquid",
+      "is_cloud": true,
+      "context_window": 32768,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "capabilities": [
+        "completion",
+        "tools"
+      ],
+      "parameters": {},
+      "user_overrides": {},
+      "discovered_at": "2026-02-21T00:00:00"
+    }
+  }
+}

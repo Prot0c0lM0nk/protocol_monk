@@ -7,6 +7,10 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 from protocol_monk.exceptions.config import ConfigError
 from protocol_monk.utils.model_discovery import discover_models
+from protocol_monk.utils.openrouter_model_map import (
+    build_default_openrouter_model_map,
+    load_or_initialize_openrouter_model_map,
+)
 
 logger = logging.getLogger("Settings")
 
@@ -16,8 +20,11 @@ class Settings(BaseSettings):
     workspace: Path
     system_prompt_path: Path
     log_level: str
+    llm_provider: str = "ollama"
     ollama_host: str = "http://localhost:11434"
     ollama_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     tool_timeout: int = 60
     pruning_threshold: float = 0.8
 
@@ -38,6 +45,10 @@ class Settings(BaseSettings):
 
     # Model discovery fields
     models_json_path: Path = Field(default=Path("protocol_monk/config/models.json"))
+    openrouter_models_json_path: Path = Field(
+        default=Path("protocol_monk/config/openrouter_models.json"),
+        env="OPENROUTER_MODELS_JSON_PATH",
+    )
     force_model_discovery: bool = Field(default=False, env="FORCE_MODEL_DISCOVERY")
     active_model_alias: str = Field(default="", env="ACTIVE_MODEL_ALIAS")
 
@@ -75,9 +86,26 @@ class Settings(BaseSettings):
             raise ConfigError(f"Invalid log level: {self.log_level}")
         self.log_level = self.log_level.upper()
 
+        # 4. Validate provider selection
+        normalized_provider = (self.llm_provider or "ollama").strip().lower()
+        if normalized_provider not in {"ollama", "openrouter"}:
+            raise ConfigError(
+                "Invalid llm_provider value. Expected 'ollama' or 'openrouter'. "
+                f"Got: {self.llm_provider}"
+            )
+        self.llm_provider = normalized_provider
+
+        if self.llm_provider == "openrouter" and not self.openrouter_api_key:
+            raise ConfigError(
+                "OPENROUTER_API_KEY is required when LLM_PROVIDER=openrouter."
+            )
+
         # Note: Model discovery is now async and called separately via initialize()
         # We set minimal defaults here that will be overridden by discovery
-        self._active_model_name = "llama2"
+        if self.llm_provider == "openrouter":
+            self._active_model_name = "mistralai/ministral-14b-2512"
+        else:
+            self._active_model_name = "llama2"
         self._active_model_config_dict = {}
 
         return self
@@ -90,16 +118,20 @@ class Settings(BaseSettings):
         await self._discover_models()
 
     async def _discover_models(self) -> None:
-        """Discover models from Ollama and load configuration."""
+        """Load model config for the selected provider."""
         try:
-            logger.info("Discovering models from Ollama...")
-
-            # Run discovery
-            model_config = await discover_models(
-                models_json_path=self.models_json_path,
-                ollama_host=self.ollama_host,
-                force_refresh=self.force_model_discovery,
-            )
+            if self.llm_provider == "openrouter":
+                logger.info("Loading OpenRouter model map...")
+                model_config = load_or_initialize_openrouter_model_map(
+                    self.openrouter_models_json_path
+                )
+            else:
+                logger.info("Discovering models from Ollama...")
+                model_config = await discover_models(
+                    models_json_path=self.models_json_path,
+                    ollama_host=self.ollama_host,
+                    force_refresh=self.force_model_discovery,
+                )
 
             self.models_config = model_config
 
@@ -110,13 +142,15 @@ class Settings(BaseSettings):
                 self._set_active_model(model_config["default_model"])
 
             logger.info(
-                f"Model discovery complete. Active model: {self.active_model_name}"
+                "Model configuration loaded for provider '%s'. Active model: %s",
+                self.llm_provider,
+                self.active_model_name,
             )
 
         except Exception as e:
-            logger.error(f"Model discovery failed: {e}")
-            # Fall back to minimal config
+            logger.error(f"Model configuration loading failed: {e}")
             self.models_config = self._create_fallback_model_config()
+            self._set_active_model(self.models_config.get("default_model", ""))
 
     def _set_active_model(self, model_alias: str) -> None:
         """Set the active model from alias or name."""
@@ -145,7 +179,10 @@ class Settings(BaseSettings):
             self.active_model_name = default
 
     def _create_fallback_model_config(self) -> Dict[str, Any]:
-        """Create minimal fallback config if discovery fails."""
+        """Create minimal fallback config if model loading fails."""
+        if self.llm_provider == "openrouter":
+            return build_default_openrouter_model_map(context_window=2000)
+
         return {
             "version": "1.0",
             "last_updated": datetime.now().isoformat(),
@@ -227,12 +264,8 @@ class Settings(BaseSettings):
         """
         params = self._active_model_config.get("parameters", {}).copy()
 
-        # [FIX] Enforce context limit to prevent RAM explosion
-        # If models.json has it, use it. If not, default to 4096 (safe).
-        # We explicitly set 'num_ctx' because Ollama defaults to max if missing.
-        if "num_ctx" not in params:
-            # Use the context_window_limit property (which pulls from json or defaults to 8000)
-            # But let's be safer and cap it at 4096 for local dev if not explicitly set high
+        # Only Ollama uses num_ctx-style options.
+        if self.llm_provider == "ollama" and "num_ctx" not in params:
             params["num_ctx"] = self.context_window_limit
 
         return params
