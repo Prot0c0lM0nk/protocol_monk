@@ -1,3 +1,4 @@
+import asyncio
 import time
 import logging
 from typing import AsyncIterator, List, Dict, Any, Optional, Set
@@ -89,6 +90,12 @@ class OllamaProvider(BaseProvider):
                     }
                     yield ProviderSignal(type="metrics", data=metrics)
 
+        except asyncio.CancelledError:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("Ollama stream cancelled by caller.", exc_info=True)
+            else:
+                logger.info("Ollama stream cancelled by caller.")
+            raise
         except Exception as e:
             logger.error(f"Stream Error: {e}", exc_info=True)
             yield ProviderSignal(type="error", data=str(e))

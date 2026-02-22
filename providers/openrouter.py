@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -149,6 +150,12 @@ class OpenRouterProvider(BaseProvider):
             telemetry["final_chunk"] = last_chunk
             yield ProviderSignal(type="metrics", data=telemetry)
 
+        except asyncio.CancelledError:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("OpenRouter stream cancelled by caller.", exc_info=True)
+            else:
+                logger.info("OpenRouter stream cancelled by caller.")
+            raise
         except Exception as exc:
             msg = self._format_provider_error(exc)
             logger.error("OpenRouter stream failed: %s", msg, exc_info=True)

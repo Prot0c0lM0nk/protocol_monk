@@ -134,12 +134,30 @@ async def main():
             await cli.run()
 
             logger.info("Shutdown complete.")
+            return 0
 
     except Exception as e:
         # [FIX] Lazy logging for exceptions
         logger.critical("Startup Failed: %s", e, exc_info=True)
-        exit(1)
+        return 1
+
+
+def run() -> int:
+    """
+    Synchronous wrapper with Ctrl-C policy.
+
+    - Normal/handled failures return explicit status codes from main().
+    - User interrupt exits cleanly without traceback noise in INFO mode.
+    """
+    try:
+        return asyncio.run(main())
+    except KeyboardInterrupt:
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            logger.debug("Interrupted by user. Exiting.", exc_info=True)
+        else:
+            logger.info("Interrupted by user. Exiting.")
+        return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(run())

@@ -149,6 +149,12 @@ async def run_thinking_loop(
             elif signal.type == "error":
                 logger.error(f"Provider Error Signal: {signal.data}")
 
+    except asyncio.CancelledError:
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("Thinking loop cancelled by caller.", exc_info=True)
+        else:
+            logger.info("Thinking loop cancelled by caller.")
+        raise
     except Exception as e:
         logger.error(f"Loop Crash: {e}", exc_info=True)
         # Don't crash the agent, just return what we have
