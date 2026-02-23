@@ -23,7 +23,9 @@ def _now_iso() -> str:
     return datetime.now().isoformat()
 
 
-def _default_model_entry(name: str, context_window: int, timestamp: str) -> Dict[str, Any]:
+def _default_model_entry(
+    name: str, context_window: int, timestamp: str
+) -> Dict[str, Any]:
     return {
         "name": name,
         "family": _MODEL_FAMILIES[name],
@@ -46,7 +48,9 @@ def build_default_openrouter_model_map(
     """
     timestamp = _now_iso()
     models = {
-        name: _default_model_entry(name, context_window=context_window, timestamp=timestamp)
+        name: _default_model_entry(
+            name, context_window=context_window, timestamp=timestamp
+        )
         for name in _MODEL_FAMILIES
     }
     return {

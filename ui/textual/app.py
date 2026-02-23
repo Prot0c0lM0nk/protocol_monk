@@ -92,11 +92,11 @@ class ProtocolMonkTextualApp(App):
 
     def action_refresh_status_bar(self) -> None:
         if self.bus is None:
-            self.notify("Event bus unavailable; cannot refresh status.", severity="warning")
+            self.notify(
+                "Event bus unavailable; cannot refresh status.", severity="warning"
+            )
             return
-        asyncio.create_task(
-            self._emit_system_command({"command": "refresh_status"})
-        )
+        asyncio.create_task(self._emit_system_command({"command": "refresh_status"}))
         self.notify("Requested status refresh", severity="information")
 
     def _chat_screen(self) -> MainChatScreen | None:
@@ -125,7 +125,9 @@ class ProtocolMonkTextualApp(App):
         try:
             decision = await self.push_screen_wait(modal)
         except Exception:
-            self.notify("Tool approval dialog failed; rejecting by default.", severity="error")
+            self.notify(
+                "Tool approval dialog failed; rejecting by default.", severity="error"
+            )
             return "rejected"
 
         if decision in {"approved", "approved_auto", "rejected"}:

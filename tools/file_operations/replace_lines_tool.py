@@ -54,7 +54,11 @@ class ReplaceLinesTool(BaseTool):
             raise ToolError(
                 f"Invalid range: {start}-{end}",
                 user_hint=f"Line range {start}-{end} is invalid for this file.",
-                details={"line_start": start, "line_end": end, "total_lines": len(lines)},
+                details={
+                    "line_start": start,
+                    "line_end": end,
+                    "total_lines": len(lines),
+                },
             )
 
         new_lines_list = new_content.splitlines()

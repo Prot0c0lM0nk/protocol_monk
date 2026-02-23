@@ -44,9 +44,15 @@ class TextualEventBridge:
 
         await self._bus.subscribe(EventTypes.STATUS_CHANGED, self._on_status_changed)
         await self._bus.subscribe(EventTypes.STREAM_CHUNK, self._on_stream_chunk)
-        await self._bus.subscribe(EventTypes.THINKING_STARTED, self._on_thinking_started)
-        await self._bus.subscribe(EventTypes.THINKING_STOPPED, self._on_thinking_stopped)
-        await self._bus.subscribe(EventTypes.RESPONSE_COMPLETE, self._on_response_complete)
+        await self._bus.subscribe(
+            EventTypes.THINKING_STARTED, self._on_thinking_started
+        )
+        await self._bus.subscribe(
+            EventTypes.THINKING_STOPPED, self._on_thinking_stopped
+        )
+        await self._bus.subscribe(
+            EventTypes.RESPONSE_COMPLETE, self._on_response_complete
+        )
         await self._bus.subscribe(
             EventTypes.TOOL_EXECUTION_START, self._on_tool_execution_start
         )
@@ -193,7 +199,9 @@ class TextualEventBridge:
         async with self._confirmation_lock:
             decision = "rejected"
             try:
-                decision = await self._app.request_tool_confirmation(tool_name, parameters)
+                decision = await self._app.request_tool_confirmation(
+                    tool_name, parameters
+                )
             except Exception:
                 decision = "rejected"
 
@@ -214,7 +222,9 @@ class TextualEventBridge:
             await self._bus.emit(EventTypes.TOOL_CONFIRMATION_SUBMITTED, response)
 
     async def _on_info(self, payload: Any) -> None:
-        message = payload.get("message", "") if isinstance(payload, dict) else str(payload)
+        message = (
+            payload.get("message", "") if isinstance(payload, dict) else str(payload)
+        )
         if isinstance(payload, dict) and message == "Provider configured":
             data = payload.get("data", {}) or {}
             provider = data.get("provider")
@@ -234,12 +244,16 @@ class TextualEventBridge:
             self._app.post_message(AgentSystemMessage(message, level="info"))
 
     async def _on_warning(self, payload: Any) -> None:
-        message = payload.get("message", "") if isinstance(payload, dict) else str(payload)
+        message = (
+            payload.get("message", "") if isinstance(payload, dict) else str(payload)
+        )
         if message:
             self._app.post_message(AgentSystemMessage(message, level="warning"))
 
     async def _on_error(self, payload: Any) -> None:
-        message = payload.get("message", "") if isinstance(payload, dict) else str(payload)
+        message = (
+            payload.get("message", "") if isinstance(payload, dict) else str(payload)
+        )
         if message:
             self._app.post_message(AgentSystemMessage(message, level="error"))
 

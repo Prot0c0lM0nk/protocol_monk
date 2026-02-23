@@ -30,7 +30,9 @@ class MockAgentService:
         )
 
     async def _on_user_input(self, payload: UserRequest | dict[str, Any]) -> None:
-        text = payload.text if hasattr(payload, "text") else str(payload.get("text", ""))
+        text = (
+            payload.text if hasattr(payload, "text") else str(payload.get("text", ""))
+        )
         text = (text or "").strip()
         if not text:
             return
@@ -87,9 +89,15 @@ class MockAgentService:
         payload: ConfirmationResponse | dict[str, Any],
     ) -> None:
         tool_call_id = (
-            payload.tool_call_id if hasattr(payload, "tool_call_id") else payload.get("tool_call_id", "")
+            payload.tool_call_id
+            if hasattr(payload, "tool_call_id")
+            else payload.get("tool_call_id", "")
         )
-        decision = payload.decision if hasattr(payload, "decision") else payload.get("decision", "rejected")
+        decision = (
+            payload.decision
+            if hasattr(payload, "decision")
+            else payload.get("decision", "rejected")
+        )
 
         if not tool_call_id or tool_call_id not in self._pending_tools:
             return
@@ -178,5 +186,9 @@ class MockAgentService:
         for chunk in chunks:
             await self._bus.emit(
                 EventTypes.STREAM_CHUNK,
-                {"chunk": chunk, "channel": "content", "sequence": int(time.time() * 1000)},
+                {
+                    "chunk": chunk,
+                    "channel": "content",
+                    "sequence": int(time.time() * 1000),
+                },
             )

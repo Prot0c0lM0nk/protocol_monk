@@ -1,4 +1,5 @@
 """CLI implementation using prompt_toolkit for Protocol Monk."""
+
 import asyncio
 import logging
 from typing import Any
@@ -38,7 +39,9 @@ class PromptToolkitCLI:
         self._current_tool_call_id = None
         self._confirmation_tasks: dict[str, asyncio.Task] = {}
         self._auto_confirm = bool(getattr(settings, "auto_confirm", False))
-        self._verbose_ui = str(getattr(settings, "log_level", "INFO")).upper() == "DEBUG"
+        self._verbose_ui = (
+            str(getattr(settings, "log_level", "INFO")).upper() == "DEBUG"
+        )
 
         # Status symbols
         self._status_symbols = {
@@ -60,9 +63,7 @@ class PromptToolkitCLI:
         )
 
         # Conversation events
-        await self._bus.subscribe(
-            EventTypes.STREAM_CHUNK, self._handle_stream_chunk
-        )
+        await self._bus.subscribe(EventTypes.STREAM_CHUNK, self._handle_stream_chunk)
         await self._bus.subscribe(
             EventTypes.RESPONSE_COMPLETE, self._handle_response_complete
         )
@@ -75,9 +76,7 @@ class PromptToolkitCLI:
         await self._bus.subscribe(
             EventTypes.TOOL_EXECUTION_START, self._handle_tool_start
         )
-        await self._bus.subscribe(
-            EventTypes.TOOL_RESULT, self._handle_tool_result
-        )
+        await self._bus.subscribe(EventTypes.TOOL_RESULT, self._handle_tool_result)
         await self._bus.subscribe(
             EventTypes.TOOL_EXECUTION_COMPLETE, self._handle_tool_complete
         )
@@ -96,11 +95,11 @@ class PromptToolkitCLI:
         """Main REPL loop."""
         self._running = True
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("Protocol Monk CLI")
         print("Press Enter to submit")
         print("Type 'quit' or 'exit' to stop")
-        print("="*60 + "\n")
+        print("=" * 60 + "\n")
 
         while self._running:
             # Block input until agent is idle
@@ -178,9 +177,7 @@ class PromptToolkitCLI:
         )
         await self._bus.emit(EventTypes.USER_INPUT_SUBMITTED, request)
 
-    async def _emit_tool_confirmation(
-        self, tool_call_id: str, decision: str
-    ) -> None:
+    async def _emit_tool_confirmation(self, tool_call_id: str, decision: str) -> None:
         """Emit tool confirmation response."""
         response = ConfirmationResponse(
             tool_call_id=tool_call_id,

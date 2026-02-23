@@ -6,8 +6,10 @@ from typing import Dict, Any
 from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
 from protocol_monk.config.settings import Settings
+
 # We delegate the actual shell execution to our existing robust tool
 from protocol_monk.tools.shell_operations.execute_command_tool import ExecuteCommandTool
+
 
 class RunPythonTool(BaseTool):
     """
@@ -46,7 +48,7 @@ class RunPythonTool(BaseTool):
             },
             "required": ["script_content"],
         }
-    
+
     @property
     def requires_confirmation(self) -> bool:
         # Python execution is high-risk; always request confirmation
@@ -74,12 +76,11 @@ class RunPythonTool(BaseTool):
             # We use the current sys.executable to ensure we use the same python environment
             # (e.g., if you are in a venv, it uses that venv)
             command = f"{sys.executable} {file_path.name}"
-            
+
             # Delegate to the ExecuteCommandTool
             # This re-uses the shell tool's logic for timeouts and capturing output
             result_output = self.command_executor._execute_sync(
-                command=command, 
-                description="Executing temporary Python script."
+                command=command, description="Executing temporary Python script."
             )
             return result_output
 
@@ -93,7 +94,7 @@ class RunPythonTool(BaseTool):
             # Use path_validator from BaseTool to ensure we don't write outside workspace
             # must_exist=False because we are creating it
             file_path = self.path_validator.validate_path(name, must_exist=False)
-            
+
             file_path.write_text(content, encoding="utf-8")
             self.logger.info("Created temporary Python script: %s", file_path)
             return file_path

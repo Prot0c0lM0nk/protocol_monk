@@ -116,12 +116,14 @@ class ToolConfirmModal(ModalScreen[str]):
         self.dismiss("rejected")
 
     def _build_preview_text(self) -> str:
-        return "\n".join([
-            f"Tool: {self.tool_name}",
-            "",
-            "Arguments:",
-            *[f"  {k}: {v}" for k, v in self.tool_args.items()],
-        ])
+        return "\n".join(
+            [
+                f"Tool: {self.tool_name}",
+                "",
+                "Arguments:",
+                *[f"  {k}: {v}" for k, v in self.tool_args.items()],
+            ]
+        )
 
     def _render_preview(self):
         text = self.preview_text

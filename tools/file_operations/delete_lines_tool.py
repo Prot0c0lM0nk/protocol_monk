@@ -51,7 +51,11 @@ class DeleteLinesTool(BaseTool):
             raise ToolError(
                 "Invalid range",
                 user_hint=f"Line range {start}-{end} is invalid for this file.",
-                details={"line_start": start, "line_end": end, "total_lines": len(lines)},
+                details={
+                    "line_start": start,
+                    "line_end": end,
+                    "total_lines": len(lines),
+                },
             )
 
         updated_lines = lines[:start_idx] + lines[end:]

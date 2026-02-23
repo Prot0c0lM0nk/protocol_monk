@@ -147,7 +147,9 @@ class AgentService:
                                 f"Creating confirmation future for tool: {tool_req.name}"
                             )
                             confirmation_future = asyncio.Future()
-                            self._pending_confirmations[tool_req.call_id] = confirmation_future
+                            self._pending_confirmations[tool_req.call_id] = (
+                                confirmation_future
+                            )
 
                         # Execute the tool with the confirmation future
                         try:
@@ -207,7 +209,9 @@ class AgentService:
                     if user_rejected:
                         break
 
-                    await self._set_status(AgentState.THINKING, "Processing tool results...")
+                    await self._set_status(
+                        AgentState.THINKING, "Processing tool results..."
+                    )
                     history = self._context._store.get_full_history()
                     response = await run_thinking_loop(
                         context_history=history,
@@ -236,7 +240,11 @@ class AgentService:
                     )
                     await self._emit_context_update(stats)
 
-                if response.tool_calls and rounds >= max_tool_rounds and not stopped_by_rejection:
+                if (
+                    response.tool_calls
+                    and rounds >= max_tool_rounds
+                    and not stopped_by_rejection
+                ):
                     await self._bus.emit(
                         EventTypes.WARNING,
                         {
@@ -307,43 +315,61 @@ class AgentService:
         Handle TOOL_CONFIRMATION_SUBMITTED events to resolve pending confirmation futures.
         """
         try:
-            self._logger.info(f"Received tool confirmation for call_id: {payload.tool_call_id}")
+            self._logger.info(
+                f"Received tool confirmation for call_id: {payload.tool_call_id}"
+            )
 
             # Validate payload
-            if not hasattr(payload, 'tool_call_id') or not payload.tool_call_id:
+            if not hasattr(payload, "tool_call_id") or not payload.tool_call_id:
                 self._logger.error("Invalid confirmation payload: missing tool_call_id")
-                await self._bus.emit(EventTypes.ERROR, {
-                    "message": "Invalid confirmation payload",
-                    "details": "Missing tool_call_id"
-                })
+                await self._bus.emit(
+                    EventTypes.ERROR,
+                    {
+                        "message": "Invalid confirmation payload",
+                        "details": "Missing tool_call_id",
+                    },
+                )
                 return
 
-            if not hasattr(payload, 'decision') or payload.decision not in ["approved", "rejected"]:
+            if not hasattr(payload, "decision") or payload.decision not in [
+                "approved",
+                "rejected",
+            ]:
                 self._logger.error(f"Invalid confirmation decision: {payload.decision}")
-                await self._bus.emit(EventTypes.ERROR, {
-                    "message": "Invalid confirmation decision",
-                    "details": f"Decision must be approved or rejected, got {payload.decision}"
-                })
+                await self._bus.emit(
+                    EventTypes.ERROR,
+                    {
+                        "message": "Invalid confirmation decision",
+                        "details": f"Decision must be approved or rejected, got {payload.decision}",
+                    },
+                )
                 return
 
             future = self._pending_confirmations.get(payload.tool_call_id)
             # Resolve the pending confirmation future if it exists.
             if future and not future.done():
-                self._logger.info(f"Resolving confirmation future for call_id: {payload.tool_call_id}")
+                self._logger.info(
+                    f"Resolving confirmation future for call_id: {payload.tool_call_id}"
+                )
                 future.set_result(payload)
             else:
-                self._logger.warning(f"No pending confirmation found for call_id: {payload.tool_call_id}")
-                await self._bus.emit(EventTypes.WARNING, {
-                    "message": "No pending confirmation found",
-                    "details": f"Tool call ID {payload.tool_call_id} not found"
-                })
+                self._logger.warning(
+                    f"No pending confirmation found for call_id: {payload.tool_call_id}"
+                )
+                await self._bus.emit(
+                    EventTypes.WARNING,
+                    {
+                        "message": "No pending confirmation found",
+                        "details": f"Tool call ID {payload.tool_call_id} not found",
+                    },
+                )
 
         except Exception as e:
             self._logger.error(f"Error handling tool confirmation: {e}", exc_info=True)
-            await self._bus.emit(EventTypes.ERROR, {
-                "message": "Error processing tool confirmation",
-                "details": str(e)
-            })
+            await self._bus.emit(
+                EventTypes.ERROR,
+                {"message": "Error processing tool confirmation", "details": str(e)},
+            )
 
     async def _handle_system_command(self, payload: dict) -> None:
         """
@@ -355,19 +381,27 @@ class AgentService:
             # Validate payload
             if not isinstance(payload, dict):
                 self._logger.error("Invalid system command payload: not a dictionary")
-                await self._bus.emit(EventTypes.ERROR, {
-                    "message": "Invalid system command payload",
-                    "details": "Payload must be a dictionary"
-                })
+                await self._bus.emit(
+                    EventTypes.ERROR,
+                    {
+                        "message": "Invalid system command payload",
+                        "details": "Payload must be a dictionary",
+                    },
+                )
                 return
 
-            command = payload.get('command')
+            command = payload.get("command")
             if not command:
-                self._logger.error("Invalid system command payload: missing 'command' field")
-                await self._bus.emit(EventTypes.ERROR, {
-                    "message": "Invalid system command payload",
-                    "details": "Missing 'command' field"
-                })
+                self._logger.error(
+                    "Invalid system command payload: missing 'command' field"
+                )
+                await self._bus.emit(
+                    EventTypes.ERROR,
+                    {
+                        "message": "Invalid system command payload",
+                        "details": "Missing 'command' field",
+                    },
+                )
                 return
 
             # Process different system commands
@@ -378,21 +412,24 @@ class AgentService:
             elif command == "refresh_status":
                 await self._handle_refresh_status()
             elif command == "toggle_auto_confirm":
-                auto_confirm = payload.get('auto_confirm', True)
+                auto_confirm = payload.get("auto_confirm", True)
                 await self._handle_toggle_auto_confirm(auto_confirm)
             else:
                 self._logger.warning(f"Unknown system command: {command}")
-                await self._bus.emit(EventTypes.WARNING, {
-                    "message": "Unknown system command",
-                    "details": f"Command '{command}' is not recognized"
-                })
+                await self._bus.emit(
+                    EventTypes.WARNING,
+                    {
+                        "message": "Unknown system command",
+                        "details": f"Command '{command}' is not recognized",
+                    },
+                )
 
         except Exception as e:
             self._logger.error(f"Error handling system command: {e}", exc_info=True)
-            await self._bus.emit(EventTypes.ERROR, {
-                "message": "Error processing system command",
-                "details": str(e)
-            })
+            await self._bus.emit(
+                EventTypes.ERROR,
+                {"message": "Error processing system command", "details": str(e)},
+            )
 
     async def _handle_cancel_task(self) -> None:
         """
@@ -412,20 +449,20 @@ class AgentService:
                     future.cancel()
                 self._pending_confirmations.clear()
                 await self._set_status(AgentState.IDLE, "Task cancelled by user")
-                await self._bus.emit(EventTypes.INFO, {
-                    "message": "Task cancelled successfully"
-                })
+                await self._bus.emit(
+                    EventTypes.INFO, {"message": "Task cancelled successfully"}
+                )
             else:
                 self._logger.info("No active task to cancel")
-                await self._bus.emit(EventTypes.INFO, {
-                    "message": "No active task to cancel"
-                })
+                await self._bus.emit(
+                    EventTypes.INFO, {"message": "No active task to cancel"}
+                )
         except Exception as e:
             self._logger.error(f"Error cancelling task: {e}", exc_info=True)
-            await self._bus.emit(EventTypes.ERROR, {
-                "message": "Error cancelling task",
-                "details": str(e)
-            })
+            await self._bus.emit(
+                EventTypes.ERROR,
+                {"message": "Error cancelling task", "details": str(e)},
+            )
 
     async def _handle_reset_context(self) -> None:
         """
@@ -437,9 +474,9 @@ class AgentService:
             stats = await self._resolve_context_stats()
             await self._emit_context_update(stats)
             self._logger.info("Context reset successfully")
-            await self._bus.emit(EventTypes.INFO, {
-                "message": "Context reset successfully"
-            })
+            await self._bus.emit(
+                EventTypes.INFO, {"message": "Context reset successfully"}
+            )
 
             # Only set status to IDLE if we're not already idle
             current_state = self._state.current
@@ -447,15 +484,17 @@ class AgentService:
                 await self._set_status(AgentState.IDLE, "Context reset")
             else:
                 # Just emit a status update without changing state
-                status_payload = AgentStatus(status=AgentState.IDLE.value, message="Context reset")
+                status_payload = AgentStatus(
+                    status=AgentState.IDLE.value, message="Context reset"
+                )
                 await self._bus.emit(EventTypes.STATUS_CHANGED, status_payload)
 
         except Exception as e:
             self._logger.error(f"Error resetting context: {e}", exc_info=True)
-            await self._bus.emit(EventTypes.ERROR, {
-                "message": "Error resetting context",
-                "details": str(e)
-            })
+            await self._bus.emit(
+                EventTypes.ERROR,
+                {"message": "Error resetting context", "details": str(e)},
+            )
 
     async def _handle_refresh_status(self) -> None:
         """
@@ -466,10 +505,10 @@ class AgentService:
             await self._emit_context_update(stats)
         except Exception as e:
             self._logger.error(f"Error refreshing status: {e}", exc_info=True)
-            await self._bus.emit(EventTypes.ERROR, {
-                "message": "Error refreshing status",
-                "details": str(e)
-            })
+            await self._bus.emit(
+                EventTypes.ERROR,
+                {"message": "Error refreshing status", "details": str(e)},
+            )
 
     async def _handle_toggle_auto_confirm(self, auto_confirm: bool) -> None:
         """
@@ -479,15 +518,18 @@ class AgentService:
             # Update settings or configuration
             self._logger.info(f"Toggling auto-confirm to: {auto_confirm}")
             self._auto_confirm = bool(auto_confirm)
-            await self._bus.emit(EventTypes.AUTO_CONFIRM_CHANGED, {
-                "auto_confirm": self._auto_confirm
-            })
-            await self._bus.emit(EventTypes.INFO, {
-                "message": f"Auto-confirm {'enabled' if self._auto_confirm else 'disabled'}"
-            })
+            await self._bus.emit(
+                EventTypes.AUTO_CONFIRM_CHANGED, {"auto_confirm": self._auto_confirm}
+            )
+            await self._bus.emit(
+                EventTypes.INFO,
+                {
+                    "message": f"Auto-confirm {'enabled' if self._auto_confirm else 'disabled'}"
+                },
+            )
         except Exception as e:
             self._logger.error(f"Error toggling auto-confirm: {e}", exc_info=True)
-            await self._bus.emit(EventTypes.ERROR, {
-                "message": "Error toggling auto-confirm",
-                "details": str(e)
-            })
+            await self._bus.emit(
+                EventTypes.ERROR,
+                {"message": "Error toggling auto-confirm", "details": str(e)},
+            )
