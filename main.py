@@ -125,13 +125,26 @@ async def main():
             logger.info("Phase 3: Starting Services...")
             await agent_service.start()
 
-            # Start CLI
-            from protocol_monk.ui.cli import PromptToolkitCLI
-            cli = PromptToolkitCLI(bus, settings)
-            await cli.start()
+            ui_backend = os.getenv("PROTOCOL_MONK_UI", "textual").strip().lower()
 
-            logger.info("Phase 4: Starting CLI...")
-            await cli.run()
+            if ui_backend == "cli":
+                from protocol_monk.ui.cli import PromptToolkitCLI
+
+                cli = PromptToolkitCLI(bus, settings)
+                await cli.start()
+
+                logger.info("Phase 4: Starting CLI...")
+                await cli.run()
+            else:
+                from protocol_monk.ui.textual.app import ProtocolMonkTextualApp
+                from protocol_monk.ui.textual.bridge import TextualEventBridge
+
+                app = ProtocolMonkTextualApp(bus=bus, settings=settings)
+                bridge = TextualEventBridge(app=app, bus=bus)
+                app.bridge = bridge
+
+                logger.info("Phase 4: Starting Textual UI...")
+                await app.run_async()
 
             logger.info("Shutdown complete.")
             return 0

@@ -1,0 +1,67 @@
+/* ui/textual/styles/chat.tcss */
+
+/* === The Main Scrollable Container === */
+ChatArea {
+    height: 1fr;
+    width: 100%;
+    padding: 1 2;
+    background: #03070d;
+    border-top: solid #1a2738;
+}
+
+AIMessage {
+    width: 100%;
+    height: auto;
+    padding: 1 2;
+    margin: 0 0 1 0;
+    background: #03070d;
+    color: #7fd7a8;
+}
+
+UserMessage {
+    width: 100%;
+    height: auto;
+    margin: 0 0 1 100;
+    padding: 1 2;
+    background: #111923;
+    color: #c3d3e4;
+    border: round #3b4f66;
+}
+
+ToolResultWidget {
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    background: #0a1621;
+    color: #d5e6f8;
+    border: round #00b8d9;
+}
+
+ThinkingSummaryWidget {
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    background: #101720;
+    color: #d5e6f8;
+    border: round #5e7ea1;
+}
+
+ReasoningStripWidget {
+    width: 100%;
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    background: #101720;
+    color: #d5e6f8;
+    border: round #5e7ea1;
+}
+
+ThinkingIndicator {
+    width: 100%;
+    margin: 0 0 1 0;
+    padding: 0 1;
+    color: #7fd7a8;
+    text-style: italic;
+}
