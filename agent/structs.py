@@ -94,6 +94,7 @@ class ToolResult:
     error_code: Optional[str] = None
     output_kind: Optional[str] = None
     error_details: Optional[Dict[str, Any]] = None
+    request_parameters: Optional[Dict[str, Any]] = None
 
 
 # --- 4. Context & Config ---

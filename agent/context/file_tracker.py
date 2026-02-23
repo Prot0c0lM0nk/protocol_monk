@@ -36,6 +36,12 @@ class FileTracker:
         if file_path in self._loaded_files:
             del self._loaded_files[file_path]
 
+    def count(self) -> int:
+        return len(self._loaded_files)
+
+    def clear(self) -> None:
+        self._loaded_files.clear()
+
     def sync_with_history(self, active_message_ids: Set[str]) -> None:
         """
         Garbage collection: Remove files that belong to pruned messages.

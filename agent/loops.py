@@ -276,6 +276,7 @@ async def run_action_loop(
             error=f"Tool {tool_req.name} not registered.",
             error_code="tool_not_registered",
             output_kind="none",
+            request_parameters=tool_req.parameters,
         )
 
     # Update request with actual confirmation policy
@@ -313,6 +314,7 @@ async def run_action_loop(
                     "Internal Error: Missing confirmation future",
                     error_code="missing_confirmation_future",
                     output_kind="none",
+                    request_parameters=tool_req.parameters,
                 )
 
             await bus.emit(
@@ -348,6 +350,7 @@ async def run_action_loop(
                     "Cancelled",
                     error_code="confirmation_cancelled",
                     output_kind="none",
+                    request_parameters=tool_req.parameters,
                 )
 
             # Resume
@@ -369,6 +372,7 @@ async def run_action_loop(
                     "User rejected execution",
                     error_code="user_rejected",
                     output_kind="none",
+                    request_parameters=tool_req.parameters,
                 )
 
     # 3. Execution

@@ -36,6 +36,7 @@ class ToolExecutor:
                 duration=0.0,
                 error_code="tool_not_found",
                 output_kind="none",
+                request_parameters=request.parameters,
             )
 
         try:
@@ -56,6 +57,7 @@ class ToolExecutor:
                 duration=duration,
                 error=None,
                 output_kind=type(result).__name__,
+                request_parameters=request.parameters,
             )
 
         except asyncio.TimeoutError:
@@ -70,6 +72,7 @@ class ToolExecutor:
                 error=f"Execution timed out after {self._timeout} seconds.",
                 error_code="timeout",
                 output_kind="none",
+                request_parameters=request.parameters,
             )
 
         except ToolError as e:
@@ -86,6 +89,7 @@ class ToolExecutor:
                 error_code=e.__class__.__name__,
                 output_kind="tool_error_details" if e.details else "none",
                 error_details=e.details or None,
+                request_parameters=request.parameters,
             )
 
         except Exception as e:
@@ -101,4 +105,5 @@ class ToolExecutor:
                 error=f"System Error: {str(e)}",
                 error_code="system_error",
                 output_kind="none",
+                request_parameters=request.parameters,
             )

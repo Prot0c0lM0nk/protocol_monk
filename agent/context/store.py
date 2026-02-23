@@ -19,6 +19,10 @@ class ContextStore:
         """Appends a message to the history."""
         self._messages.append(message)
 
+    def clear_messages(self) -> None:
+        """Clears all non-system messages."""
+        self._messages.clear()
+
     def replace_history(self, new_history: List[Message]) -> None:
         """
         Replaces entire history (used after pruning).

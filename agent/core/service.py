@@ -194,6 +194,7 @@ class AgentService:
                                         error_details={
                                             "blocked_by_tool_call_id": tool_req.call_id
                                         },
+                                        request_parameters=skipped_req.parameters,
                                     )
                                 )
                             user_rejected = True
