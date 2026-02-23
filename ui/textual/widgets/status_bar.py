@@ -16,6 +16,10 @@ class StatusBar(Horizontal):
         self._model = "unknown"
         self._auto_confirm = False
         self._working_dir = ""
+        self._message_count = 0
+        self._total_tokens = 0
+        self._context_limit = 0
+        self._loaded_files_count = 0
         self._timer = None
 
     def compose(self) -> ComposeResult:
@@ -32,6 +36,10 @@ class StatusBar(Horizontal):
         yield Static(" | ", classes="separator")
         yield Label("Tokens:", classes="metric-label")
         yield Label("0/0", id="token-label")
+
+        yield Static(" | ", classes="separator")
+        yield Label("Files:", classes="metric-label")
+        yield Label("0", id="files-label")
 
         yield Static(" | ", classes="separator")
         yield Label("Dir:", classes="metric-label")
@@ -57,6 +65,10 @@ class StatusBar(Horizontal):
         model: str | None = None,
         auto_confirm: bool | None = None,
         working_dir: str | None = None,
+        message_count: int | None = None,
+        total_tokens: int | None = None,
+        context_limit: int | None = None,
+        loaded_files_count: int | None = None,
     ) -> None:
         self._phase = str(status or "idle").strip().lower()
         self._detail = str(detail or "")
@@ -68,8 +80,31 @@ class StatusBar(Horizontal):
             self._auto_confirm = bool(auto_confirm)
         if working_dir is not None:
             self._working_dir = self._truncate_working_dir(str(working_dir))
+        self.update_metrics(
+            message_count=message_count,
+            total_tokens=total_tokens,
+            context_limit=context_limit,
+            loaded_files_count=loaded_files_count,
+        )
         self._render_labels()
         self._render_status()
+
+    def update_metrics(
+        self,
+        message_count: int | None = None,
+        total_tokens: int | None = None,
+        context_limit: int | None = None,
+        loaded_files_count: int | None = None,
+    ) -> None:
+        if message_count is not None:
+            self._message_count = max(0, int(message_count))
+        if total_tokens is not None:
+            self._total_tokens = max(0, int(total_tokens))
+        if context_limit is not None:
+            self._context_limit = max(0, int(context_limit))
+        if loaded_files_count is not None:
+            self._loaded_files_count = max(0, int(loaded_files_count))
+        self._render_labels()
 
     def _tick(self) -> None:
         if self._phase in {"thinking", "executing", "paused"}:
@@ -94,6 +129,10 @@ class StatusBar(Horizontal):
         self.query_one("#provider-label", Label).update(self._provider)
         self.query_one("#model-label", Label).update(self._model)
         self.query_one("#working-dir-label", Label).update(self._working_dir or "-")
+        self.query_one("#messages-label", Label).update(str(self._message_count))
+        token_value = f"{self._total_tokens}/{self._context_limit or 0}"
+        self.query_one("#token-label", Label).update(token_value)
+        self.query_one("#files-label", Label).update(str(self._loaded_files_count))
 
     @staticmethod
     def _truncate_working_dir(working_dir: str) -> str:

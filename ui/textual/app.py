@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import Any
+from typing import Any, Iterable
 
-from textual.app import App
+from textual.app import App, SystemCommand
 from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import Input
@@ -34,6 +34,7 @@ class ProtocolMonkTextualApp(App):
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", show=False),
         Binding("ctrl+c", "quit", "Quit", show=False),
+        Binding("ctrl+p", "command_palette", "Commands"),
     ]
 
     def __init__(
@@ -80,6 +81,23 @@ class ProtocolMonkTextualApp(App):
 
     def action_quit(self) -> None:
         self.exit()
+
+    def get_system_commands(self, screen: Screen) -> Iterable[SystemCommand]:
+        yield from super().get_system_commands(screen)
+        yield SystemCommand(
+            "Refresh Status Bar",
+            "Refresh context and token metrics",
+            self.action_refresh_status_bar,
+        )
+
+    def action_refresh_status_bar(self) -> None:
+        if self.bus is None:
+            self.notify("Event bus unavailable; cannot refresh status.", severity="warning")
+            return
+        asyncio.create_task(
+            self._emit_system_command({"command": "refresh_status"})
+        )
+        self.notify("Requested status refresh", severity="information")
 
     def _chat_screen(self) -> MainChatScreen | None:
         current = self.screen
@@ -143,6 +161,12 @@ class ProtocolMonkTextualApp(App):
         except Exception:
             self.notify("Failed to dispatch user input to agent.", severity="error")
 
+    async def _emit_system_command(self, payload: dict) -> None:
+        try:
+            await self.bus.emit(EventTypes.SYSTEM_COMMAND_ISSUED, payload)
+        except Exception:
+            self.notify("Failed to dispatch system command.", severity="error")
+
     def on_agent_stream_chunk(self, message: AgentStreamChunk) -> None:
         screen = self._chat_screen()
         if screen is None:
@@ -166,6 +190,10 @@ class ProtocolMonkTextualApp(App):
             model=message.model,
             auto_confirm=message.auto_confirm,
             working_dir=message.working_dir,
+            message_count=message.message_count,
+            total_tokens=message.total_tokens,
+            context_limit=message.context_limit,
+            loaded_files_count=message.loaded_files_count,
         )
         screen.show_thinking(message.status == "thinking", detail=message.detail)
 

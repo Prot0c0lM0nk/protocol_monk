@@ -83,6 +83,7 @@ StatusBar > .spacer {
 #model-label,
 #messages-label,
 #token-label,
+#files-label,
 #working-dir-label,
 #status-detail-label {
     color: #d5e6f8;
@@ -104,6 +105,11 @@ StatusBar > .spacer {
 
 #token-label {
     width: 20;
+    padding: 0 0 0 0;
+}
+
+#files-label {
+    min-width: 3;
     padding: 0 0 0 0;
 }
 

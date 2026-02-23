@@ -27,6 +27,10 @@ class AgentStatusUpdate(Message):
         model: str | None = None,
         auto_confirm: bool | None = None,
         working_dir: str | None = None,
+        message_count: int | None = None,
+        total_tokens: int | None = None,
+        context_limit: int | None = None,
+        loaded_files_count: int | None = None,
     ):
         self.status = status
         self.detail = detail
@@ -34,6 +38,10 @@ class AgentStatusUpdate(Message):
         self.model = model
         self.auto_confirm = auto_confirm
         self.working_dir = working_dir
+        self.message_count = message_count
+        self.total_tokens = total_tokens
+        self.context_limit = context_limit
+        self.loaded_files_count = loaded_files_count
         super().__init__()
 
 

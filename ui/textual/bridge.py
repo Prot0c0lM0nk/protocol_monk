@@ -30,6 +30,10 @@ class TextualEventBridge:
         self._model: str | None = None
         self._auto_confirm: bool | None = None
         self._working_dir: str | None = None
+        self._message_count: int | None = None
+        self._total_tokens: int | None = None
+        self._context_limit: int | None = None
+        self._loaded_files_count: int | None = None
         self._confirmation_lock = asyncio.Lock()
         self._confirmation_tasks: set[asyncio.Task] = set()
 
@@ -220,6 +224,12 @@ class TextualEventBridge:
             if model is not None:
                 self._model = str(model)
             self._post_status_update()
+            return
+        if isinstance(payload, dict) and message == "Context updated":
+            data = payload.get("data", {}) or {}
+            self._apply_context_metrics(data)
+            self._post_status_update()
+            return
         if message:
             self._app.post_message(AgentSystemMessage(message, level="info"))
 
@@ -247,8 +257,27 @@ class TextualEventBridge:
                 model=self._model,
                 auto_confirm=self._auto_confirm,
                 working_dir=self._working_dir,
+                message_count=self._message_count,
+                total_tokens=self._total_tokens,
+                context_limit=self._context_limit,
+                loaded_files_count=self._loaded_files_count,
             )
         )
+
+    def _apply_context_metrics(self, data: dict[str, Any]) -> None:
+        message_count = data.get("message_count")
+        total_tokens = data.get("total_tokens")
+        context_limit = data.get("context_limit")
+        loaded_files_count = data.get("loaded_files_count")
+
+        if isinstance(message_count, int):
+            self._message_count = message_count
+        if isinstance(total_tokens, int):
+            self._total_tokens = total_tokens
+        if isinstance(context_limit, int):
+            self._context_limit = context_limit
+        if isinstance(loaded_files_count, int):
+            self._loaded_files_count = loaded_files_count
 
     def _update_execution_detail(self, detail: str) -> None:
         if self._status != "executing":

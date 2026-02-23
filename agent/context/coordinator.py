@@ -150,6 +150,9 @@ class ContextCoordinator:
             loaded_files_count=self._tracker.count(),
         )
 
+    def get_stats(self) -> ContextStats:
+        return self._get_stats()
+
     async def reset(self) -> None:
         """
         Reset the context by clearing all messages except the system prompt.

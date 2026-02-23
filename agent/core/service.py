@@ -9,6 +9,7 @@ from protocol_monk.agent.structs import (
     AgentStatus,
     ConfirmationResponse,
     ToolResult,
+    ContextStats,
 )
 from protocol_monk.agent.context.coordinator import ContextCoordinator
 from protocol_monk.agent.core.state_machine import StateMachine, AgentState
@@ -84,16 +85,7 @@ class AgentService:
                 stats = await self._context.add_user_message(payload.text)
 
                 # 3. Emit Verification
-                await self._bus.emit(
-                    EventTypes.INFO,
-                    {
-                        "message": "Context updated",
-                        "data": {
-                            "total_tokens": stats.total_tokens,
-                            "message_count": stats.message_count,
-                        },
-                    },
-                )
+                await self._emit_context_update(stats)
 
                 # 4. Trigger LLM Thinking Loop (THE BRAIN)
                 history = self._context._store.get_full_history()
@@ -106,7 +98,7 @@ class AgentService:
                     registry=self._registry,
                     settings=self._settings,
                 )
-                await self._context.add_assistant_pass(
+                stats = await self._context.add_assistant_pass(
                     content=response.content,
                     thinking=response.thinking,
                     pass_id=response.pass_id,
@@ -124,6 +116,7 @@ class AgentService:
                         for req in response.tool_calls
                     ],
                 )
+                await self._emit_context_update(stats)
 
                 # 5. Think/Act loop: tool results are added back to context,
                 # then the model gets another pass to produce a final answer.
@@ -171,14 +164,15 @@ class AgentService:
                             self._pending_confirmations.pop(tool_req.call_id, None)
 
                         # Persist every tool outcome so the next turn/model pass can reason over it.
-                        await self._context.add_tool_result(result)
+                        stats = await self._context.add_tool_result(result)
+                        await self._emit_context_update(stats)
 
                         if result.error_code == "user_rejected":
                             # Close the current tool-call batch in-order. The provider expects
                             # each assistant tool_call id to eventually receive a terminal tool
                             # result, even when we stop the turn on rejection.
                             for skipped_req in response.tool_calls[tool_index + 1 :]:
-                                await self._context.add_tool_result(
+                                stats = await self._context.add_tool_result(
                                     ToolResult(
                                         tool_name=skipped_req.name,
                                         call_id=skipped_req.call_id,
@@ -197,6 +191,7 @@ class AgentService:
                                         request_parameters=skipped_req.parameters,
                                     )
                                 )
+                                await self._emit_context_update(stats)
                             user_rejected = True
                             stopped_by_rejection = True
                             await self._bus.emit(
@@ -221,7 +216,7 @@ class AgentService:
                         registry=self._registry,
                         settings=self._settings,
                     )
-                    await self._context.add_assistant_pass(
+                    stats = await self._context.add_assistant_pass(
                         content=response.content,
                         thinking=response.thinking,
                         pass_id=response.pass_id,
@@ -239,6 +234,7 @@ class AgentService:
                             for req in response.tool_calls
                         ],
                     )
+                    await self._emit_context_update(stats)
 
                 if response.tool_calls and rounds >= max_tool_rounds and not stopped_by_rejection:
                     await self._bus.emit(
@@ -255,6 +251,38 @@ class AgentService:
             except Exception as e:
                 self._logger.error(f"Error in main loop: {e}", exc_info=True)
                 await self._set_status(AgentState.ERROR, f"System Error: {str(e)}")
+
+    async def _emit_context_update(self, stats: ContextStats) -> None:
+        context_limit = int(getattr(self._settings, "context_window_limit", 0) or 0)
+        await self._bus.emit(
+            EventTypes.INFO,
+            {
+                "message": "Context updated",
+                "data": {
+                    "total_tokens": stats.total_tokens,
+                    "message_count": stats.message_count,
+                    "loaded_files_count": stats.loaded_files_count,
+                    "context_limit": context_limit,
+                },
+            },
+        )
+
+    async def _resolve_context_stats(self) -> ContextStats:
+        get_stats = getattr(self._context, "get_stats", None)
+        if callable(get_stats):
+            maybe_stats = get_stats()
+            if asyncio.iscoroutine(maybe_stats):
+                maybe_stats = await maybe_stats
+            if isinstance(maybe_stats, ContextStats):
+                return maybe_stats
+
+        history = self._context._store.get_full_history()
+        total_tokens = sum(len((message.content or "")) // 4 for message in history)
+        return ContextStats(
+            total_tokens=total_tokens,
+            message_count=len(history),
+            loaded_files_count=0,
+        )
 
     async def _set_status(self, state: AgentState, message: str) -> None:
         """
@@ -347,6 +375,8 @@ class AgentService:
                 await self._handle_cancel_task()
             elif command == "reset_context":
                 await self._handle_reset_context()
+            elif command == "refresh_status":
+                await self._handle_refresh_status()
             elif command == "toggle_auto_confirm":
                 auto_confirm = payload.get('auto_confirm', True)
                 await self._handle_toggle_auto_confirm(auto_confirm)
@@ -404,6 +434,8 @@ class AgentService:
         try:
             # Reset the context coordinator
             await self._context.reset()
+            stats = await self._resolve_context_stats()
+            await self._emit_context_update(stats)
             self._logger.info("Context reset successfully")
             await self._bus.emit(EventTypes.INFO, {
                 "message": "Context reset successfully"
@@ -422,6 +454,20 @@ class AgentService:
             self._logger.error(f"Error resetting context: {e}", exc_info=True)
             await self._bus.emit(EventTypes.ERROR, {
                 "message": "Error resetting context",
+                "details": str(e)
+            })
+
+    async def _handle_refresh_status(self) -> None:
+        """
+        Emit a status-bar refresh payload without going through user input.
+        """
+        try:
+            stats = await self._resolve_context_stats()
+            await self._emit_context_update(stats)
+        except Exception as e:
+            self._logger.error(f"Error refreshing status: {e}", exc_info=True)
+            await self._bus.emit(EventTypes.ERROR, {
+                "message": "Error refreshing status",
                 "details": str(e)
             })
 

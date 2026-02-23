@@ -49,6 +49,10 @@ class MainChatScreen(Screen):
         model: str | None = None,
         auto_confirm: bool | None = None,
         working_dir: str | None = None,
+        message_count: int | None = None,
+        total_tokens: int | None = None,
+        context_limit: int | None = None,
+        loaded_files_count: int | None = None,
     ) -> None:
         self.query_one("#status-bar", StatusBar).update_status(
             status,
@@ -57,6 +61,10 @@ class MainChatScreen(Screen):
             model=model,
             auto_confirm=auto_confirm,
             working_dir=working_dir,
+            message_count=message_count,
+            total_tokens=total_tokens,
+            context_limit=context_limit,
+            loaded_files_count=loaded_files_count,
         )
 
     async def clear_chat(self) -> None:
