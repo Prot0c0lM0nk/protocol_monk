@@ -10,6 +10,7 @@ from protocol_monk.agent.structs import ConfirmationResponse
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
 from protocol_monk.ui.textual.messages import (
+    AgentResponseComplete,
     AgentStatusUpdate,
     AgentStreamChunk,
     AgentSystemMessage,
@@ -42,7 +43,16 @@ class TextualEventBridge:
         await self._bus.subscribe(EventTypes.THINKING_STARTED, self._on_thinking_started)
         await self._bus.subscribe(EventTypes.THINKING_STOPPED, self._on_thinking_stopped)
         await self._bus.subscribe(EventTypes.RESPONSE_COMPLETE, self._on_response_complete)
+        await self._bus.subscribe(
+            EventTypes.TOOL_EXECUTION_START, self._on_tool_execution_start
+        )
+        await self._bus.subscribe(
+            EventTypes.TOOL_EXECUTION_PROGRESS, self._on_tool_execution_progress
+        )
         await self._bus.subscribe(EventTypes.TOOL_RESULT, self._on_tool_result)
+        await self._bus.subscribe(
+            EventTypes.TOOL_EXECUTION_COMPLETE, self._on_tool_execution_complete
+        )
         await self._bus.subscribe(
             EventTypes.TOOL_CONFIRMATION_REQUESTED,
             self._on_tool_confirmation_requested,
@@ -87,28 +97,71 @@ class TextualEventBridge:
         if not chunk:
             return
         channel = str(payload.get("channel") or "content")
-        self._app.post_message(AgentStreamChunk(str(chunk), channel=channel))
+        pass_id_raw = payload.get("pass_id")
+        pass_id = str(pass_id_raw) if pass_id_raw else None
+        sequence_raw = payload.get("sequence")
+        sequence = sequence_raw if isinstance(sequence_raw, int) else None
+        self._app.post_message(
+            AgentStreamChunk(
+                str(chunk),
+                channel=channel,
+                pass_id=pass_id,
+                sequence=sequence,
+            )
+        )
 
     async def _on_thinking_started(self, payload: Any) -> None:
-        detail = ""
-        if isinstance(payload, dict):
-            detail = str(payload.get("message") or "")
-        self._status = "thinking"
-        self._detail = detail or "thinking"
-        self._post_status_update()
+        # STATUS_CHANGED remains authoritative for phase transitions.
+        return
 
     async def _on_thinking_stopped(self, _payload: Any) -> None:
-        self._status = "executing"
-        self._detail = "processing"
-        self._post_status_update()
+        # STATUS_CHANGED remains authoritative for phase transitions.
+        return
 
-    async def _on_response_complete(self, _payload: dict) -> None:
-        self._app.post_message(AgentSystemMessage("", level="response_complete"))
+    async def _on_response_complete(self, payload: dict) -> None:
+        if not isinstance(payload, dict):
+            payload = {}
+        pass_id = str(payload.get("pass_id") or "")
+        content = str(payload.get("content") or "")
+        tool_call_count = len(payload.get("tool_calls") or [])
+        self._app.post_message(
+            AgentResponseComplete(
+                pass_id=pass_id,
+                content=content,
+                tool_call_count=tool_call_count,
+            )
+        )
+
+    async def _on_tool_execution_start(self, payload: dict) -> None:
+        if not isinstance(payload, dict):
+            return
+        tool_name = str(payload.get("tool_name") or "tool")
+        self._update_execution_detail(f"Running {tool_name}...")
+
+    async def _on_tool_execution_progress(self, payload: dict) -> None:
+        if not isinstance(payload, dict):
+            return
+        tool_name = str(payload.get("tool_name") or "tool")
+        progress = payload.get("progress")
+        message = str(payload.get("message") or "").strip()
+        if isinstance(progress, int):
+            detail = f"{tool_name}: {progress}%"
+            if message:
+                detail = f"{detail} {message}"
+        else:
+            detail = message or f"Running {tool_name}..."
+        self._update_execution_detail(detail)
 
     async def _on_tool_result(self, payload: dict) -> None:
         if not isinstance(payload, dict):
             return
         self._app.post_message(AgentToolResult(payload=payload))
+
+    async def _on_tool_execution_complete(self, payload: dict) -> None:
+        if not isinstance(payload, dict):
+            return
+        tool_name = str(payload.get("tool_name") or "tool")
+        self._update_execution_detail(f"{tool_name} complete")
 
     async def _on_tool_confirmation_requested(self, payload: dict) -> None:
         if not isinstance(payload, dict):
@@ -136,11 +189,8 @@ class TextualEventBridge:
         async with self._confirmation_lock:
             decision = "rejected"
             try:
-                decision = await asyncio.wait_for(
-                    self._app.request_tool_confirmation(tool_name, parameters),
-                    timeout=130.0,
-                )
-            except asyncio.TimeoutError:
+                decision = await self._app.request_tool_confirmation(tool_name, parameters)
+            except Exception:
                 decision = "rejected"
 
             if decision == "approved_auto":
@@ -199,3 +249,9 @@ class TextualEventBridge:
                 working_dir=self._working_dir,
             )
         )
+
+    def _update_execution_detail(self, detail: str) -> None:
+        if self._status != "executing":
+            return
+        self._detail = detail
+        self._post_status_update()

@@ -18,10 +18,18 @@ class MainChatScreen(Screen):
     async def add_user_message(self, content: str) -> None:
         await self.query_one("#chat-area", ChatArea).add_user_message(content)
 
-    def add_stream_chunk(self, chunk: str, is_thinking: bool = False) -> None:
+    def add_stream_chunk(
+        self,
+        chunk: str,
+        is_thinking: bool = False,
+        pass_id: str | None = None,
+        sequence: int | None = None,
+    ) -> None:
         self.query_one("#chat-area", ChatArea).add_stream_chunk(
             chunk,
             is_thinking=is_thinking,
+            pass_id=pass_id,
+            sequence=sequence,
         )
 
     def add_tool_result(self, payload: dict) -> None:
@@ -30,8 +38,8 @@ class MainChatScreen(Screen):
     def show_thinking(self, is_thinking: bool, detail: str = "") -> None:
         self.query_one("#chat-area", ChatArea).show_thinking(is_thinking, detail=detail)
 
-    def finalize_response(self) -> None:
-        self.query_one("#chat-area", ChatArea).finalize_response()
+    def finalize_response(self, pass_id: str = "") -> None:
+        self.query_one("#chat-area", ChatArea).finalize_response(pass_id=pass_id)
 
     def update_status_bar(
         self,

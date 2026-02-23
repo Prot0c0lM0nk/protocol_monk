@@ -63,13 +63,20 @@ class OllamaProvider(BaseProvider):
 
             # 3. Process the streaming response
             async for chunk in stream:
+                msg = chunk.message
                 # Handle content chunks
-                if chunk.message.content:
-                    yield ProviderSignal(type="content", data=chunk.message.content)
+                content = msg.content if isinstance(msg.content, str) else None
+                if content:
+                    yield ProviderSignal(type="content", data=content)
+
+                # Handle thinking chunks (supported by recent Ollama message schema).
+                thinking = msg.thinking if isinstance(msg.thinking, str) else None
+                if thinking:
+                    yield ProviderSignal(type="thinking", data=thinking)
 
                 # Handle tool calls when they appear
-                if chunk.message.tool_calls:
-                    for tc in chunk.message.tool_calls:
+                if msg.tool_calls:
+                    for tc in msg.tool_calls:
                         call_id = self._extract_tool_call_id(tc)
                         # Convert Ollama Tool -> Monk ToolRequest
                         req = ToolRequest(
@@ -83,6 +90,10 @@ class OllamaProvider(BaseProvider):
                 # Handle final metrics when done
                 if chunk.done:
                     metrics = {
+                        "provider": "ollama",
+                        "request_model": model_name,
+                        "response_model": chunk.model,
+                        "done_reason": chunk.done_reason,
                         "total_duration": chunk.total_duration,
                         "load_duration": chunk.load_duration,
                         "prompt_eval_count": chunk.prompt_eval_count,

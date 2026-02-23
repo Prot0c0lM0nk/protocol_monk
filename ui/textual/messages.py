@@ -4,9 +4,17 @@ from textual.message import Message
 
 
 class AgentStreamChunk(Message):
-    def __init__(self, chunk: str, channel: str = "content"):
+    def __init__(
+        self,
+        chunk: str,
+        channel: str = "content",
+        pass_id: str | None = None,
+        sequence: int | None = None,
+    ):
         self.chunk = chunk
         self.channel = channel
+        self.pass_id = pass_id
+        self.sequence = sequence
         super().__init__()
 
 
@@ -39,4 +47,17 @@ class AgentSystemMessage(Message):
     def __init__(self, message: str, level: str = "info"):
         self.message = message
         self.level = level
+        super().__init__()
+
+
+class AgentResponseComplete(Message):
+    def __init__(
+        self,
+        pass_id: str = "",
+        content: str = "",
+        tool_call_count: int = 0,
+    ):
+        self.pass_id = pass_id
+        self.content = content
+        self.tool_call_count = tool_call_count
         super().__init__()

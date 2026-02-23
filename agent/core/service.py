@@ -54,6 +54,7 @@ class AgentService:
         # Track pending confirmation futures by tool_call_id.
         self._pending_confirmations: Dict[str, asyncio.Future] = {}
         self._auto_confirm = bool(getattr(settings, "auto_confirm", False))
+        self._request_lock = asyncio.Lock()
 
     async def start(self) -> None:
         """
@@ -74,142 +75,30 @@ class AgentService:
         """
         Main Handler: User speaks -> Agent processes.
         """
-        try:
-            # 1. State: IDLE -> THINKING
-            await self._set_status(AgentState.THINKING, "Processing user input...")
+        async with self._request_lock:
+            try:
+                # 1. State: IDLE -> THINKING
+                await self._set_status(AgentState.THINKING, "Processing user input...")
 
-            # 2. Logic: Update Context
-            stats = await self._context.add_user_message(payload.text)
+                # 2. Logic: Update Context
+                stats = await self._context.add_user_message(payload.text)
 
-            # 3. Emit Verification
-            await self._bus.emit(
-                EventTypes.INFO,
-                {
-                    "message": "Context updated",
-                    "data": {
-                        "total_tokens": stats.total_tokens,
-                        "message_count": stats.message_count,
-                    },
-                },
-            )
-
-            # 4. Trigger LLM Thinking Loop (THE BRAIN)
-            history = self._context._store.get_full_history()
-            self._logger.info("Entering Thinking Loop...")
-
-            response = await run_thinking_loop(
-                context_history=history,
-                provider=self._provider,
-                bus=self._bus,
-                registry=self._registry,
-                settings=self._settings,
-            )
-            await self._context.add_assistant_pass(
-                content=response.content,
-                thinking=response.thinking,
-                pass_id=response.pass_id,
-                tokens=response.tokens,
-                tool_call_count=len(response.tool_calls),
-                tool_calls=[
+                # 3. Emit Verification
+                await self._bus.emit(
+                    EventTypes.INFO,
                     {
-                        "id": req.call_id,
-                        "type": "function",
-                        "function": {
-                            "name": req.name,
-                            "arguments": req.parameters,
+                        "message": "Context updated",
+                        "data": {
+                            "total_tokens": stats.total_tokens,
+                            "message_count": stats.message_count,
                         },
-                    }
-                    for req in response.tool_calls
-                ],
-            )
-
-            # 5. Think/Act loop: tool results are added back to context,
-            # then the model gets another pass to produce a final answer.
-            # We cap rounds to prevent runaway loops.
-            max_tool_rounds = 400
-            rounds = 0
-            stopped_by_rejection = False
-            while response.tool_calls and rounds < max_tool_rounds:
-                rounds += 1
-                await self._set_status(
-                    AgentState.EXECUTING,
-                    f"Executing {len(response.tool_calls)} tools...",
+                    },
                 )
 
-                user_rejected = False
-                for tool_index, tool_req in enumerate(response.tool_calls):
-                    tool_def = self._registry.get_tool(tool_req.name)
-                    requires_confirmation = bool(
-                        tool_def and tool_def.requires_confirmation
-                    )
-                    # Always trust local tool policy over provider payload.
-                    tool_req.requires_confirmation = requires_confirmation
-
-                    # Create a confirmation future if the tool requires confirmation
-                    confirmation_future = None
-                    if requires_confirmation and not self._auto_confirm:
-                        self._logger.info(
-                            f"Creating confirmation future for tool: {tool_req.name}"
-                        )
-                        confirmation_future = asyncio.Future()
-                        self._pending_confirmations[tool_req.call_id] = confirmation_future
-
-                    # Execute the tool with the confirmation future
-                    try:
-                        result = await run_action_loop(
-                            tool_req=tool_req,
-                            registry=self._registry,
-                            bus=self._bus,
-                            executor=self._executor,
-                            confirmation_future=confirmation_future,
-                            auto_approve=self._auto_confirm,
-                        )
-                    finally:
-                        self._pending_confirmations.pop(tool_req.call_id, None)
-
-                    # Persist every tool outcome so the next turn/model pass can reason over it.
-                    await self._context.add_tool_result(result)
-
-                    if result.error_code == "user_rejected":
-                        # Close the current tool-call batch in-order. The provider expects
-                        # each assistant tool_call id to eventually receive a terminal tool
-                        # result, even when we stop the turn on rejection.
-                        for skipped_req in response.tool_calls[tool_index + 1 :]:
-                            await self._context.add_tool_result(
-                                ToolResult(
-                                    tool_name=skipped_req.name,
-                                    call_id=skipped_req.call_id,
-                                    success=False,
-                                    output=None,
-                                    duration=0,
-                                    error=(
-                                        "Skipped because an earlier tool call in this batch "
-                                        "was rejected."
-                                    ),
-                                    error_code="skipped_due_to_rejection",
-                                    output_kind="none",
-                                    error_details={
-                                        "blocked_by_tool_call_id": tool_req.call_id
-                                    },
-                                )
-                            )
-                        user_rejected = True
-                        stopped_by_rejection = True
-                        await self._bus.emit(
-                            EventTypes.INFO,
-                            {
-                                "message": (
-                                    "Tool execution rejected. Skipping follow-up model pass for this turn."
-                                )
-                            },
-                        )
-                        break
-
-                if user_rejected:
-                    break
-
-                await self._set_status(AgentState.THINKING, "Processing tool results...")
+                # 4. Trigger LLM Thinking Loop (THE BRAIN)
                 history = self._context._store.get_full_history()
+                self._logger.info("Entering Thinking Loop...")
+
                 response = await run_thinking_loop(
                     context_history=history,
                     provider=self._provider,
@@ -236,21 +125,135 @@ class AgentService:
                     ],
                 )
 
-            if response.tool_calls and rounds >= max_tool_rounds and not stopped_by_rejection:
-                await self._bus.emit(
-                    EventTypes.WARNING,
-                    {
-                        "message": "Tool loop limit reached",
-                        "details": f"Stopped after {max_tool_rounds} tool rounds",
-                    },
-                )
+                # 5. Think/Act loop: tool results are added back to context,
+                # then the model gets another pass to produce a final answer.
+                # We cap rounds to prevent runaway loops.
+                max_tool_rounds = 400
+                rounds = 0
+                stopped_by_rejection = False
+                while response.tool_calls and rounds < max_tool_rounds:
+                    rounds += 1
+                    await self._set_status(
+                        AgentState.EXECUTING,
+                        f"Executing {len(response.tool_calls)} tools...",
+                    )
 
-            # 6. State: -> IDLE
-            await self._set_status(AgentState.IDLE, "Ready")
+                    user_rejected = False
+                    for tool_index, tool_req in enumerate(response.tool_calls):
+                        tool_def = self._registry.get_tool(tool_req.name)
+                        requires_confirmation = bool(
+                            tool_def and tool_def.requires_confirmation
+                        )
+                        # Always trust local tool policy over provider payload.
+                        tool_req.requires_confirmation = requires_confirmation
 
-        except Exception as e:
-            self._logger.error(f"Error in main loop: {e}", exc_info=True)
-            await self._set_status(AgentState.ERROR, f"System Error: {str(e)}")
+                        # Create a confirmation future if the tool requires confirmation
+                        confirmation_future = None
+                        if requires_confirmation and not self._auto_confirm:
+                            self._logger.info(
+                                f"Creating confirmation future for tool: {tool_req.name}"
+                            )
+                            confirmation_future = asyncio.Future()
+                            self._pending_confirmations[tool_req.call_id] = confirmation_future
+
+                        # Execute the tool with the confirmation future
+                        try:
+                            result = await run_action_loop(
+                                tool_req=tool_req,
+                                registry=self._registry,
+                                bus=self._bus,
+                                executor=self._executor,
+                                confirmation_future=confirmation_future,
+                                auto_approve=self._auto_confirm,
+                                set_status=self._set_status,
+                            )
+                        finally:
+                            self._pending_confirmations.pop(tool_req.call_id, None)
+
+                        # Persist every tool outcome so the next turn/model pass can reason over it.
+                        await self._context.add_tool_result(result)
+
+                        if result.error_code == "user_rejected":
+                            # Close the current tool-call batch in-order. The provider expects
+                            # each assistant tool_call id to eventually receive a terminal tool
+                            # result, even when we stop the turn on rejection.
+                            for skipped_req in response.tool_calls[tool_index + 1 :]:
+                                await self._context.add_tool_result(
+                                    ToolResult(
+                                        tool_name=skipped_req.name,
+                                        call_id=skipped_req.call_id,
+                                        success=False,
+                                        output=None,
+                                        duration=0,
+                                        error=(
+                                            "Skipped because an earlier tool call in this batch "
+                                            "was rejected."
+                                        ),
+                                        error_code="skipped_due_to_rejection",
+                                        output_kind="none",
+                                        error_details={
+                                            "blocked_by_tool_call_id": tool_req.call_id
+                                        },
+                                    )
+                                )
+                            user_rejected = True
+                            stopped_by_rejection = True
+                            await self._bus.emit(
+                                EventTypes.INFO,
+                                {
+                                    "message": (
+                                        "Tool execution rejected. Skipping follow-up model pass for this turn."
+                                    )
+                                },
+                            )
+                            break
+
+                    if user_rejected:
+                        break
+
+                    await self._set_status(AgentState.THINKING, "Processing tool results...")
+                    history = self._context._store.get_full_history()
+                    response = await run_thinking_loop(
+                        context_history=history,
+                        provider=self._provider,
+                        bus=self._bus,
+                        registry=self._registry,
+                        settings=self._settings,
+                    )
+                    await self._context.add_assistant_pass(
+                        content=response.content,
+                        thinking=response.thinking,
+                        pass_id=response.pass_id,
+                        tokens=response.tokens,
+                        tool_call_count=len(response.tool_calls),
+                        tool_calls=[
+                            {
+                                "id": req.call_id,
+                                "type": "function",
+                                "function": {
+                                    "name": req.name,
+                                    "arguments": req.parameters,
+                                },
+                            }
+                            for req in response.tool_calls
+                        ],
+                    )
+
+                if response.tool_calls and rounds >= max_tool_rounds and not stopped_by_rejection:
+                    await self._bus.emit(
+                        EventTypes.WARNING,
+                        {
+                            "message": "Tool loop limit reached",
+                            "details": f"Stopped after {max_tool_rounds} tool rounds",
+                        },
+                    )
+
+                # 6. State: -> IDLE
+                await self._set_status(AgentState.IDLE, "Ready")
+
+            except Exception as e:
+                self._logger.error(f"Error in main loop: {e}", exc_info=True)
+                await self._set_status(AgentState.ERROR, f"System Error: {str(e)}")
 
     async def _set_status(self, state: AgentState, message: str) -> None:
         """
@@ -262,6 +265,13 @@ class AgentService:
             await self._bus.emit(EventTypes.STATUS_CHANGED, status_payload)
         except ValueError as e:
             self._logger.critical(f"State Machine Violation: {e}")
+            await self._bus.emit(
+                EventTypes.ERROR,
+                {
+                    "message": "State machine violation",
+                    "details": str(e),
+                },
+            )
 
     async def _handle_tool_confirmation(self, payload: ConfirmationResponse) -> None:
         """

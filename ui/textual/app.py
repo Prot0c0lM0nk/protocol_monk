@@ -15,6 +15,7 @@ from textual.widgets import Input
 from protocol_monk.agent.structs import UserRequest
 from protocol_monk.protocol.events import EventTypes
 from protocol_monk.ui.textual.messages import (
+    AgentResponseComplete,
     AgentStatusUpdate,
     AgentStreamChunk,
     AgentSystemMessage,
@@ -47,6 +48,7 @@ class ProtocolMonkTextualApp(App):
         self.bridge = bridge
         self.mock_agent = mock_agent
         self.settings = settings
+        self._agent_status = "idle"
 
     def compose(self):
         yield from ()
@@ -70,10 +72,11 @@ class ProtocolMonkTextualApp(App):
                 working_dir=str(working_dir) if working_dir else None,
             )
 
-        if self.mock_agent is not None:
-            asyncio.create_task(self.mock_agent.start())
+        # Start event subscribers before user interaction to avoid dropping early events.
         if self.bridge is not None:
-            asyncio.create_task(self.bridge.start())
+            await self.bridge.start()
+        if self.mock_agent is not None:
+            await self.mock_agent.start()
 
     def action_quit(self) -> None:
         self.exit()
@@ -102,16 +105,7 @@ class ProtocolMonkTextualApp(App):
         modal = ToolConfirmModal(tool_name, parameters)
 
         try:
-            decision = await asyncio.wait_for(self.push_screen_wait(modal), timeout=120.0)
-        except asyncio.TimeoutError:
-            # Prevent indefinite deadlocks in case of terminal/input issues.
-            self.notify("Tool approval timed out; rejecting by default.", severity="warning")
-            try:
-                if self.screen is modal:
-                    self.pop_screen()
-            except Exception:
-                pass
-            return "rejected"
+            decision = await self.push_screen_wait(modal)
         except Exception:
             self.notify("Tool approval dialog failed; rejecting by default.", severity="error")
             return "rejected"
@@ -123,6 +117,12 @@ class ProtocolMonkTextualApp(App):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         if not text:
+            return
+        if self._agent_status != "idle":
+            self.notify(
+                "Agent is busy; wait for idle before sending another message.",
+                severity="warning",
+            )
             return
 
         screen = self._chat_screen()
@@ -150,12 +150,15 @@ class ProtocolMonkTextualApp(App):
         screen.add_stream_chunk(
             message.chunk,
             is_thinking=message.channel == "thinking",
+            pass_id=message.pass_id,
+            sequence=message.sequence,
         )
 
     def on_agent_status_update(self, message: AgentStatusUpdate) -> None:
         screen = self._chat_screen()
         if screen is None:
             return
+        self._agent_status = message.status
         screen.update_status_bar(
             message.status,
             message.detail,
@@ -172,12 +175,15 @@ class ProtocolMonkTextualApp(App):
             return
         screen.add_tool_result(message.payload)
 
-    def on_agent_system_message(self, message: AgentSystemMessage) -> None:
+    def on_agent_response_complete(self, message: AgentResponseComplete) -> None:
         screen = self._chat_screen()
         if screen is None:
             return
-        if message.level == "response_complete":
-            screen.finalize_response()
+        screen.finalize_response(pass_id=message.pass_id)
+
+    def on_agent_system_message(self, message: AgentSystemMessage) -> None:
+        screen = self._chat_screen()
+        if screen is None:
             return
 
         if message.level in {"warning", "error"}:

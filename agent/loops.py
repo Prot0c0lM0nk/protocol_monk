@@ -3,7 +3,7 @@ import json
 import logging
 import time
 import uuid
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Awaitable, Callable
 
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
@@ -43,6 +43,8 @@ async def run_thinking_loop(
     tool_requests: List[ToolRequest] = []
     token_usage = 0
     chunk_sequence = 0
+    content_chunk_count = 0
+    thinking_chunk_count = 0
 
     # Get tool definitions to send to provider
     tool_definitions = registry.get_openai_tools()
@@ -87,6 +89,7 @@ async def run_thinking_loop(
         ):
             if signal.type == "content":
                 full_text += signal.data
+                content_chunk_count += 1
                 chunk_sequence += 1
                 await bus.emit(
                     EventTypes.STREAM_CHUNK,
@@ -100,6 +103,7 @@ async def run_thinking_loop(
 
             elif signal.type == "thinking":
                 full_thinking += signal.data
+                thinking_chunk_count += 1
                 chunk_sequence += 1
                 await bus.emit(
                     EventTypes.STREAM_CHUNK,
@@ -148,6 +152,13 @@ async def run_thinking_loop(
 
             elif signal.type == "error":
                 logger.error(f"Provider Error Signal: {signal.data}")
+                await bus.emit(
+                    EventTypes.ERROR,
+                    {
+                        "message": "Provider emitted an error signal",
+                        "details": str(signal.data),
+                    },
+                )
 
     except asyncio.CancelledError:
         if logger.isEnabledFor(logging.DEBUG):
@@ -168,6 +179,34 @@ async def run_thinking_loop(
         thinking=full_thinking,
         pass_id=pass_id,
     )
+
+    await bus.emit(
+        EventTypes.INFO,
+        {
+            "message": "Thinking loop summary",
+            "data": {
+                "pass_id": pass_id,
+                "content_chunks": content_chunk_count,
+                "thinking_chunks": thinking_chunk_count,
+                "content_len": len(full_text),
+                "thinking_len": len(full_thinking),
+                "tool_calls": len(tool_requests),
+            },
+        },
+    )
+
+    if not full_text and not tool_requests:
+        await bus.emit(
+            EventTypes.WARNING,
+            {
+                "message": "Provider produced empty assistant content",
+                "details": (
+                    f"pass_id={pass_id} "
+                    f"thinking_len={len(full_thinking)} "
+                    f"tokens={response.tokens}"
+                ),
+            },
+        )
 
     await bus.emit(
         EventTypes.RESPONSE_COMPLETE,
@@ -220,6 +259,7 @@ async def run_action_loop(
     executor: ToolExecutor,
     confirmation_future: Optional[asyncio.Future] = None,
     auto_approve: bool = False,
+    set_status: Optional[Callable[[AgentState, str], Awaitable[None]]] = None,
 ) -> ToolResult:
     """
     Manages tool execution including the Confirmation Barrier.
@@ -285,10 +325,13 @@ async def run_action_loop(
                 },
             )
 
-            await bus.emit(
-                EventTypes.STATUS_CHANGED,
-                {"status": AgentState.PAUSED, "message": "Waiting for approval..."},
-            )
+            if set_status is not None:
+                await set_status(AgentState.PAUSED, "Waiting for approval...")
+            else:
+                await bus.emit(
+                    EventTypes.STATUS_CHANGED,
+                    {"status": AgentState.PAUSED, "message": "Waiting for approval..."},
+                )
 
             # WAIT HERE
             try:
@@ -308,10 +351,13 @@ async def run_action_loop(
                 )
 
             # Resume
-            await bus.emit(
-                EventTypes.STATUS_CHANGED,
-                {"status": AgentState.EXECUTING, "message": "Resuming..."},
-            )
+            if set_status is not None:
+                await set_status(AgentState.EXECUTING, "Resuming...")
+            else:
+                await bus.emit(
+                    EventTypes.STATUS_CHANGED,
+                    {"status": AgentState.EXECUTING, "message": "Resuming..."},
+                )
 
             if decision_payload.decision == "rejected":
                 return ToolResult(
