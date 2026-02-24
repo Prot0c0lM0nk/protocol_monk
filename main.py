@@ -34,6 +34,24 @@ logging.basicConfig(
 logger = logging.getLogger("Bootstrap")
 
 
+def _resolve_ui_backend(requested: str, enable_textual_ui: bool) -> tuple[str, str]:
+    requested_ui = (requested or "cli").strip().lower() or "cli"
+    if requested_ui not in {"cli", "textual"}:
+        return "cli", f"Unknown UI backend '{requested_ui}'. Falling back to CLI."
+    if requested_ui == "textual" and not enable_textual_ui:
+        return "cli", "Textual UI requested but ENABLE_TEXTUAL_UI is disabled. Using CLI."
+    return requested_ui, ""
+
+
+def _validate_context_tracking_tools(registry: ToolRegistry) -> tuple[list[str], list[str]]:
+    expected = sorted(
+        {ContextCoordinator.FILE_READ_TOOL, *ContextCoordinator.FILE_MUTATION_TOOLS}
+    )
+    registered = set(registry.list_tool_names())
+    missing = sorted(name for name in expected if name not in registered)
+    return expected, missing
+
+
 async def main():
     """Main entry point for Protocol Monk."""
     try:
@@ -65,7 +83,12 @@ async def main():
         bus = EventBus()
 
         # Capture full session event history for replay/debug.
-        transcript_sink = SessionTranscriptSink(bus, settings.workspace_root)
+        transcript_sink = SessionTranscriptSink(
+            bus,
+            settings.workspace_root,
+            max_sessions=settings.trace_max_sessions,
+            max_total_bytes=settings.trace_max_total_bytes,
+        )
         await transcript_sink.start()
         logger.info("Session transcript: %s", transcript_sink.path)
 
@@ -77,9 +100,52 @@ async def main():
         # B. Tools (The Hands)
         registry = ToolRegistry()
         register_default_tools(registry, settings)
+        registered_tools = registry.list_tool_names()
 
         # [FIX] Lazy logging
-        logger.info("Registered Tools: %s", registry.list_tool_names())
+        logger.info("Registered Tools (%d): %s", len(registered_tools), registered_tools)
+        await bus.emit(
+            EventTypes.INFO,
+            {
+                "message": "Tool registry ready",
+                "data": {
+                    "tool_count": len(registered_tools),
+                    "tools": registered_tools,
+                },
+            },
+        )
+        expected_tracking_tools, missing_tracking_tools = _validate_context_tracking_tools(
+            registry
+        )
+        if missing_tracking_tools:
+            warning = (
+                "Context file-tracking tool map references unregistered tool(s): "
+                + ", ".join(missing_tracking_tools)
+            )
+            logger.warning(warning)
+            await bus.emit(
+                EventTypes.WARNING,
+                {
+                    "message": "Context tracking tool map mismatch",
+                    "details": warning,
+                    "data": {
+                        "expected_tracking_tools": expected_tracking_tools,
+                        "registered_tools": registered_tools,
+                        "missing_tracking_tools": missing_tracking_tools,
+                    },
+                },
+            )
+        else:
+            await bus.emit(
+                EventTypes.INFO,
+                {
+                    "message": "Context tracking tool map validated",
+                    "data": {
+                        "expected_tracking_tools": expected_tracking_tools,
+                        "registered_tools": registered_tools,
+                    },
+                },
+            )
         registry.seal()
 
         # C. The Provider (The Model Interface)
@@ -96,6 +162,33 @@ async def main():
                 "data": {
                     "provider": settings.llm_provider,
                     "active_model": settings.active_model_name,
+                },
+            },
+        )
+
+        requested_ui_backend = os.getenv("PROTOCOL_MONK_UI", "cli")
+        ui_backend, ui_note = _resolve_ui_backend(
+            requested_ui_backend, bool(getattr(settings, "enable_textual_ui", False))
+        )
+        if ui_note:
+            logger.warning(ui_note)
+            await bus.emit(
+                EventTypes.WARNING,
+                {
+                    "message": "UI backend override applied",
+                    "details": ui_note,
+                },
+            )
+        await bus.emit(
+            EventTypes.INFO,
+            {
+                "message": "Runtime configured",
+                "data": {
+                    "requested_ui": requested_ui_backend,
+                    "resolved_ui": ui_backend,
+                    "provider": settings.llm_provider,
+                    "active_model": settings.active_model_name,
+                    "workspace": str(settings.workspace_root),
                 },
             },
         )
@@ -124,8 +217,6 @@ async def main():
 
             logger.info("Phase 3: Starting Services...")
             await agent_service.start()
-
-            ui_backend = os.getenv("PROTOCOL_MONK_UI", "textual").strip().lower()
 
             if ui_backend == "cli":
                 from protocol_monk.ui.cli import PromptToolkitCLI

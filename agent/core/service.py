@@ -1,14 +1,20 @@
 import logging
 import asyncio
-from typing import Any, Dict
+import json
+import time
+import uuid
+from typing import Any, Dict, List, Tuple
 
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
 from protocol_monk.agent.structs import (
+    AgentResponse,
     UserRequest,
     AgentStatus,
     ConfirmationResponse,
     ToolResult,
+    ToolRequest,
+    Message,
     ContextStats,
 )
 from protocol_monk.agent.context.coordinator import ContextCoordinator
@@ -72,20 +78,183 @@ class AgentService:
         )
         self._logger.info("Agent Service started and listening.")
 
+    def _assistant_tool_call_payload(self, req: ToolRequest) -> Dict[str, Any]:
+        return {
+            "id": req.call_id,
+            "type": "function",
+            "function": {
+                "name": req.name,
+                "arguments": req.parameters,
+            },
+        }
+
+    async def _persist_assistant_response(
+        self,
+        response: AgentResponse,
+        *,
+        turn_id: str,
+        round_index: int,
+    ) -> ContextStats:
+        valid_tool_calls, malformed_tool_calls = self._split_tool_calls(
+            list(response.tool_calls or [])
+        )
+        if malformed_tool_calls:
+            await self._emit_malformed_tool_call_warning(
+                turn_id=turn_id,
+                pass_id=response.pass_id,
+                round_index=round_index,
+                malformed_tool_calls=malformed_tool_calls,
+                stage="context_persist_filter",
+            )
+        stats = await self._context.add_assistant_pass(
+            content=response.content,
+            thinking=response.thinking,
+            pass_id=response.pass_id,
+            tokens=response.tokens,
+            tool_call_count=len(valid_tool_calls),
+            tool_calls=[
+                self._assistant_tool_call_payload(req) for req in valid_tool_calls
+            ],
+        )
+        await self._emit_context_update(
+            stats,
+            turn_id=turn_id,
+            pass_id=response.pass_id,
+            round_index=round_index,
+        )
+        return stats
+
+    @staticmethod
+    def _split_tool_calls(
+        tool_calls: List[ToolRequest],
+    ) -> Tuple[List[ToolRequest], List[ToolRequest]]:
+        valid: List[ToolRequest] = []
+        malformed: List[ToolRequest] = []
+        for req in tool_calls:
+            req.name = str(getattr(req, "name", "") or "").strip()
+            if req.name:
+                valid.append(req)
+            else:
+                malformed.append(req)
+        return valid, malformed
+
+    def _build_tool_call_repair_prompt(
+        self, malformed_tool_calls: List[ToolRequest]
+    ) -> str:
+        malformed_samples = [
+            {
+                "call_id": req.call_id,
+                "name": req.name,
+                "parameters": req.parameters,
+                "provider": (req.metadata or {}).get("provider"),
+                "malformed_reason": (req.metadata or {}).get("malformed_reason"),
+            }
+            for req in malformed_tool_calls
+        ]
+        allowed_tools = ", ".join(self._registry.list_tool_names())
+        return (
+            "Tool-call repair request.\n"
+            "Your previous assistant pass produced malformed tool calls with empty function names.\n"
+            f"Allowed tool names (exact): {allowed_tools}\n"
+            "Re-emit your intended tool calls now using this strict contract:\n"
+            "- Every tool call MUST include a non-empty `name`.\n"
+            "- `parameters` MUST be a JSON object.\n"
+            "- Do not emit empty objects `{}` as tool calls.\n"
+            "- If no tool is required, return normal assistant text with zero tool calls.\n"
+            f"Malformed calls observed: {json.dumps(malformed_samples, ensure_ascii=False, default=str)}"
+        )
+
+    async def _emit_malformed_tool_call_warning(
+        self,
+        *,
+        turn_id: str,
+        pass_id: str,
+        round_index: int,
+        malformed_tool_calls: List[ToolRequest],
+        stage: str,
+    ) -> None:
+        samples = [
+            {
+                "call_id": req.call_id,
+                "name": req.name,
+                "parameters": req.parameters,
+                "metadata": req.metadata,
+            }
+            for req in malformed_tool_calls[:3]
+        ]
+        await self._bus.emit(
+            EventTypes.WARNING,
+            {
+                "message": "Malformed tool calls detected",
+                "details": (
+                    f"{stage}: {len(malformed_tool_calls)} call(s) missing tool name."
+                ),
+                "data": {
+                    "malformed_count": len(malformed_tool_calls),
+                    "samples": samples,
+                },
+                "turn_id": turn_id,
+                "pass_id": pass_id,
+                "round_index": round_index,
+            },
+        )
+
+    async def _request_tool_call_repair_pass(
+        self,
+        *,
+        turn_id: str,
+        round_index: int,
+        malformed_tool_calls: List[ToolRequest],
+    ) -> AgentResponse:
+        await self._set_status(
+            AgentState.THINKING,
+            "Repairing malformed tool calls...",
+            turn_id=turn_id,
+            round_index=round_index,
+        )
+        history = self._context._store.get_full_history()
+        repair_prompt = self._build_tool_call_repair_prompt(malformed_tool_calls)
+        augmented_history = [
+            *history,
+            Message(role="system", content=repair_prompt, timestamp=time.time()),
+        ]
+        response = await run_thinking_loop(
+            context_history=augmented_history,
+            provider=self._provider,
+            bus=self._bus,
+            registry=self._registry,
+            settings=self._settings,
+            turn_id=turn_id,
+            round_index=round_index,
+        )
+        await self._persist_assistant_response(
+            response,
+            turn_id=turn_id,
+            round_index=round_index,
+        )
+        return response
+
     async def _handle_user_input(self, payload: UserRequest) -> None:
         """
         Main Handler: User speaks -> Agent processes.
         """
         async with self._request_lock:
             try:
+                turn_id = str(getattr(payload, "request_id", "") or uuid.uuid4())
+
                 # 1. State: IDLE -> THINKING
-                await self._set_status(AgentState.THINKING, "Processing user input...")
+                await self._set_status(
+                    AgentState.THINKING,
+                    "Processing user input...",
+                    turn_id=turn_id,
+                    round_index=0,
+                )
 
                 # 2. Logic: Update Context
                 stats = await self._context.add_user_message(payload.text)
 
                 # 3. Emit Verification
-                await self._emit_context_update(stats)
+                await self._emit_context_update(stats, turn_id=turn_id, round_index=0)
 
                 # 4. Trigger LLM Thinking Loop (THE BRAIN)
                 history = self._context._store.get_full_history()
@@ -97,26 +266,14 @@ class AgentService:
                     bus=self._bus,
                     registry=self._registry,
                     settings=self._settings,
+                    turn_id=turn_id,
+                    round_index=0,
                 )
-                stats = await self._context.add_assistant_pass(
-                    content=response.content,
-                    thinking=response.thinking,
-                    pass_id=response.pass_id,
-                    tokens=response.tokens,
-                    tool_call_count=len(response.tool_calls),
-                    tool_calls=[
-                        {
-                            "id": req.call_id,
-                            "type": "function",
-                            "function": {
-                                "name": req.name,
-                                "arguments": req.parameters,
-                            },
-                        }
-                        for req in response.tool_calls
-                    ],
+                await self._persist_assistant_response(
+                    response,
+                    turn_id=turn_id,
+                    round_index=0,
                 )
-                await self._emit_context_update(stats)
 
                 # 5. Think/Act loop: tool results are added back to context,
                 # then the model gets another pass to produce a final answer.
@@ -124,15 +281,55 @@ class AgentService:
                 max_tool_rounds = 400
                 rounds = 0
                 stopped_by_rejection = False
+                stopped_by_malformed = False
+                tool_repair_attempted = False
                 while response.tool_calls and rounds < max_tool_rounds:
+                    valid_tool_calls, malformed_tool_calls = self._split_tool_calls(
+                        response.tool_calls
+                    )
+                    if malformed_tool_calls:
+                        await self._emit_malformed_tool_call_warning(
+                            turn_id=turn_id,
+                            pass_id=response.pass_id,
+                            round_index=rounds,
+                            malformed_tool_calls=malformed_tool_calls,
+                            stage="pre_execution",
+                        )
+                        if not tool_repair_attempted:
+                            tool_repair_attempted = True
+                            response = await self._request_tool_call_repair_pass(
+                                turn_id=turn_id,
+                                round_index=rounds,
+                                malformed_tool_calls=malformed_tool_calls,
+                            )
+                            continue
+
+                        stopped_by_malformed = True
+                        await self._bus.emit(
+                            EventTypes.WARNING,
+                            {
+                                "message": "Malformed tool calls persisted after repair",
+                                "details": (
+                                    f"Stopping turn after {len(malformed_tool_calls)} malformed tool call(s)."
+                                ),
+                                "turn_id": turn_id,
+                                "pass_id": response.pass_id,
+                                "round_index": rounds,
+                            },
+                        )
+                        break
+
                     rounds += 1
                     await self._set_status(
                         AgentState.EXECUTING,
-                        f"Executing {len(response.tool_calls)} tools...",
+                        f"Executing {len(valid_tool_calls)} tools...",
+                        turn_id=turn_id,
+                        pass_id=response.pass_id,
+                        round_index=rounds,
                     )
 
                     user_rejected = False
-                    for tool_index, tool_req in enumerate(response.tool_calls):
+                    for tool_index, tool_req in enumerate(valid_tool_calls):
                         tool_def = self._registry.get_tool(tool_req.name)
                         requires_confirmation = bool(
                             tool_def and tool_def.requires_confirmation
@@ -158,6 +355,10 @@ class AgentService:
                                 registry=self._registry,
                                 bus=self._bus,
                                 executor=self._executor,
+                                turn_id=turn_id,
+                                pass_id=response.pass_id,
+                                round_index=rounds,
+                                tool_index=tool_index,
                                 confirmation_future=confirmation_future,
                                 auto_approve=self._auto_confirm,
                                 set_status=self._set_status,
@@ -167,13 +368,22 @@ class AgentService:
 
                         # Persist every tool outcome so the next turn/model pass can reason over it.
                         stats = await self._context.add_tool_result(result)
-                        await self._emit_context_update(stats)
+                        await self._emit_context_update(
+                            stats,
+                            turn_id=turn_id,
+                            pass_id=response.pass_id,
+                            round_index=rounds,
+                            tool_call_id=result.call_id,
+                            tool_index=tool_index,
+                        )
 
                         if result.error_code == "user_rejected":
                             # Close the current tool-call batch in-order. The provider expects
                             # each assistant tool_call id to eventually receive a terminal tool
                             # result, even when we stop the turn on rejection.
-                            for skipped_req in response.tool_calls[tool_index + 1 :]:
+                            for skipped_offset, skipped_req in enumerate(
+                                valid_tool_calls[tool_index + 1 :], start=1
+                            ):
                                 stats = await self._context.add_tool_result(
                                     ToolResult(
                                         tool_name=skipped_req.name,
@@ -193,7 +403,14 @@ class AgentService:
                                         request_parameters=skipped_req.parameters,
                                     )
                                 )
-                                await self._emit_context_update(stats)
+                                await self._emit_context_update(
+                                    stats,
+                                    turn_id=turn_id,
+                                    pass_id=response.pass_id,
+                                    round_index=rounds,
+                                    tool_call_id=skipped_req.call_id,
+                                    tool_index=tool_index + skipped_offset,
+                                )
                             user_rejected = True
                             stopped_by_rejection = True
                             await self._bus.emit(
@@ -201,7 +418,10 @@ class AgentService:
                                 {
                                     "message": (
                                         "Tool execution rejected. Skipping follow-up model pass for this turn."
-                                    )
+                                    ),
+                                    "turn_id": turn_id,
+                                    "pass_id": response.pass_id,
+                                    "round_index": rounds,
                                 },
                             )
                             break
@@ -210,7 +430,10 @@ class AgentService:
                         break
 
                     await self._set_status(
-                        AgentState.THINKING, "Processing tool results..."
+                        AgentState.THINKING,
+                        "Processing tool results...",
+                        turn_id=turn_id,
+                        round_index=rounds,
                     )
                     history = self._context._store.get_full_history()
                     response = await run_thinking_loop(
@@ -219,60 +442,83 @@ class AgentService:
                         bus=self._bus,
                         registry=self._registry,
                         settings=self._settings,
+                        turn_id=turn_id,
+                        round_index=rounds,
                     )
-                    stats = await self._context.add_assistant_pass(
-                        content=response.content,
-                        thinking=response.thinking,
-                        pass_id=response.pass_id,
-                        tokens=response.tokens,
-                        tool_call_count=len(response.tool_calls),
-                        tool_calls=[
-                            {
-                                "id": req.call_id,
-                                "type": "function",
-                                "function": {
-                                    "name": req.name,
-                                    "arguments": req.parameters,
-                                },
-                            }
-                            for req in response.tool_calls
-                        ],
+                    await self._persist_assistant_response(
+                        response,
+                        turn_id=turn_id,
+                        round_index=rounds,
                     )
-                    await self._emit_context_update(stats)
 
                 if (
                     response.tool_calls
                     and rounds >= max_tool_rounds
                     and not stopped_by_rejection
+                    and not stopped_by_malformed
                 ):
                     await self._bus.emit(
                         EventTypes.WARNING,
                         {
                             "message": "Tool loop limit reached",
                             "details": f"Stopped after {max_tool_rounds} tool rounds",
+                            "turn_id": turn_id,
+                            "pass_id": response.pass_id,
+                            "round_index": rounds,
                         },
                     )
 
                 # 6. State: -> IDLE
-                await self._set_status(AgentState.IDLE, "Ready")
+                await self._set_status(
+                    AgentState.IDLE,
+                    "Ready",
+                    turn_id=turn_id,
+                    round_index=rounds,
+                )
 
             except Exception as e:
                 self._logger.error(f"Error in main loop: {e}", exc_info=True)
                 await self._set_status(AgentState.ERROR, f"System Error: {str(e)}")
 
-    async def _emit_context_update(self, stats: ContextStats) -> None:
+    async def _emit_context_update(
+        self,
+        stats: ContextStats,
+        *,
+        turn_id: str | None = None,
+        pass_id: str | None = None,
+        round_index: int | None = None,
+        tool_call_id: str | None = None,
+        tool_index: int | None = None,
+    ) -> None:
         context_limit = int(getattr(self._settings, "context_window_limit", 0) or 0)
+        correlation: Dict[str, Any] = {}
+        if turn_id:
+            correlation["turn_id"] = turn_id
+        if pass_id:
+            correlation["pass_id"] = pass_id
+        if round_index is not None:
+            correlation["round_index"] = round_index
+        if tool_call_id:
+            correlation["tool_call_id"] = tool_call_id
+        if tool_index is not None:
+            correlation["tool_index"] = tool_index
+
+        payload: Dict[str, Any] = {
+            "message": "Context updated",
+            "data": {
+                "total_tokens": stats.total_tokens,
+                "message_count": stats.message_count,
+                "loaded_files_count": stats.loaded_files_count,
+                "context_limit": context_limit,
+            },
+        }
+        if correlation:
+            payload["data"]["correlation"] = correlation
+            payload.update(correlation)
+
         await self._bus.emit(
             EventTypes.INFO,
-            {
-                "message": "Context updated",
-                "data": {
-                    "total_tokens": stats.total_tokens,
-                    "message_count": stats.message_count,
-                    "loaded_files_count": stats.loaded_files_count,
-                    "context_limit": context_limit,
-                },
-            },
+            payload,
         )
 
     async def _resolve_context_stats(self) -> ContextStats:
@@ -292,13 +538,31 @@ class AgentService:
             loaded_files_count=0,
         )
 
-    async def _set_status(self, state: AgentState, message: str) -> None:
+    async def _set_status(
+        self,
+        state: AgentState,
+        message: str,
+        *,
+        turn_id: str | None = None,
+        pass_id: str | None = None,
+        round_index: int | None = None,
+        tool_call_id: str | None = None,
+        tool_index: int | None = None,
+    ) -> None:
         """
         Helper to update internal state and emit event in one go.
         """
         try:
             self._state.transition_to(state)
-            status_payload = AgentStatus(status=state.value, message=message)
+            status_payload = AgentStatus(
+                status=state.value,
+                message=message,
+                turn_id=turn_id,
+                pass_id=pass_id,
+                round_index=round_index,
+                tool_call_id=tool_call_id,
+                tool_index=tool_index,
+            )
             await self._bus.emit(EventTypes.STATUS_CHANGED, status_payload)
         except ValueError as e:
             self._logger.critical(f"State Machine Violation: {e}")

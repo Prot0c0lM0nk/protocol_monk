@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import time
 from typing import Any, AsyncIterator, Dict, List, Optional, Set
 
 from protocol_monk.agent.structs import Message, ProviderSignal, ToolRequest
@@ -76,6 +75,8 @@ class OpenRouterProvider(BaseProvider):
             )
 
         pending_tool_calls: Dict[int, Dict[str, Any]] = {}
+        seen_tool_call_ids: Dict[str, int] = {}
+        generated_tool_call_count = 0
         telemetry: Dict[str, Any] = {
             "provider": "openrouter",
             "request_model": model_name,
@@ -83,6 +84,12 @@ class OpenRouterProvider(BaseProvider):
             "chunk_count": 0,
             "usage": {},
             "finish_reasons": [],
+            "tool_call_diagnostics": {
+                "missing_id_generated": 0,
+                "duplicate_id_normalized": 0,
+                "invalid_arguments_dropped": 0,
+                "malformed_fragments": 0,
+            },
         }
         last_chunk: Dict[str, Any] = {}
 
@@ -139,12 +146,24 @@ class OpenRouterProvider(BaseProvider):
                     )
 
                     if finish_reason == "tool_calls":
-                        for req in self._flush_ready_tool_calls(pending_tool_calls):
+                        ready, generated_tool_call_count = self._flush_ready_tool_calls(
+                            pending_tool_calls,
+                            seen_tool_call_ids=seen_tool_call_ids,
+                            generated_tool_call_count=generated_tool_call_count,
+                            diagnostics=telemetry["tool_call_diagnostics"],
+                        )
+                        for req in ready:
                             yield ProviderSignal(type="tool_call", data=req)
                         pending_tool_calls.clear()
 
             # Flush remaining calls at stream end (if provider omitted finish_reason).
-            for req in self._flush_ready_tool_calls(pending_tool_calls):
+            ready, generated_tool_call_count = self._flush_ready_tool_calls(
+                pending_tool_calls,
+                seen_tool_call_ids=seen_tool_call_ids,
+                generated_tool_call_count=generated_tool_call_count,
+                diagnostics=telemetry["tool_call_diagnostics"],
+            )
+            for req in ready:
                 yield ProviderSignal(type="tool_call", data=req)
 
             telemetry["final_chunk"] = last_chunk
@@ -242,6 +261,10 @@ class OpenRouterProvider(BaseProvider):
     ) -> None:
         for item in tool_calls:
             if not isinstance(item, dict):
+                logger.warning(
+                    "OpenRouter emitted malformed tool-call fragment: expected object, got %s",
+                    type(item).__name__,
+                )
                 continue
             index = int(item.get("index", 0) or 0)
             slot = pending.setdefault(
@@ -256,36 +279,92 @@ class OpenRouterProvider(BaseProvider):
                 arguments = function.get("arguments")
                 if arguments:
                     slot["arguments_parts"].append(str(arguments))
+            else:
+                logger.warning(
+                    "OpenRouter tool-call fragment at index %s has malformed function payload.",
+                    index,
+                )
 
     def _flush_ready_tool_calls(
-        self, pending: Dict[int, Dict[str, Any]]
-    ) -> List[ToolRequest]:
+        self,
+        pending: Dict[int, Dict[str, Any]],
+        *,
+        seen_tool_call_ids: Dict[str, int],
+        generated_tool_call_count: int,
+        diagnostics: Dict[str, int],
+    ) -> tuple[List[ToolRequest], int]:
         ready: List[ToolRequest] = []
         for index in sorted(pending.keys()):
             entry = pending[index]
             name = entry.get("name")
             if not name:
+                diagnostics["malformed_fragments"] = diagnostics.get(
+                    "malformed_fragments", 0
+                ) + 1
+                logger.warning(
+                    "Skipping OpenRouter tool-call fragment at index %s because function name is missing.",
+                    index,
+                )
                 continue
 
             arguments_text = "".join(entry.get("arguments_parts", [])).strip()
             parsed_args = self._parse_tool_arguments(arguments_text)
             if parsed_args is None:
+                diagnostics["invalid_arguments_dropped"] = diagnostics.get(
+                    "invalid_arguments_dropped", 0
+                ) + 1
                 logger.warning(
-                    "Skipping OpenRouter tool call '%s' due to invalid JSON arguments.",
+                    "Skipping OpenRouter tool call '%s' due to invalid JSON arguments. raw=%s",
                     name,
+                    arguments_text[:200],
                 )
                 continue
 
-            call_id = entry.get("id") or f"call_{int(time.time() * 1000)}_{index}"
+            base_call_id = str(entry.get("id") or "").strip()
+            if not base_call_id:
+                generated_tool_call_count += 1
+                base_call_id = f"call_generated_{generated_tool_call_count}_{index}"
+                diagnostics["missing_id_generated"] = diagnostics.get(
+                    "missing_id_generated", 0
+                ) + 1
+                logger.warning(
+                    "OpenRouter tool call '%s' was missing an id. Generated %s.",
+                    name,
+                    base_call_id,
+                )
+
+            call_id, was_duplicate = self._normalize_tool_call_id(
+                base_call_id, seen_tool_call_ids
+            )
+            if was_duplicate:
+                diagnostics["duplicate_id_normalized"] = diagnostics.get(
+                    "duplicate_id_normalized", 0
+                ) + 1
+                logger.warning(
+                    "OpenRouter emitted duplicate tool call id '%s'. Normalized to '%s'.",
+                    base_call_id,
+                    call_id,
+                )
+
             ready.append(
                 ToolRequest(
                     name=name,
                     parameters=parsed_args,
-                    call_id=str(call_id),
+                    call_id=call_id,
                     requires_confirmation=False,
                 )
             )
-        return ready
+        return ready, generated_tool_call_count
+
+    @staticmethod
+    def _normalize_tool_call_id(
+        base_call_id: str, seen_tool_call_ids: Dict[str, int]
+    ) -> tuple[str, bool]:
+        seen_count = seen_tool_call_ids.get(base_call_id, 0)
+        seen_tool_call_ids[base_call_id] = seen_count + 1
+        if seen_count == 0:
+            return base_call_id, False
+        return f"{base_call_id}__dup{seen_count}", True
 
     @staticmethod
     def _parse_tool_arguments(arguments_text: str) -> Optional[Dict[str, Any]]:

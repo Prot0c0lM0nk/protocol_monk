@@ -55,6 +55,11 @@ class AgentStatus:
 
     status: str
     message: str
+    turn_id: Optional[str] = None
+    pass_id: Optional[str] = None
+    round_index: Optional[int] = None
+    tool_call_id: Optional[str] = None
+    tool_index: Optional[int] = None
 
 
 @dataclass
@@ -79,6 +84,7 @@ class ToolRequest:
     parameters: Dict[str, Any]
     call_id: str
     requires_confirmation: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

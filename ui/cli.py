@@ -34,8 +34,8 @@ class PromptToolkitCLI:
         self._settings = settings
         self._running = False
         self._current_state = "idle"
-        self._response_buffer = ""
-        self._thinking_buffer = ""
+        self._pass_buffers: dict[str, dict[str, str]] = {}
+        self._default_pass_id = "__legacy__"
         self._current_tool_call_id = None
         self._confirmation_tasks: dict[str, asyncio.Task] = {}
         self._auto_confirm = bool(getattr(settings, "auto_confirm", False))
@@ -202,17 +202,19 @@ class PromptToolkitCLI:
         channel = data.get("channel", "content")
         if not chunk:
             return
+        pass_id = self._normalize_pass_id(data.get("pass_id"))
+        buffer = self._pass_buffers.setdefault(pass_id, {"content": "", "thinking": ""})
         if channel == "thinking":
-            self._thinking_buffer += chunk
+            buffer["thinking"] += chunk
         else:
-            self._response_buffer += chunk
+            buffer["content"] += chunk
 
     async def _handle_response_complete(self, data: dict) -> None:
         """Handle RESPONSE_COMPLETE - display model reasoning and response for this pass."""
-        response_text = self._response_buffer.strip()
-        thinking_text = self._thinking_buffer.strip()
-        self._response_buffer = ""
-        self._thinking_buffer = ""
+        pass_id = self._normalize_pass_id(data.get("pass_id"))
+        buffer = self._pass_buffers.pop(pass_id, {"content": "", "thinking": ""})
+        response_text = str(buffer.get("content", "")).strip()
+        thinking_text = str(buffer.get("thinking", "")).strip()
 
         if not response_text:
             response_text = str(data.get("content", "")).strip()
@@ -223,6 +225,8 @@ class PromptToolkitCLI:
             print("\n[Reasoning]\n" + thinking_text + "\n")
         if response_text:
             print("\n" + response_text + "\n")
+        if not thinking_text and not response_text:
+            print(f"\n[Empty assistant pass] {pass_id}\n")
 
     async def _handle_tool_confirmation_requested(self, data: dict) -> None:
         """Handle TOOL_CONFIRMATION_REQUESTED using prompt_toolkit dialog."""
@@ -369,3 +373,7 @@ class PromptToolkitCLI:
     async def _handle_auto_confirm_changed(self, data: dict) -> None:
         """Track auto-confirm state updates."""
         self._auto_confirm = bool(data.get("auto_confirm", False))
+
+    def _normalize_pass_id(self, pass_id: Any) -> str:
+        text = str(pass_id).strip() if pass_id is not None else ""
+        return text or self._default_pass_id

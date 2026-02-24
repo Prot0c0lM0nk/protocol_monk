@@ -217,18 +217,9 @@ class ContextCoordinator:
         content = content or ""
         thinking = thinking or ""
 
-        if content and thinking:
-            combined = f"{content}\n\n[reasoning]\n{thinking}"
-        elif content:
-            combined = content
-        elif thinking:
-            combined = f"[reasoning]\n{thinking}"
-        else:
-            combined = ""
-
         msg = Message(
             role="assistant",
-            content=combined,
+            content=content,
             timestamp=time.time(),
             metadata={
                 "id": str(uuid.uuid4()),
@@ -236,6 +227,7 @@ class ContextCoordinator:
                 "tokens": tokens,
                 "tool_call_count": tool_call_count,
                 "content_length": len(content),
+                "thinking": thinking,
                 "thinking_length": len(thinking),
                 "tool_calls": tool_calls or [],
             },
