@@ -162,6 +162,8 @@ class OllamaProvider(BaseProvider):
           to a prior assistant tool_call id.
         - Fallback unmatched tool-role messages to plain assistant text to avoid
           provider-side tool-result id validation errors.
+        - Use first-class tool fields (tool_calls, tool_call_id, name) before
+          falling back to metadata for backward compatibility.
         """
         serialized: List[Dict[str, Any]] = []
         known_tool_call_ids: Set[str] = set()
@@ -176,8 +178,9 @@ class OllamaProvider(BaseProvider):
                 payload["images"] = images
 
             if role == "assistant":
+                # Use first-class field first, then fall back to metadata
                 tool_calls = self._normalize_assistant_tool_calls(
-                    metadata.get("tool_calls") or []
+                    message.tool_calls or metadata.get("tool_calls") or []
                 )
                 if tool_calls:
                     payload["tool_calls"] = tool_calls
@@ -190,8 +193,9 @@ class OllamaProvider(BaseProvider):
                 continue
 
             if role == "tool":
-                tool_name = metadata.get("tool_name")
-                tool_call_id = metadata.get("tool_call_id")
+                # Use first-class fields first, then fall back to metadata
+                tool_call_id = message.tool_call_id or metadata.get("tool_call_id")
+                tool_name = message.name or metadata.get("tool_name")
 
                 if tool_call_id and str(tool_call_id) in known_tool_call_ids:
                     if tool_name:

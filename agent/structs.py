@@ -114,6 +114,10 @@ class Message:
     content: str
     timestamp: float
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # First-class tool support fields (backward compatible - all Optional with None defaults)
+    tool_call_id: Optional[str] = None  # For role="tool" messages
+    tool_calls: Optional[List[Dict[str, Any]]] = None  # For role="assistant" messages
+    name: Optional[str] = None  # Tool name (for role="tool" messages)
 
 
 @dataclass

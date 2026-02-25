@@ -55,7 +55,26 @@ class ContextCoordinator:
             return logic.count_tokens(text)
 
     def _count_history_tokens(self, history: List[Message]) -> int:
-        return sum(self._estimate_tokens(m.content) for m in history)
+        """Count tokens including content, metadata, and first-class tool fields."""
+        total = 0
+        for m in history:
+            # Content tokens
+            total += self._estimate_tokens(m.content or "")
+            # Metadata tokens (serialized to match provider payload)
+            if m.metadata:
+                total += self._estimate_tokens(
+                    json.dumps(m.metadata, ensure_ascii=False, default=str)
+                )
+            # First-class tool fields tokens
+            if m.tool_call_id:
+                total += self._estimate_tokens(m.tool_call_id)
+            if m.name:
+                total += self._estimate_tokens(m.name)
+            if m.tool_calls:
+                total += self._estimate_tokens(
+                    json.dumps(m.tool_calls, ensure_ascii=False, default=str)
+                )
+        return total
 
     def _normalize_workspace_path(self, filepath: str) -> str:
         workspace_root = Path(self._settings.workspace_root)
@@ -230,6 +249,9 @@ class ContextCoordinator:
             role="tool",
             content=content,
             timestamp=time.time(),
+            # First-class tool fields for proper serialization
+            tool_call_id=result.call_id,
+            name=result.tool_name,
             metadata={
                 "id": message_id,
                 "tool_name": result.tool_name,
@@ -265,6 +287,8 @@ class ContextCoordinator:
             role="assistant",
             content=content,
             timestamp=time.time(),
+            # First-class tool field for proper serialization
+            tool_calls=tool_calls,
             metadata={
                 "id": str(uuid.uuid4()),
                 "pass_id": pass_id,
@@ -273,7 +297,7 @@ class ContextCoordinator:
                 "content_length": len(content),
                 "thinking": thinking,
                 "thinking_length": len(thinking),
-                "tool_calls": tool_calls or [],
+                "tool_calls": tool_calls or [],  # Kept for backward compatibility
             },
         )
         self._store.add(msg)
