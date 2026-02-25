@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from typing import AsyncIterator, List, Dict, Any, Optional, Set
 
 from ollama import AsyncClient
@@ -64,11 +65,15 @@ class OllamaProvider(BaseProvider):
             # 3. Process the streaming response
             seen_tool_call_ids: Dict[str, int] = {}
             generated_tool_call_count = 0
+            accumulated_content: str = ""  # For KIMI format parsing fallback
+            pending_tool_calls: List[Dict[str, Any]] = []  # Track tool calls for KIMI fallback
+
             async for chunk in stream:
                 msg = chunk.message
                 # Handle content chunks
                 content = msg.content if isinstance(msg.content, str) else None
                 if content:
+                    accumulated_content += content
                     yield ProviderSignal(type="content", data=content)
 
                 # Handle thinking chunks (supported by recent Ollama message schema).
@@ -82,6 +87,30 @@ class OllamaProvider(BaseProvider):
                         tool_name = self._extract_tool_call_name(tc)
                         tool_arguments = self._extract_tool_call_arguments(tc)
                         raw_call_id = self._extract_tool_call_id(tc)
+
+                        # Try KIMI format parsing if name is empty
+                        if not tool_name and accumulated_content:
+                            kimi_calls = self._parse_kimi_tool_calls(accumulated_content)
+                            # Match by call index or take first available
+                            if kimi_calls and len(pending_tool_calls) < len(kimi_calls):
+                                kimi_tc = kimi_calls[len(pending_tool_calls)]
+                                tool_name = kimi_tc["function"]["name"]
+                                if not tool_arguments and kimi_tc["function"]["arguments"]:
+                                    tool_arguments = kimi_tc["function"]["arguments"]
+                                    # Parse arguments if string
+                                    if isinstance(tool_arguments, str):
+                                        try:
+                                            tool_arguments = json.loads(tool_arguments)
+                                        except json.JSONDecodeError:
+                                            tool_arguments = {"value": tool_arguments}
+                                if not raw_call_id:
+                                    raw_call_id = kimi_tc.get("id")
+                                logger.debug(
+                                    "Parsed KIMI tool call: name=%s, id=%s",
+                                    tool_name,
+                                    raw_call_id,
+                                )
+
                         if not raw_call_id:
                             generated_tool_call_count += 1
                             raw_call_id = f"call_generated_{generated_tool_call_count}"
@@ -125,6 +154,7 @@ class OllamaProvider(BaseProvider):
                             requires_confirmation=False,
                             metadata=tool_metadata,
                         )
+                        pending_tool_calls.append({"call_id": call_id, "name": tool_name})
                         yield ProviderSignal(type="tool_call", data=req)
 
                 # Handle final metrics when done
@@ -256,6 +286,60 @@ class OllamaProvider(BaseProvider):
                 item["id"] = str(raw["id"])
             normalized.append(item)
         return normalized
+
+    @staticmethod
+    def _parse_kimi_tool_calls(content: str) -> List[Dict[str, Any]]:
+        """
+        Parse KIMI's tag-based tool call format.
+
+        KIMI uses custom tags instead of standard OpenAI format:
+        <|tool_calls_section_begin|>
+        <|tool_call_begin|>functions.{name}:{index}<|tool_call_argument_begin|>{args}<|tool_call_end|>
+        <|tool_calls_section_end|>
+
+        Returns a list of tool call dicts with 'id', 'type', and 'function' fields.
+        """
+        if '<|tool_calls_section_begin|>' not in content:
+            return []
+
+        # Extract the section between begin/end tokens
+        section_matches = re.findall(
+            r"<\|tool_calls_section_begin\|>(.*?)<\|tool_calls_section_end\|>",
+            content,
+            re.DOTALL
+        )
+        if not section_matches:
+            return []
+
+        # Extract individual tool calls
+        call_pattern = (
+            r"<\|tool_call_begin\|>\s*(?P<tool_call_id>[\w\.]+:\d+)"
+            r"\s*<\|tool_call_argument_begin\|>"
+            r"\s*(?P<function_arguments>.*?)"
+            r"\s*<\|tool_call_end\|>"
+        )
+
+        tool_calls = []
+        for match in re.findall(call_pattern, section_matches[0], re.DOTALL):
+            function_id, function_args = match
+            # function_id looks like "functions.get_weather:0"
+            # Extract function name: "functions.{name}:{index}" -> name
+            parts = function_id.split('.')
+            if len(parts) >= 2:
+                function_name = parts[1].split(':')[0]
+            else:
+                function_name = function_id.split(':')[0]
+
+            tool_calls.append({
+                "id": function_id,
+                "type": "function",
+                "function": {
+                    "name": function_name,
+                    "arguments": function_args
+                }
+            })
+
+        return tool_calls
 
     @staticmethod
     def _extract_tool_call_id(tool_call: Any) -> Optional[str]:
