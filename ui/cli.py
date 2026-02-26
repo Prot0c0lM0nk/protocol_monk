@@ -18,6 +18,26 @@ import uuid
 logger = logging.getLogger("PromptToolkitCLI")
 
 
+# ANSI color codes for light formatting
+class Colors:
+    """Soft ANSI colors for CLI readability."""
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    ITALIC = "\033[3m"
+
+    # Pastel green for agent text
+    AGENT = "\033[38;5;114m"  # Light/pastel green
+
+    # Soft colors for different content types
+    REASONING = "\033[38;5;246m"  # Gray for reasoning
+    TOOL = "\033[38;5;180m"       # Gold for tool info
+    SUCCESS = "\033[38;5;142m"    # Olive green
+    ERROR = "\033[38;5;167m"      # Soft red
+    WARNING = "\033[38;5;214m"    # Orange
+    INFO = "\033[38;5;117m"       # Light cyan
+
+
 class PromptToolkitCLI:
     """
     CLI implementation using prompt_toolkit.
@@ -221,12 +241,20 @@ class PromptToolkitCLI:
         if not thinking_text:
             thinking_text = str(data.get("thinking", "")).strip()
 
+        # Show reasoning in dimmed gray with separator
         if thinking_text:
-            print("\n[Reasoning]\n" + thinking_text + "\n")
+            print(
+                f"\n{Colors.DIM}{Colors.ITALIC}╭─ Reasoning ─╮{Colors.RESET}\n"
+                f"{Colors.REASONING}{thinking_text}{Colors.RESET}\n"
+                f"{Colors.DIM}╰─────────────╯{Colors.RESET}"
+            )
+
+        # Show agent response in pastel green
         if response_text:
-            print("\n" + response_text + "\n")
+            print(f"\n{Colors.AGENT}{response_text}{Colors.RESET}\n")
+
         if not thinking_text and not response_text:
-            print(f"\n[Empty assistant pass] {pass_id}\n")
+            print(f"\n{Colors.DIM}[Empty pass]{Colors.RESET}\n")
 
     async def _handle_tool_confirmation_requested(self, data: dict) -> None:
         """Handle TOOL_CONFIRMATION_REQUESTED using prompt_toolkit dialog."""
@@ -333,42 +361,56 @@ class PromptToolkitCLI:
     async def _handle_tool_start(self, data: dict) -> None:
         """Handle TOOL_EXECUTION_START."""
         tool_name = data.get("tool_name", "")
-        print(f"\n[Running: {tool_name}]")
+        print(f"\n{Colors.TOOL}▶ {tool_name}{Colors.RESET}")
 
     async def _handle_tool_result(self, data: dict) -> None:
-        """Handle TOOL_RESULT."""
+        """Handle TOOL_RESULT - show summary, not full output."""
         success = data.get("success", False)
         output = data.get("output")
         error = data.get("error")
+
+        # Only show truncated summary for large outputs
         if output:
-            print(f"Output: {output}")
+            output_str = str(output)
+            if len(output_str) > 100:
+                summary = output_str[:100] + f"... ({len(output_str)} chars)"
+            else:
+                summary = output_str
+            status = Colors.SUCCESS if success else Colors.ERROR
+            print(f"{status}  → {summary}{Colors.RESET}")
+
         if not success and error:
-            print(f"[Tool Error] {error}")
+            print(f"{Colors.ERROR}  ✗ {error}{Colors.RESET}")
 
     async def _handle_tool_complete(self, data: dict) -> None:
         """Handle TOOL_EXECUTION_COMPLETE."""
         tool_name = data.get("tool_name", "")
         success = data.get("success", False)
         duration = data.get("duration", 0)
-        icon = "" if success else ""
-        print(f"{icon} {tool_name} completed ({duration:.2f}s)")
+        status_color = Colors.SUCCESS if success else Colors.ERROR
+        symbol = "✓" if success else "✗"
+        print(f"{status_color}  {symbol} {tool_name} ({duration:.2f}s){Colors.RESET}")
 
     async def _handle_error(self, data: dict) -> None:
         """Handle ERROR events."""
         message = data.get("message", str(data))
-        print(f"[ERROR] {message}")
+        recovered = data.get("recovered", False)
+        if recovered:
+            print(f"{Colors.WARNING}  ⚠ {message} (recovered){Colors.RESET}")
+        else:
+            print(f"{Colors.ERROR}  ✗ {message}{Colors.RESET}")
 
     async def _handle_warning(self, data: dict) -> None:
         """Handle WARNING events."""
         message = data.get("message", str(data))
-        print(f"[WARNING] {message}")
+        print(f"{Colors.WARNING}  ⚠ {message}{Colors.RESET}")
 
     async def _handle_info(self, data: dict) -> None:
         """Handle INFO events."""
         if not self._verbose_ui:
             return
         message = data.get("message", str(data))
-        print(f"[INFO] {message}")
+        print(f"{Colors.INFO}  ℹ {message}{Colors.RESET}")
 
     async def _handle_auto_confirm_changed(self, data: dict) -> None:
         """Track auto-confirm state updates."""
