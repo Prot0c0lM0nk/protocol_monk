@@ -111,6 +111,16 @@ class OllamaProvider(BaseProvider):
                                     raw_call_id,
                                 )
 
+                        # If still empty, infer from argument keys
+                        if not tool_name and tool_arguments:
+                            tool_name = self._infer_tool_name_from_arguments(tool_arguments)
+                            if tool_name:
+                                logger.debug(
+                                    "Inferred tool name '%s' from arguments: %s",
+                                    tool_name,
+                                    list(tool_arguments.keys()),
+                                )
+
                         if not raw_call_id:
                             generated_tool_call_count += 1
                             raw_call_id = f"call_generated_{generated_tool_call_count}"
@@ -340,6 +350,45 @@ class OllamaProvider(BaseProvider):
             })
 
         return tool_calls
+
+    @staticmethod
+    def _infer_tool_name_from_arguments(arguments: Dict[str, Any]) -> str:
+        """
+        Infer tool name from argument keys when the model fails to provide one.
+
+        This handles cases where KIMI outputs tool calls with empty names but
+        populated arguments that reveal the intended tool.
+
+        Mapping based on unique parameter keys:
+        - command -> execute_command
+        - script_content -> run_python
+        - operation -> git_operation
+        - filepath (with context) -> read_file, create_file, etc.
+        """
+        if not isinstance(arguments, dict) or not arguments:
+            return ""
+
+        # Unique parameter keys that map to single tools
+        if "command" in arguments:
+            return "execute_command"
+        if "script_content" in arguments:
+            return "run_python"
+        if "operation" in arguments:
+            return "git_operation"
+
+        # Ambiguous: filepath-based tools
+        if "filepath" in arguments:
+            if "new_content" in arguments:
+                return "replace_lines"
+            if "after_line" in arguments:
+                return "insert_in_file"
+            if "content" in arguments:
+                # Could be create_file or append_to_file - default to create_file
+                return "create_file"
+            # filepath alone - most likely read_file
+            return "read_file"
+
+        return ""
 
     @staticmethod
     def _extract_tool_call_id(tool_call: Any) -> Optional[str]:

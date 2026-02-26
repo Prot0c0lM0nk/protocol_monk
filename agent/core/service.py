@@ -206,12 +206,14 @@ class AgentService:
         round_index: int,
         malformed_tool_calls: List[ToolRequest],
     ) -> AgentResponse:
-        await self._set_status(
-            AgentState.THINKING,
-            "Repairing malformed tool calls...",
-            turn_id=turn_id,
-            round_index=round_index,
-        )
+        # Only transition to THINKING if not already there (avoid state machine violation)
+        if self._state.current != AgentState.THINKING:
+            await self._set_status(
+                AgentState.THINKING,
+                "Repairing malformed tool calls...",
+                turn_id=turn_id,
+                round_index=round_index,
+            )
         history = self._context._store.get_full_history()
         repair_prompt = self._build_tool_call_repair_prompt(malformed_tool_calls)
         augmented_history = [
@@ -566,11 +568,15 @@ class AgentService:
             await self._bus.emit(EventTypes.STATUS_CHANGED, status_payload)
         except ValueError as e:
             self._logger.critical(f"State Machine Violation: {e}")
+            self._logger.info("Attempting recovery by resetting to IDLE state")
+            # Force reset to IDLE for recovery
+            self._state._current_state = AgentState.IDLE
             await self._bus.emit(
                 EventTypes.ERROR,
                 {
-                    "message": "State machine violation",
+                    "message": "State machine violation (recovered)",
                     "details": str(e),
+                    "recovered": True,
                 },
             )
 

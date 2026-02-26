@@ -27,6 +27,7 @@ class StateMachine:
                 AgentState.IDLE,
                 AgentState.ERROR,
                 AgentState.PAUSED,
+                AgentState.THINKING,  # Allow self-transition for repair passes
             },
             AgentState.EXECUTING: {
                 AgentState.THINKING,
