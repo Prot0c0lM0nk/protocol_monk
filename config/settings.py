@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 from pathlib import Path
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from datetime import datetime
 from protocol_monk.exceptions.config import ConfigError
 from protocol_monk.utils.model_discovery import discover_models
@@ -28,9 +28,6 @@ class Settings(BaseSettings):
     tool_timeout: int = 60
     tool_result_context_max_chars: int = 4000
     pruning_threshold: float = 0.8
-    enforce_model_allowlist: bool = True
-    ollama_model_allowlist: str = ""
-    openrouter_model_allowlist: str = ""
     enable_textual_ui: bool = False
     trace_max_sessions: int = 200
     trace_max_total_mb: int = 250
@@ -153,8 +150,6 @@ class Settings(BaseSettings):
             elif model_config.get("default_model"):
                 self._set_active_model(model_config["default_model"])
 
-            self._enforce_active_model_allowlist()
-
             logger.info(
                 "Model configuration loaded for provider '%s'. Active model: %s",
                 self.llm_provider,
@@ -167,7 +162,6 @@ class Settings(BaseSettings):
             logger.error(f"Model configuration loading failed: {e}")
             self.models_config = self._create_fallback_model_config()
             self._set_active_model(self.models_config.get("default_model", ""))
-            self._enforce_active_model_allowlist()
 
     def _set_active_model(self, model_alias: str) -> None:
         """Set the active model from alias or name."""
@@ -194,54 +188,6 @@ class Settings(BaseSettings):
         if default and default in models:
             self._active_model_config = models[default]
             self.active_model_name = default
-
-    @staticmethod
-    def _parse_allowlist(value: Any) -> List[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            raw = [part.strip() for part in value.split(",")]
-        elif isinstance(value, (list, tuple, set)):
-            raw = [str(part).strip() for part in value]
-        else:
-            raw = [str(value).strip()]
-
-        deduped: List[str] = []
-        seen = set()
-        for item in raw:
-            if not item or item in seen:
-                continue
-            deduped.append(item)
-            seen.add(item)
-        return deduped
-
-    @property
-    def provider_model_allowlist(self) -> List[str]:
-        if self.llm_provider == "openrouter":
-            return self._parse_allowlist(self.openrouter_model_allowlist)
-        return self._parse_allowlist(self.ollama_model_allowlist)
-
-    def _enforce_active_model_allowlist(self) -> None:
-        if not self.enforce_model_allowlist:
-            return
-
-        allowlist = self.provider_model_allowlist
-        env_name = (
-            "OPENROUTER_MODEL_ALLOWLIST"
-            if self.llm_provider == "openrouter"
-            else "OLLAMA_MODEL_ALLOWLIST"
-        )
-        if not allowlist:
-            raise ConfigError(
-                "Model allowlist enforcement is enabled, but no models were provided "
-                f"for provider '{self.llm_provider}'. Set {env_name}."
-            )
-
-        if self.active_model_name not in allowlist:
-            raise ConfigError(
-                f"Active model '{self.active_model_name}' is not in {env_name}: "
-                f"{', '.join(allowlist)}"
-            )
 
     def _create_fallback_model_config(self) -> Dict[str, Any]:
         """Create minimal fallback config if model loading fails."""
