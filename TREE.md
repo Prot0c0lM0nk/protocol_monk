@@ -1,5 +1,5 @@
-tree -I "*.pyc"
 .
+├── TREE.md
 ├── __init__.py
 ├── __pycache__
 ├── agent
@@ -81,36 +81,12 @@ tree -I "*.pyc"
 │   ├── __init__.py
 │   ├── __pycache__
 │   ├── cli.py
-│   └── textual
+│   └── rich
 │       ├── __init__.py
-│       ├── __pycache__
 │       ├── app.py
-│       ├── bridge.py
-│       ├── messages.py
-│       ├── mock_agent.py
-│       ├── mock_main.py
-│       ├── models
-│       │   ├── __init__.py
-│       │   ├── __pycache__
-│       │   └── phase_state.py
-│       ├── screens
-│       │   ├── __init__.py
-│       │   ├── __pycache__
-│       │   ├── main_chat.py
-│       │   └── modals
-│       │       ├── __init__.py
-│       │       ├── __pycache__
-│       │       └── tool_confirm.py
-│       ├── styles
-│       │   ├── chat.tcss
-│       │   ├── components.tcss
-│       │   └── main.tcss
-│       └── widgets
-│           ├── __init__.py
-│           ├── __pycache__
-│           ├── chat_area.py
-│           ├── input_bar.py
-│           └── status_bar.py
+│       ├── input_handler.py
+│       ├── renderer.py
+│       └── styles.py
 └── utils
     ├── __init__.py
     ├── __pycache__
@@ -122,4 +98,4 @@ tree -I "*.pyc"
     ├── session_transcript.py
     └── token_estimation.py
 
-39 directories, 83 files
+29 directories, 70 files

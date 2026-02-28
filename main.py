@@ -34,13 +34,13 @@ logging.basicConfig(
 logger = logging.getLogger("Bootstrap")
 
 
-def _resolve_ui_backend(requested: str, enable_textual_ui: bool) -> tuple[str, str]:
-    requested_ui = (requested or "cli").strip().lower() or "cli"
-    if requested_ui not in {"cli", "textual"}:
-        return "cli", f"Unknown UI backend '{requested_ui}'. Falling back to CLI."
-    if requested_ui == "textual" and not enable_textual_ui:
-        return "cli", "Textual UI requested but ENABLE_TEXTUAL_UI is disabled. Using CLI."
-    return requested_ui, ""
+def _resolve_ui_backend(requested: str) -> tuple[str, str]:
+    requested_ui = (requested or "rich").strip().lower() or "rich"
+    if requested_ui in {"rich", "cli"}:
+        return requested_ui, ""
+    if requested_ui == "textual":
+        return "rich", "UI backend 'textual' is unsupported. Falling back to Rich."
+    return "rich", f"Unknown UI backend '{requested_ui}'. Falling back to Rich."
 
 
 def _validate_context_tracking_tools(registry: ToolRegistry) -> tuple[list[str], list[str]]:
@@ -166,10 +166,8 @@ async def main():
             },
         )
 
-        requested_ui_backend = os.getenv("PROTOCOL_MONK_UI", "cli")
-        ui_backend, ui_note = _resolve_ui_backend(
-            requested_ui_backend, bool(getattr(settings, "enable_textual_ui", False))
-        )
+        requested_ui_backend = os.getenv("PROTOCOL_MONK_UI", "rich")
+        ui_backend, ui_note = _resolve_ui_backend(requested_ui_backend)
         if ui_note:
             logger.warning(ui_note)
             await bus.emit(
@@ -227,15 +225,13 @@ async def main():
                 logger.info("Phase 4: Starting CLI...")
                 await cli.run()
             else:
-                from protocol_monk.ui.textual.app import ProtocolMonkTextualApp
-                from protocol_monk.ui.textual.bridge import TextualEventBridge
+                from protocol_monk.ui.rich.app import RichPromptToolkitUI
 
-                app = ProtocolMonkTextualApp(bus=bus, settings=settings)
-                bridge = TextualEventBridge(app=app, bus=bus)
-                app.bridge = bridge
+                rich_ui = RichPromptToolkitUI(bus=bus, settings=settings)
+                await rich_ui.start()
 
-                logger.info("Phase 4: Starting Textual UI...")
-                await app.run_async()
+                logger.info("Phase 4: Starting Rich UI...")
+                await rich_ui.run()
 
             logger.info("Shutdown complete.")
             return 0

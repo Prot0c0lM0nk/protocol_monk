@@ -26,9 +26,7 @@ class Settings(BaseSettings):
     openrouter_api_key: Optional[str] = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     tool_timeout: int = 60
-    tool_result_context_max_chars: int = 4000
     pruning_threshold: float = 0.8
-    enable_textual_ui: bool = False
     trace_max_sessions: int = 200
     trace_max_total_mb: int = 250
 

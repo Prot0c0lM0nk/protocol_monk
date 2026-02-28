@@ -103,43 +103,6 @@ class ContextCoordinator:
         if result.tool_name in self.FILE_MUTATION_TOOLS:
             self._tracker.remove_file(file_path)
 
-    def _tool_result_context_limit(self) -> int:
-        raw_limit = getattr(self._settings, "tool_result_context_max_chars", 4000)
-        try:
-            limit = int(raw_limit)
-        except (TypeError, ValueError):
-            limit = 4000
-        return max(256, limit)
-
-    def _compact_tool_output_for_context(self, output: Any) -> tuple[Any, int, bool]:
-        if output is None:
-            return None, 0, False
-
-        limit = self._tool_result_context_limit()
-
-        if isinstance(output, str):
-            total_chars = len(output)
-            if total_chars <= limit:
-                return output, total_chars, False
-            clipped = output[:limit]
-            return (
-                f"{clipped}... [truncated {total_chars - limit} chars for context replay]",
-                total_chars,
-                True,
-            )
-
-        serialized = json.dumps(output, ensure_ascii=False, default=str)
-        total_chars = len(serialized)
-        if total_chars <= limit:
-            return output, total_chars, False
-
-        clipped = serialized[:limit]
-        return (
-            f"{clipped}... [truncated {total_chars - limit} chars for context replay]",
-            total_chars,
-            True,
-        )
-
     async def add_user_message(self, text: str) -> ContextStats:
         """
         Adds user input, calculates tokens, and auto-prunes if needed.
@@ -224,9 +187,6 @@ class ContextCoordinator:
         """
         Add a tool execution result so the next model pass can consume it.
         """
-        context_output, output_chars, output_truncated = self._compact_tool_output_for_context(
-            result.output
-        )
         envelope = {
             "type": "tool_result",
             "tool_name": result.tool_name,
@@ -237,9 +197,7 @@ class ContextCoordinator:
             "error_code": result.error_code,
             "error": result.error,
             "error_details": result.error_details,
-            "output": context_output,
-            "output_chars": output_chars,
-            "output_truncated": output_truncated,
+            "output": result.output,
             "request_parameters": result.request_parameters,
         }
         content = json.dumps(envelope, ensure_ascii=False, default=str)
@@ -258,8 +216,6 @@ class ContextCoordinator:
                 "tool_call_id": result.call_id,
                 "success": result.success,
                 "duration": result.duration,
-                "output_chars": output_chars,
-                "output_truncated": output_truncated,
                 "request_parameters": result.request_parameters or {},
             },
         )
