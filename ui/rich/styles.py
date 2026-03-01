@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.style import Style
 from rich.theme import Theme
+from prompt_toolkit.styles import Style as PtStyle
 
 # --- THE ORTHODOX MATRIX PALETTE ---
 ORTHODOX_MATRIX_THEME = Theme(
@@ -90,3 +91,36 @@ def state_style(status: str) -> str:
         "paused": "state.paused",
         "error": "state.error",
     }.get(normalized, "muted")
+
+
+# --- PROMPT-TOOLKIT DIALOG STYLE ---
+# Orthodox Matrix theme for prompt-toolkit dialogs (button_dialog, radiolist_dialog, etc.)
+# Dark green highlight (#1a3a00) allows bright text to show clearly
+ORTHODOX_DIALOG_STYLE = PtStyle.from_dict(
+    {
+        # Dialog container - dark background
+        "dialog": "bg:#0a0a0a",
+        "dialog.body": "bg:#0a0a0a #87ff00",  # chartreuse1 text
+        # Frame/border - purple accents
+        "frame.border": "#875fd7",  # medium_purple3
+        "frame.label": "#875fd7 bold",  # Purple title
+        # Buttons - dark green highlight for focused state
+        "button": "#875fd7",
+        "button.focused": "bg:#1a3a00 #87ff00 bold",  # Dark green bg, chartreuse text
+        "button.arrow": "#87ff00",  # Chartreuse arrow
+        # Labels and text
+        "label": "#87ff00",
+        "shadow": "bg:#1a1a1a",
+        # Radio list (for select_with_arrows)
+        "radio-list": "bg:#0a0a0a",
+        "radio": "#875fd7",
+        "radio-selected": "bg:#1a3a00 #87ff00 bold",  # Dark green bg for selected item
+        "radio-checked": "#87ff00",
+        # Menu/selection highlight (for dropdown-like selections)
+        "menu": "bg:#0a0a0a",
+        "menu.border": "#875fd7",
+        "menu.border.shadow": "bg:#1a1a1a",
+        "menu.item": "#87ff00",
+        "menu.item.focused": "bg:#1a3a00 #87ff00 bold",  # Dark green highlight
+    }
+)

@@ -12,6 +12,7 @@ from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
 from protocol_monk.agent.structs import UserRequest, ConfirmationResponse
 from protocol_monk.config.settings import Settings
+from protocol_monk.ui.rich.styles import ORTHODOX_DIALOG_STYLE
 import time
 import uuid
 
@@ -305,6 +306,7 @@ class PromptToolkitCLI:
                             ("Yes + Auto-Approve Edits", "approve_auto"),
                             ("No (Return Control)", "reject"),
                         ],
+                        style=ORTHODOX_DIALOG_STYLE,
                     ).run_async(),
                     timeout=20.0,
                 )

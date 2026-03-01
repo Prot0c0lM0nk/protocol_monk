@@ -9,7 +9,9 @@ from typing import Sequence
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.patch_stdout import patch_stdout
-from prompt_toolkit.shortcuts import radiolist_dialog
+from prompt_toolkit.shortcuts import button_dialog, radiolist_dialog
+
+from .styles import ORTHODOX_DIALOG_STYLE
 
 logger = logging.getLogger("RichInputHandler")
 
@@ -37,36 +39,21 @@ class RichInputHandler:
     ) -> str | None:
         """Return one of: approve, approve_auto, reject."""
         _ = parameters  # Parameters are displayed in the Rich confirmation panel.
-        prompt_text = (
-            f"Approve tool '{tool_name}'? [y]es / [a]uto / [n]o > "
-        )
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + max(timeout, 0.1)
-        decision_map = {
-            "y": "approve",
-            "yes": "approve",
-            "a": "approve_auto",
-            "aa": "approve_auto",
-            "auto": "approve_auto",
-            "n": "reject",
-            "no": "reject",
-            "r": "reject",
-            "reject": "reject",
-        }
         try:
-            while True:
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    logger.warning(
-                        "Confirmation timed out for %s; rejecting by default.",
-                        tool_name,
-                    )
-                    return "reject"
-                answer = await asyncio.wait_for(self.prompt(prompt_text), timeout=remaining)
-                normalized = answer.strip().lower()
-                if normalized in decision_map:
-                    return decision_map[normalized]
-                print("Invalid choice. Use y, a, or n.")
+            result = await asyncio.wait_for(
+                button_dialog(
+                    title="Tool Confirmation",
+                    text=f"Approve tool execution: {tool_name}",
+                    buttons=[
+                        ("Yes", "approve"),
+                        ("Yes + Auto", "approve_auto"),
+                        ("No", "reject"),
+                    ],
+                    style=ORTHODOX_DIALOG_STYLE,
+                ).run_async(),
+                timeout=timeout,
+            )
+            return result if result else "reject"
         except asyncio.TimeoutError:
             logger.warning(
                 "Confirmation timed out for %s; rejecting by default.",
@@ -108,6 +95,7 @@ class RichInputHandler:
             title=prompt_text,
             values=[(index, option) for index, option in enumerate(options)],
             default=default_index,
+            style=ORTHODOX_DIALOG_STYLE,
         ).run_async()
         if result is None:
             return default_index
