@@ -27,6 +27,8 @@ class ToolOutputRecord:
     output_text: str
     output_lines: int
     output_chars: int
+    duration: float = 0.0
+    timestamp: float = 0.0
 
 
 class RichPromptToolkitUI:
@@ -42,6 +44,7 @@ class RichPromptToolkitUI:
     LARGE_OUTPUT_LINE_THRESHOLD = 6
     FULL_OUTPUT_SOFT_CAP = 20_000
     TOOL_OUTPUT_QUEUE_MAX = 10
+    TOOL_RESULT_QUEUE_MAX = 20
 
     def __init__(
         self,
@@ -54,7 +57,6 @@ class RichPromptToolkitUI:
         self._bus = bus
         self._settings = settings
         self._renderer = renderer or RichRenderer()
-        self._input_handler = input_handler or RichInputHandler()
 
         self._running = False
         self._current_state = "idle"
@@ -64,6 +66,7 @@ class RichPromptToolkitUI:
         self._verbose_ui = str(getattr(settings, "log_level", "INFO")).upper() == "DEBUG"
         self._confirmation_tasks: dict[str, asyncio.Task] = {}
         self._pending_tool_outputs: deque[ToolOutputRecord] = deque()
+        self._tool_results: deque[ToolOutputRecord] = deque(maxlen=self.TOOL_RESULT_QUEUE_MAX)
         self._tool_progress_seen: dict[str, tuple[Any, str]] = {}
 
         self._status_symbols = {
@@ -73,6 +76,12 @@ class RichPromptToolkitUI:
             "paused": "paused",
             "error": "error",
         }
+
+        # Create input handler with Ctrl+O callback (after self._handle_ctrl_o is available)
+        if input_handler is not None:
+            self._input_handler = input_handler
+        else:
+            self._input_handler = RichInputHandler(on_ctrl_o=self._handle_ctrl_o)
 
     async def start(self) -> None:
         await self._bus.subscribe(EventTypes.STATUS_CHANGED, self._handle_status_changed)
@@ -308,6 +317,20 @@ class RichPromptToolkitUI:
             full_output_available=has_large_output,
         )
 
+        # Store ALL results for Ctrl+O viewer
+        if output is not None:
+            record = ToolOutputRecord(
+                tool_name=tool_name,
+                success=success,
+                output_text=output_text,
+                output_lines=len(output_text.splitlines()),
+                output_chars=len(output_text),
+                duration=0.0,  # Updated in _handle_tool_complete
+                timestamp=time.time(),
+            )
+            self._tool_results.append(record)
+
+        # Keep legacy large output handling for deferred viewing
         if output is None:
             return
         if not has_large_output:
@@ -346,10 +369,21 @@ class RichPromptToolkitUI:
         tool_call_id = str(data.get("tool_call_id", "") or "")
         if tool_call_id:
             self._tool_progress_seen.pop(tool_call_id, None)
+
+        tool_name = str(data.get("tool_name", "") or "")
+        duration = float(data.get("duration", 0.0))
+        success = bool(data.get("success", False))
+
+        # Update duration in most recent matching record
+        for record in reversed(list(self._tool_results)):
+            if record.tool_name == tool_name and record.duration == 0.0:
+                record.duration = duration
+                break
+
         self._renderer.render_tool_complete(
-            tool_name=data.get("tool_name", ""),
-            success=bool(data.get("success", False)),
-            duration=float(data.get("duration", 0.0)),
+            tool_name=tool_name,
+            success=success,
+            duration=duration,
         )
 
     async def _handle_error(self, data: dict) -> None:
@@ -417,6 +451,48 @@ class RichPromptToolkitUI:
                 truncated=truncated,
                 omitted_chars=omitted,
             )
+
+    def _handle_ctrl_o(self) -> None:
+        """Handle Ctrl+O keypress - schedule viewer on main loop."""
+        asyncio.create_task(self._show_tool_output_viewer())
+
+    async def _show_tool_output_viewer(self) -> None:
+        """Show panel with recent tool results, allow viewing full output.
+
+        Uses a scrollback-native panel-based selection (no modal dialogs).
+        """
+        if not self._tool_results:
+            self._renderer.render_info("No tool results available")
+            return
+
+        # Build options list (most recent first)
+        options = []
+        for record in reversed(list(self._tool_results)):
+            status = "✓" if record.success else "✗"
+            duration = f"{record.duration:.2f}s" if record.duration > 0 else "..."
+            label = f"{status} {record.tool_name} [{duration}] ({record.output_chars} chars)"
+            options.append(label)
+
+        # Show panel and get selection
+        self._renderer.lock_for_input()
+        try:
+            selected_index = await self._input_handler.select_from_list(
+                title="Tool Results (Ctrl+O)",
+                options=options,
+                default_index=0,
+            )
+        finally:
+            self._renderer.unlock_for_input()
+
+        # Show full output for selection
+        record = list(self._tool_results)[-(selected_index + 1)]
+        shown, truncated, omitted = self._apply_output_cap(record.output_text)
+        self._renderer.render_tool_output_full(
+            tool_name=record.tool_name,
+            output_text=shown,
+            truncated=truncated,
+            omitted_chars=omitted,
+        )
 
     def _normalize_pass_id(self, pass_id: Any) -> str:
         text = str(pass_id).strip() if pass_id is not None else ""
