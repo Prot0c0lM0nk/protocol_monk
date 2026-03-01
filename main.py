@@ -95,6 +95,25 @@ async def main():
         # [FIX] Lazy logging
         logger.info("Active model: %s", settings.active_model_name)
 
+        # Run Setup Wizard (skip in non-interactive mode)
+        skip_wizard = os.getenv("PROTOCOL_MONK_SKIP_WIZARD", "").lower() in ("1", "true", "yes")
+        if not skip_wizard:
+            from protocol_monk.ui.rich.wizard import SetupWizard
+
+            logger.info("Phase 1.5: Running Setup Wizard...")
+            wizard = SetupWizard()
+            try:
+                choices = await wizard.run(settings)
+                wizard.apply_choices(settings, choices)
+                logger.info(
+                    "Wizard complete: provider=%s, model=%s, workspace=%s",
+                    choices.get("provider"),
+                    choices.get("model"),
+                    choices.get("workspace"),
+                )
+            except (EOFError, KeyboardInterrupt):
+                logger.info("Wizard cancelled by user. Using defaults.")
+
         logger.info("Phase 2: Wiring Components...")
 
         # A. Nervous System
