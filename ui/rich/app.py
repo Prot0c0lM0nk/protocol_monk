@@ -81,6 +81,7 @@ class RichPromptToolkitUI:
         self._verbose_ui = str(getattr(settings, "log_level", "INFO")).upper() == "DEBUG"
         self._confirmation_tasks: dict[str, asyncio.Task] = {}
         self._pending_tool_outputs: deque[ToolOutputRecord] = deque()
+        self._tool_progress_seen: dict[str, tuple[Any, str]] = {}
         self._header = HeaderState(
             provider=str(getattr(settings, "llm_provider", "") or ""),
             model=str(getattr(settings, "active_model_name", "") or ""),
@@ -114,6 +115,9 @@ class RichPromptToolkitUI:
         await self._bus.subscribe(
             EventTypes.TOOL_EXECUTION_COMPLETE, self._handle_tool_complete
         )
+        await self._bus.subscribe(
+            EventTypes.TOOL_EXECUTION_PROGRESS, self._handle_tool_progress
+        )
         await self._bus.subscribe(EventTypes.ERROR, self._handle_error)
         await self._bus.subscribe(EventTypes.WARNING, self._handle_warning)
         await self._bus.subscribe(EventTypes.INFO, self._handle_info)
@@ -132,44 +136,48 @@ class RichPromptToolkitUI:
     async def run(self) -> None:
         self._running = True
         self._renderer.render_banner()
+        self._renderer.start_live_session()
         self._sync_header(force_render=True)
 
-        while self._running:
-            if self._current_state != "idle":
-                await asyncio.sleep(0.1)
-                continue
+        try:
+            while self._running:
+                if self._current_state != "idle":
+                    await asyncio.sleep(0.1)
+                    continue
 
-            await self._drain_tool_output_queue()
+                await self._drain_tool_output_queue()
 
-            if self._current_state != "idle":
-                continue
+                if self._current_state != "idle":
+                    continue
 
-            prompt = self._get_prompt()
-            try:
-                self._renderer.lock_for_input()
+                prompt = self._get_prompt()
                 try:
-                    user_text = await self._input_handler.prompt(prompt)
-                finally:
-                    self._renderer.unlock_for_input()
-            except (EOFError, KeyboardInterrupt):
-                self._renderer.render_info("Goodbye!")
-                self._running = False
-                break
+                    self._renderer.suspend_live_session()
+                    try:
+                        user_text = await self._input_handler.prompt(prompt)
+                    finally:
+                        self._renderer.resume_live_session()
+                except (EOFError, KeyboardInterrupt):
+                    self._renderer.render_info("Goodbye!")
+                    self._running = False
+                    break
 
-            normalized = user_text.strip()
-            if not normalized:
-                continue
+                normalized = user_text.strip()
+                if not normalized:
+                    continue
 
-            if normalized.lower() in ("quit", "exit", "q"):
-                self._renderer.render_info("Goodbye!")
-                self._running = False
-                break
+                if normalized.lower() in ("quit", "exit", "q"):
+                    self._renderer.render_info("Goodbye!")
+                    self._running = False
+                    break
 
-            handled = await self._process_local_command(normalized)
-            if handled:
-                continue
+                handled = await self._process_local_command(normalized)
+                if handled:
+                    continue
 
-            await self._emit_user_input(normalized)
+                await self._emit_user_input(normalized)
+        finally:
+            self._renderer.stop_live_session()
 
     async def stop(self) -> None:
         self._running = False
@@ -236,7 +244,6 @@ class RichPromptToolkitUI:
         self._header.state = status
         self._header.state_message = message
         self._sync_header(force_render=False)
-        self._renderer.render_status(status, message)
 
     async def _handle_stream_chunk(self, data: dict) -> None:
         chunk = data.get("chunk", "")
@@ -294,14 +301,15 @@ class RichPromptToolkitUI:
     ) -> None:
         self._renderer.clear_stream_visual_state()
         self._renderer.render_tool_confirmation(tool_name, parameters)
-        self._renderer.lock_for_input()
+        self._renderer.suspend_live_session()
         try:
             result = await self._input_handler.confirm_tool_execution(
                 tool_name=tool_name,
                 parameters=parameters,
             )
         finally:
-            self._renderer.unlock_for_input()
+            self._renderer.resume_live_session()
+            self._renderer.refresh_frame(force=True)
 
         if result == "approve":
             await self._emit_tool_confirmation(tool_call_id, "approved")
@@ -326,17 +334,19 @@ class RichPromptToolkitUI:
         output = data.get("output")
         error = data.get("error")
         tool_name = str(data.get("tool_name", "") or "tool")
+        output_text = "" if output is None else str(output)
+        has_large_output = bool(output is not None and self._is_large_output(output_text))
 
         self._renderer.render_tool_output_preview(
             success=success,
             output=output,
             error=error,
+            full_output_available=has_large_output,
         )
 
         if output is None:
             return
-        output_text = str(output)
-        if not self._is_large_output(output_text):
+        if not has_large_output:
             return
 
         record = ToolOutputRecord(
@@ -353,7 +363,25 @@ class RichPromptToolkitUI:
                 "Tool output viewer queue overflow. Oldest output discarded."
             )
 
+    async def _handle_tool_progress(self, data: dict) -> None:
+        tool_name = str(data.get("tool_name", "") or "tool")
+        tool_call_id = str(data.get("tool_call_id", "") or tool_name)
+        progress = data.get("progress")
+        message = str(data.get("message", "") or "")
+        signature = (progress, message)
+        if self._tool_progress_seen.get(tool_call_id) == signature:
+            return
+        self._tool_progress_seen[tool_call_id] = signature
+        self._renderer.render_tool_progress(
+            tool_name=tool_name,
+            progress=progress,
+            message=message,
+        )
+
     async def _handle_tool_complete(self, data: dict) -> None:
+        tool_call_id = str(data.get("tool_call_id", "") or "")
+        if tool_call_id:
+            self._tool_progress_seen.pop(tool_call_id, None)
         self._renderer.render_tool_complete(
             tool_name=data.get("tool_name", ""),
             success=bool(data.get("success", False)),
@@ -410,14 +438,15 @@ class RichPromptToolkitUI:
             self._renderer.render_info(
                 f"Large tool output available: {record.tool_name} ({record.output_chars} chars)"
             )
-            self._renderer.lock_for_input()
+            self._renderer.suspend_live_session()
             try:
                 show_full = await self._input_handler.confirm_yes_no(
                     f"Show full output for {record.tool_name}?",
                     default=False,
                 )
             finally:
-                self._renderer.unlock_for_input()
+                self._renderer.resume_live_session()
+                self._renderer.refresh_frame(force=True)
             if not show_full:
                 continue
             shown, truncated, omitted = self._apply_output_cap(record.output_text)
@@ -430,8 +459,8 @@ class RichPromptToolkitUI:
 
     def _sync_header(self, *, force_render: bool) -> None:
         changed = self._renderer.update_header(**self._header.as_renderer_payload())
-        # Print the header block once at startup; updates are reflected in live regions.
-        self._renderer.render_header_if_changed(force=force_render)
+        if changed or force_render:
+            self._renderer.refresh_frame(force=True)
 
     def _apply_info_to_header(self, data: dict) -> None:
         if not isinstance(data, dict):

@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import time
+from collections import deque
 from typing import Any, Mapping
 
 from rich import box
-from rich.console import Console, Group
+from rich.console import Console, Group, RenderableType
 from rich.live import Live
 from rich.markdown import Markdown
-from rich.table import Column
-from rich.table import Table
+from rich.table import Column, Table
 from rich.text import Text
 
 from .styles import console as default_console
@@ -25,19 +25,22 @@ class RichRenderer:
         *,
         output_console: Console | None = None,
         render_interval: float = 0.08,
+        body_history_limit: int = 200,
     ) -> None:
         self._console = output_console or default_console
         self._render_interval = max(render_interval, 0.01)
+        self._body_entries: deque[RenderableType] = deque(maxlen=max(body_history_limit, 20))
+        self._history_dropped = 0
+
         self._live: Live | None = None
-        self._last_render_time = 0.0
+        self._live_suspended = False
         self._locked_for_input = False
+        self._last_render_time = 0.0
+
         self._thinking_text = ""
         self._content_text = ""
-        self._last_status: tuple[str, str] = ("", "")
         self._header_state: dict[str, Any] = {}
-        self._header_signature: tuple[Any, ...] = ()
         self._header_renderable = self._build_header_renderable()
-        self._header_printed = False
 
     def render_banner(self) -> None:
         self._console.print("=" * 60, style="muted")
@@ -45,6 +48,68 @@ class RichRenderer:
         self._console.print("Enter submits | /aa toggles auto-approve | quit exits", style="muted")
         self._console.print("=" * 60, style="muted")
         self._console.print()
+
+    def start_live_session(self) -> None:
+        if self._live is not None:
+            self.refresh_frame(force=True)
+            return
+        self._live_suspended = False
+        self._live = Live(
+            self._build_frame(),
+            console=self._console,
+            auto_refresh=True,
+            refresh_per_second=8,
+            vertical_overflow="crop",
+            transient=False,
+        )
+        self._live.start()
+        self.refresh_frame(force=True)
+
+    def stop_live_session(self) -> None:
+        if self._live is None:
+            self._live_suspended = False
+            return
+        try:
+            self._live.stop()
+        except Exception:
+            pass
+        self._live = None
+        self._live_suspended = False
+
+    def suspend_live_session(self) -> None:
+        self._locked_for_input = True
+        if self._live is None:
+            self._live_suspended = True
+            return
+        try:
+            self._live.stop()
+        except Exception:
+            pass
+        self._live = None
+        self._live_suspended = True
+
+    def resume_live_session(self) -> None:
+        self._locked_for_input = False
+        if not self._live_suspended and self._live is None:
+            return
+        self._live_suspended = False
+        if self._live is None:
+            self._live = Live(
+                self._build_frame(),
+                console=self._console,
+                auto_refresh=True,
+                refresh_per_second=8,
+                vertical_overflow="crop",
+                transient=False,
+            )
+            self._live.start()
+        self.refresh_frame(force=True)
+
+    def lock_for_input(self) -> None:
+        self.suspend_live_session()
+
+    def unlock_for_input(self) -> None:
+        self.resume_live_session()
 
     def update_header(self, **header_updates: Any) -> bool:
         """Merge header state and return True when values changed."""
@@ -55,60 +120,49 @@ class RichRenderer:
                 changed = True
         if changed:
             self._header_renderable = self._build_header_renderable()
-            if self._live is not None and not self._locked_for_input:
-                self._render_live(force=True)
         return changed
 
-    def render_header_if_changed(self, *, force: bool = False) -> None:
-        """
-        Render the scrollback header once at startup unless explicitly forced.
+    def refresh_frame(self, *, force: bool = False) -> None:
+        if self._live is None or self._locked_for_input:
+            return
+        now = time.monotonic()
+        if not force and now - self._last_render_time < self._render_interval:
+            return
+        self._last_render_time = now
+        self._live.update(self._build_frame(), refresh=True)
 
-        We avoid printing a new header panel for every state transition.
-        """
-        signature = self._header_signature_tuple()
-        if not force and self._header_printed:
-            self._header_signature = signature
-            return
-        if not force and signature == self._header_signature and self._header_printed:
-            return
-        self._header_signature = signature
-        self._console.print(self._header_renderable)
-        self._header_printed = True
+    def render_header_if_changed(self, *, force: bool = False) -> None:
+        """Backward compatible no-print shim for prior renderer contract."""
+        self.refresh_frame(force=force)
+
+    def append_event_line(
+        self,
+        kind: str,
+        text: str,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        if metadata and "renderable" in metadata:
+            renderable = metadata["renderable"]
+        else:
+            renderable = self._format_event_line(kind, text)
+        self._append_body_entry(renderable)
+        self.refresh_frame(force=False)
 
     def render_status(self, status: str, message: str = "") -> None:
         normalized = (status or "idle").strip().lower()
-        key = (normalized, message or "")
-        if key == self._last_status:
-            return
-        self._last_status = key
-        style = state_style(normalized)
-        if message:
-            self._console.print(f"[{style}]state={normalized}[/] [muted]- {message}[/]")
-        else:
-            self._console.print(f"[{style}]state={normalized}[/]")
-
-    def lock_for_input(self) -> None:
-        self._locked_for_input = True
-        self._stop_live()
-
-    def unlock_for_input(self) -> None:
-        self._locked_for_input = False
+        self.update_header(state=normalized)
+        self.refresh_frame(force=False)
 
     def clear_stream_visual_state(self) -> None:
         """Clear transient stream visuals before modal input flows."""
-        self._stop_live()
         self._thinking_text = ""
         self._content_text = ""
+        self.refresh_frame(force=True)
 
     def update_stream(self, *, thinking: str, content: str) -> None:
-        if self._locked_for_input:
-            return
         self._thinking_text = thinking
         self._content_text = content
-        if not thinking and not content:
-            return
-        self._ensure_live()
-        self._render_live(force=False)
+        self.refresh_frame(force=False)
 
     def finalize_response(
         self,
@@ -117,18 +171,13 @@ class RichRenderer:
         content: str,
         empty_marker: bool = False,
     ) -> None:
-        self._thinking_text = thinking
-        self._content_text = content
-        self._render_live(force=True)
-        self._stop_live()
-
         normalized_thinking = thinking.strip()
         normalized_content = content.strip()
         if self._is_reasoning_duplicate(normalized_thinking, normalized_content):
             normalized_thinking = ""
 
         if normalized_thinking:
-            self._console.print(
+            self._append_body_entry(
                 panel(
                     Text(normalized_thinking, style="thinking"),
                     title="Reasoning",
@@ -141,18 +190,17 @@ class RichRenderer:
                 if self._looks_like_markdown(normalized_content)
                 else Text(normalized_content, style="agent.text")
             )
-            self._console.print(panel(body, title="Assistant", border_style="agent.border"))
+            self._append_body_entry(panel(body, title="Assistant", border_style="agent.border"))
         elif empty_marker:
-            self._console.print(
+            self._append_body_entry(
                 panel(Text("[Empty pass]", style="muted"), title="Assistant", border_style="muted")
             )
 
-        self._console.print()
         self._thinking_text = ""
         self._content_text = ""
+        self.refresh_frame(force=True)
 
     def render_tool_confirmation(self, tool_name: str, parameters: Mapping[str, Any]) -> None:
-        self._stop_live()
         table = Table(box=None, show_header=False, padding=(0, 1))
         table.add_column("k", style="muted", no_wrap=True)
         table.add_column("v", style="agent.text")
@@ -164,20 +212,21 @@ class RichRenderer:
                 table.add_row(str(key), text)
         else:
             table.add_row("params", "(none)")
-        self._console.print(
+        self._append_body_entry(
             panel(
                 Group(
                     Text(f"Tool request: {tool_name}", style="tool"),
-                    Text("Select Yes, Yes+Auto, or No in the confirmation dialog.", style="muted"),
+                    Text("Respond with y (yes), a (yes + auto), or n (reject).", style="muted"),
                     table,
                 ),
                 title="Tool Confirmation",
                 border_style="tool",
             )
         )
+        self.refresh_frame(force=True)
 
     def render_tool_start(self, tool_name: str) -> None:
-        self._console.print(f"[tool]▶ {tool_name}[/]")
+        self.append_event_line("tool", f"{tool_name}")
 
     def render_tool_output_preview(
         self,
@@ -185,14 +234,16 @@ class RichRenderer:
         success: bool,
         output: Any = None,
         error: Any = None,
+        full_output_available: bool = False,
     ) -> None:
         if output is not None and output != "":
             text = str(output)
             summary = text if len(text) <= 160 else f"{text[:160]}... ({len(text)} chars)"
-            style = "success" if success else "error"
-            self._console.print(f"[{style}]  → {summary}[/{style}]")
+            if full_output_available:
+                summary = f"{summary} [preview truncated; full output available]"
+            self.append_event_line("success" if success else "error", f"{summary}")
         if not success and error:
-            self._console.print(f"[error]  ✗ {error}[/]")
+            self.append_event_line("error", str(error))
 
     def render_tool_output_full(
         self,
@@ -208,54 +259,47 @@ class RichRenderer:
                 f"\n\n[truncated: omitted {omitted_chars} chars]",
                 style="warning",
             )
-        self._console.print(
+        self._append_body_entry(
             panel(
                 body,
                 title=f"Tool Output: {tool_name}",
                 border_style="tool",
             )
         )
+        self.refresh_frame(force=True)
+
+    def render_tool_progress(self, *, tool_name: str, progress: Any, message: str) -> None:
+        label = f"{tool_name} progress"
+        if progress is not None:
+            label = f"{label} {progress}%"
+        if message:
+            label = f"{label}: {message}"
+        self.append_event_line("muted", label)
 
     def render_tool_complete(self, *, tool_name: str, success: bool, duration: float) -> None:
         style = "success" if success else "error"
         symbol = "✓" if success else "✗"
-        self._console.print(f"[{style}]  {symbol} {tool_name} ({duration:.2f}s)[/{style}]")
+        self.append_event_line(style, f"{symbol} {tool_name} ({duration:.2f}s)")
 
     def render_warning(self, message: str) -> None:
-        self._console.print(f"[warning]⚠ {message}[/]")
+        self.append_event_line("warning", message)
 
     def render_error(self, message: str, *, recovered: bool = False) -> None:
         suffix = " (recovered)" if recovered else ""
-        self._console.print(f"[error]✗ {message}{suffix}[/]")
+        self.append_event_line("error", f"{message}{suffix}")
 
     def render_info(self, message: str) -> None:
-        self._console.print(f"[info]ℹ {message}[/]")
+        self.append_event_line("info", message)
 
     def shutdown(self) -> None:
-        self._stop_live()
+        self.stop_live_session()
 
-    def _ensure_live(self) -> None:
-        if self._live is not None:
-            return
-        self._live = Live(
-            Group(self._header_renderable, panel(Text("", style="agent.text"), title="Assistant")),
-            console=self._console,
-            refresh_per_second=8,
-            vertical_overflow="ellipsis",
-            transient=True,
-        )
-        self._live.start()
+    def _build_frame(self):
+        return Group(self._header_renderable, self._build_body_panel())
 
-    def _render_live(self, *, force: bool) -> None:
-        if self._live is None:
-            return
-        now = time.monotonic()
-        if not force and now - self._last_render_time < self._render_interval:
-            return
-        self._last_render_time = now
+    def _build_body_panel(self):
+        renderables: list[RenderableType] = list(self._body_entries)
 
-        renderables = []
-        renderables.append(self._header_renderable)
         thinking = self._thinking_text.strip()
         content = self._content_text.strip()
         if thinking:
@@ -265,19 +309,34 @@ class RichRenderer:
         if content:
             body = Markdown(content) if self._looks_like_markdown(content) else Text(content, style="agent.text")
             renderables.append(panel(body, title="Assistant", border_style="agent.border"))
+
         if not renderables:
-            renderables.append(panel(Text("", style="agent.text"), title="Assistant"))
+            renderables.append(Text("Waiting for input...", style="muted"))
 
-        self._live.update(Group(*renderables))
+        title = "Session"
+        if self._history_dropped > 0:
+            title = f"Session (history capped, dropped={self._history_dropped})"
+        return panel(Group(*renderables), title=title, border_style="muted")
 
-    def _stop_live(self) -> None:
-        if self._live is None:
-            return
-        try:
-            self._live.stop()
-        except Exception:
-            pass
-        self._live = None
+    def _append_body_entry(self, renderable: RenderableType) -> None:
+        if self._body_entries.maxlen and len(self._body_entries) >= self._body_entries.maxlen:
+            self._history_dropped += 1
+        self._body_entries.append(renderable)
+
+    def _format_event_line(self, kind: str, text: str) -> Text:
+        normalized = (kind or "info").strip().lower()
+        style_map = {
+            "info": ("info", "ℹ "),
+            "warning": ("warning", "⚠ "),
+            "error": ("error", "✗ "),
+            "tool": ("tool", "▶ "),
+            "success": ("success", "✓ "),
+            "assistant": ("agent.text", ""),
+            "thinking": ("thinking", ""),
+            "muted": ("muted", ""),
+        }
+        style, prefix = style_map.get(normalized, ("agent.text", ""))
+        return Text(f"{prefix}{text}", style=style)
 
     @staticmethod
     def _looks_like_markdown(text: str) -> bool:
@@ -329,16 +388,3 @@ class RichRenderer:
             f"auto={auto_text}",
         )
         return panel(table, title="Status", border_style="muted")
-
-    def _header_signature_tuple(self) -> tuple[Any, ...]:
-        header = self._header_state
-        return (
-            header.get("provider"),
-            header.get("model"),
-            header.get("state"),
-            bool(header.get("auto_confirm", False)),
-            int(header.get("total_tokens", 0) or 0),
-            int(header.get("context_limit", 0) or 0),
-            int(header.get("message_count", 0) or 0),
-            int(header.get("loaded_files_count", 0) or 0),
-        )

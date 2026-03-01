@@ -9,7 +9,7 @@ from typing import Sequence
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.patch_stdout import patch_stdout
-from prompt_toolkit.shortcuts import button_dialog, radiolist_dialog
+from prompt_toolkit.shortcuts import radiolist_dialog
 
 logger = logging.getLogger("RichInputHandler")
 
@@ -35,33 +35,46 @@ class RichInputHandler:
         parameters: dict,
         timeout: float = 20.0,
     ) -> str | None:
-        """Return one of: approve, approve_auto, reject, or None (closed)."""
-        dialog_text = (
-            f"Execute tool: {tool_name}\n\n"
-            "Choose an action (mouse click or keyboard Tab/Enter):\n\n"
-            f"Parameters:\n{self._format_parameters_for_dialog(parameters)}"
+        """Return one of: approve, approve_auto, reject."""
+        _ = parameters  # Parameters are displayed in the Rich confirmation panel.
+        prompt_text = (
+            f"Approve tool '{tool_name}'? [y]es / [a]uto / [n]o > "
         )
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(timeout, 0.1)
+        decision_map = {
+            "y": "approve",
+            "yes": "approve",
+            "a": "approve_auto",
+            "aa": "approve_auto",
+            "auto": "approve_auto",
+            "n": "reject",
+            "no": "reject",
+            "r": "reject",
+            "reject": "reject",
+        }
         try:
-            async with self._prompt_lock:
-                with patch_stdout():
-                    return await asyncio.wait_for(
-                        button_dialog(
-                            title="Tool Execution",
-                            text=dialog_text,
-                            buttons=[
-                                ("Yes", "approve"),
-                                ("Yes + Auto-Approve Edits", "approve_auto"),
-                                ("No (Return Control)", "reject"),
-                            ],
-                        ).run_async(),
-                        timeout=timeout,
+            while True:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    logger.warning(
+                        "Confirmation timed out for %s; rejecting by default.",
+                        tool_name,
                     )
+                    return "reject"
+                answer = await asyncio.wait_for(self.prompt(prompt_text), timeout=remaining)
+                normalized = answer.strip().lower()
+                if normalized in decision_map:
+                    return decision_map[normalized]
+                print("Invalid choice. Use y, a, or n.")
         except asyncio.TimeoutError:
             logger.warning(
-                "Confirmation dialog timed out for %s; falling back to text prompt.",
+                "Confirmation timed out for %s; rejecting by default.",
                 tool_name,
             )
-            return await self.prompt_confirmation_text(tool_name)
+            return "reject"
+        except (EOFError, KeyboardInterrupt):
+            return "reject"
         except Exception as exc:
             logger.error("Confirmation dialog error: %s", exc, exc_info=True)
             return "reject"
@@ -82,31 +95,6 @@ class RichInputHandler:
             if normalized in {"n", "no"}:
                 return False
             print("Invalid choice. Use y or n.")
-
-    async def prompt_confirmation_text(self, tool_name: str) -> str:
-        """Fallback text confirmation prompt."""
-        print(
-            f"\n[Approval Fallback] {tool_name}\n"
-            "Enter: y=approve, a=approve+auto, n=reject"
-        )
-        choices = {
-            "y": "approve",
-            "yes": "approve",
-            "a": "approve_auto",
-            "aa": "approve_auto",
-            "n": "reject",
-            "no": "reject",
-            "r": "reject",
-        }
-        while True:
-            try:
-                answer = await self.prompt("(y/a/n) > ")
-            except (EOFError, KeyboardInterrupt):
-                return "reject"
-            choice = answer.strip().lower()
-            if choice in choices:
-                return choices[choice]
-            print("Invalid choice. Use y, a, or n.")
 
     async def select_with_arrows(
         self,
