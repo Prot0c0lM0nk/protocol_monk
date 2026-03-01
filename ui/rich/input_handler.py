@@ -66,6 +66,23 @@ class RichInputHandler:
             logger.error("Confirmation dialog error: %s", exc, exc_info=True)
             return "reject"
 
+    async def confirm_yes_no(self, prompt_text: str, *, default: bool = False) -> bool:
+        """Simple text confirmation prompt for deferred UI actions."""
+        suffix = " [Y/n]" if default else " [y/N]"
+        while True:
+            try:
+                answer = await self.prompt(f"{prompt_text}{suffix} ")
+            except (EOFError, KeyboardInterrupt):
+                return default
+            normalized = answer.strip().lower()
+            if not normalized:
+                return default
+            if normalized in {"y", "yes"}:
+                return True
+            if normalized in {"n", "no"}:
+                return False
+            print("Invalid choice. Use y or n.")
+
     async def prompt_confirmation_text(self, tool_name: str) -> str:
         """Fallback text confirmation prompt."""
         print(

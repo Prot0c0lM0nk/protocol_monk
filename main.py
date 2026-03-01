@@ -32,6 +32,14 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("Bootstrap")
+RICH_UI_NOISY_LOGGERS = (
+    "AgentService",
+    "ToolExecutor",
+    "LogicLoops",
+    "EventBus",
+    "ContextCoordinator",
+    "RichPromptToolkitUI",
+)
 
 
 def _resolve_ui_backend(requested: str) -> tuple[str, str]:
@@ -41,6 +49,16 @@ def _resolve_ui_backend(requested: str) -> tuple[str, str]:
     if requested_ui == "textual":
         return "rich", "UI backend 'textual' is unsupported. Falling back to Rich."
     return "rich", f"Unknown UI backend '{requested_ui}'. Falling back to Rich."
+
+
+def _apply_rich_log_suppression(ui_backend: str, root_level: int) -> None:
+    """Reduce noisy logger output in Rich mode for non-debug runs."""
+    if ui_backend != "rich":
+        return
+    if root_level <= logging.DEBUG:
+        return
+    for logger_name in RICH_UI_NOISY_LOGGERS:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
 def _validate_context_tracking_tools(registry: ToolRegistry) -> tuple[list[str], list[str]]:
@@ -168,6 +186,7 @@ async def main():
 
         requested_ui_backend = os.getenv("PROTOCOL_MONK_UI", "rich")
         ui_backend, ui_note = _resolve_ui_backend(requested_ui_backend)
+        _apply_rich_log_suppression(ui_backend, root_level)
         if ui_note:
             logger.warning(ui_note)
             await bus.emit(
