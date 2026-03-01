@@ -7,7 +7,6 @@ import logging
 import time
 import uuid
 from collections import deque
-from dataclasses import asdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,24 +18,6 @@ from protocol_monk.ui.rich.input_handler import RichInputHandler
 from protocol_monk.ui.rich.renderer import RichRenderer
 
 logger = logging.getLogger("RichPromptToolkitUI")
-
-
-@dataclass
-class HeaderState:
-    provider: str
-    model: str
-    state: str
-    state_message: str
-    auto_confirm: bool
-    total_tokens: int
-    context_limit: int
-    message_count: int
-    loaded_files_count: int
-
-    def as_renderer_payload(self) -> dict[str, Any]:
-        payload = asdict(self)
-        payload.pop("state_message", None)
-        return payload
 
 
 @dataclass
@@ -53,6 +34,8 @@ class RichPromptToolkitUI:
     Rich runtime UI backed by prompt-toolkit input.
 
     Behavior intentionally mirrors the CLI fallback for command and approval semantics.
+    Uses scrollback-native approach - content prints directly to terminal for natural
+    scrollback, with transient streaming panel during AI responses.
     """
 
     LARGE_OUTPUT_CHAR_THRESHOLD = 160
@@ -82,17 +65,6 @@ class RichPromptToolkitUI:
         self._confirmation_tasks: dict[str, asyncio.Task] = {}
         self._pending_tool_outputs: deque[ToolOutputRecord] = deque()
         self._tool_progress_seen: dict[str, tuple[Any, str]] = {}
-        self._header = HeaderState(
-            provider=str(getattr(settings, "llm_provider", "") or ""),
-            model=str(getattr(settings, "active_model_name", "") or ""),
-            state="idle",
-            state_message="",
-            auto_confirm=self._auto_confirm,
-            total_tokens=0,
-            context_limit=int(getattr(settings, "context_window_limit", 0) or 0),
-            message_count=0,
-            loaded_files_count=0,
-        )
 
         self._status_symbols = {
             "idle": "idle",
@@ -130,14 +102,11 @@ class RichPromptToolkitUI:
             EventTypes.PROVIDER_SWITCHED,
             self._handle_provider_switched,
         )
-        self._sync_header(force_render=False)
         logger.info("RichPromptToolkitUI started and listening")
 
     async def run(self) -> None:
         self._running = True
         self._renderer.render_banner()
-        self._renderer.start_live_session()
-        self._sync_header(force_render=True)
 
         try:
             while self._running:
@@ -152,15 +121,14 @@ class RichPromptToolkitUI:
 
                 prompt = self._get_prompt()
                 try:
-                    self._renderer.suspend_live_session()
-                    try:
-                        user_text = await self._input_handler.prompt(prompt)
-                    finally:
-                        self._renderer.resume_live_session()
+                    self._renderer.lock_for_input()
+                    user_text = await self._input_handler.prompt(prompt)
                 except (EOFError, KeyboardInterrupt):
                     self._renderer.render_info("Goodbye!")
                     self._running = False
                     break
+                finally:
+                    self._renderer.unlock_for_input()
 
                 normalized = user_text.strip()
                 if not normalized:
@@ -177,7 +145,7 @@ class RichPromptToolkitUI:
 
                 await self._emit_user_input(normalized)
         finally:
-            self._renderer.stop_live_session()
+            self._renderer.shutdown()
 
     async def stop(self) -> None:
         self._running = False
@@ -241,9 +209,6 @@ class RichPromptToolkitUI:
             status = str(data.get("status", "idle"))
             message = str(data.get("message", "") or "")
         self._current_state = status
-        self._header.state = status
-        self._header.state_message = message
-        self._sync_header(force_render=False)
 
     async def _handle_stream_chunk(self, data: dict) -> None:
         chunk = data.get("chunk", "")
@@ -301,15 +266,14 @@ class RichPromptToolkitUI:
     ) -> None:
         self._renderer.clear_stream_visual_state()
         self._renderer.render_tool_confirmation(tool_name, parameters)
-        self._renderer.suspend_live_session()
+        self._renderer.lock_for_input()
         try:
             result = await self._input_handler.confirm_tool_execution(
                 tool_name=tool_name,
                 parameters=parameters,
             )
         finally:
-            self._renderer.resume_live_session()
-            self._renderer.refresh_frame(force=True)
+            self._renderer.unlock_for_input()
 
         if result == "approve":
             await self._emit_tool_confirmation(tool_call_id, "approved")
@@ -397,40 +361,38 @@ class RichPromptToolkitUI:
         self._renderer.render_warning(message)
 
     async def _handle_info(self, data: dict) -> None:
-        self._apply_info_to_header(data)
-        if not self._verbose_ui:
-            return
-        message = data.get("message", str(data))
-        self._renderer.render_info(message)
+        if self._verbose_ui:
+            message = data.get("message", str(data))
+            self._renderer.render_info(message)
 
     async def _handle_auto_confirm_changed(self, data: dict) -> None:
         self._auto_confirm = bool(data.get("auto_confirm", False))
-        self._header.auto_confirm = self._auto_confirm
-        self._sync_header(force_render=False)
         state = "enabled" if self._auto_confirm else "disabled"
         self._renderer.render_info(f"Auto-confirm {state}")
 
     async def _handle_model_switched(self, data: dict) -> None:
         if not isinstance(data, dict):
             return
-        self._header.model = str(
+        model = str(
             data.get("model")
             or data.get("active_model")
             or data.get("name")
-            or self._header.model
+            or ""
         )
-        self._sync_header(force_render=False)
+        if model:
+            self._renderer.render_info(f"Model switched to: {model}")
 
     async def _handle_provider_switched(self, data: dict) -> None:
         if not isinstance(data, dict):
             return
-        self._header.provider = str(
+        provider = str(
             data.get("provider")
             or data.get("llm_provider")
             or data.get("name")
-            or self._header.provider
+            or ""
         )
-        self._sync_header(force_render=False)
+        if provider:
+            self._renderer.render_info(f"Provider switched to: {provider}")
 
     async def _drain_tool_output_queue(self) -> None:
         while self._pending_tool_outputs and self._current_state == "idle":
@@ -438,15 +400,14 @@ class RichPromptToolkitUI:
             self._renderer.render_info(
                 f"Large tool output available: {record.tool_name} ({record.output_chars} chars)"
             )
-            self._renderer.suspend_live_session()
+            self._renderer.lock_for_input()
             try:
                 show_full = await self._input_handler.confirm_yes_no(
                     f"Show full output for {record.tool_name}?",
                     default=False,
                 )
             finally:
-                self._renderer.resume_live_session()
-                self._renderer.refresh_frame(force=True)
+                self._renderer.unlock_for_input()
             if not show_full:
                 continue
             shown, truncated, omitted = self._apply_output_cap(record.output_text)
@@ -456,50 +417,6 @@ class RichPromptToolkitUI:
                 truncated=truncated,
                 omitted_chars=omitted,
             )
-
-    def _sync_header(self, *, force_render: bool) -> None:
-        changed = self._renderer.update_header(**self._header.as_renderer_payload())
-        if changed or force_render:
-            self._renderer.refresh_frame(force=True)
-
-    def _apply_info_to_header(self, data: dict) -> None:
-        if not isinstance(data, dict):
-            return
-        message = str(data.get("message", "") or "")
-        payload = data.get("data") if isinstance(data.get("data"), dict) else {}
-        changed = False
-
-        if message in {"Runtime configured", "Provider configured"}:
-            provider = payload.get("provider")
-            model = payload.get("active_model")
-            if provider is not None and str(provider) != self._header.provider:
-                self._header.provider = str(provider)
-                changed = True
-            if model is not None and str(model) != self._header.model:
-                self._header.model = str(model)
-                changed = True
-        elif message == "Context updated":
-            total_tokens = int(payload.get("total_tokens", self._header.total_tokens) or 0)
-            message_count = int(payload.get("message_count", self._header.message_count) or 0)
-            loaded_files = int(
-                payload.get("loaded_files_count", self._header.loaded_files_count) or 0
-            )
-            context_limit = int(payload.get("context_limit", self._header.context_limit) or 0)
-            if total_tokens != self._header.total_tokens:
-                self._header.total_tokens = total_tokens
-                changed = True
-            if message_count != self._header.message_count:
-                self._header.message_count = message_count
-                changed = True
-            if loaded_files != self._header.loaded_files_count:
-                self._header.loaded_files_count = loaded_files
-                changed = True
-            if context_limit != self._header.context_limit:
-                self._header.context_limit = context_limit
-                changed = True
-
-        if changed:
-            self._sync_header(force_render=False)
 
     def _normalize_pass_id(self, pass_id: Any) -> str:
         text = str(pass_id).strip() if pass_id is not None else ""

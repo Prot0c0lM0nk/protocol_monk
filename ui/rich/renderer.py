@@ -1,7 +1,15 @@
-"""Rich renderer for streaming, status, and tool event output."""
+"""Rich renderer for streaming, status, and tool event output.
+
+Implements a scrollback-native approach where:
+- Content prints to terminal scrollback naturally
+- Live streaming shows in a transient panel that disappears cleanly
+- Thinking streams in dim+italic, transitions to normal response with separator
+- No header pinned to top (status becomes modal via /status command)
+"""
 
 from __future__ import annotations
 
+import re
 import time
 from collections import deque
 from typing import Any, Mapping
@@ -10,15 +18,194 @@ from rich import box
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
 from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.status import Status
 from rich.table import Column, Table
 from rich.text import Text
 
 from .styles import console as default_console
-from .styles import panel, state_style
+from .styles import THINKING_STYLE, create_monk_panel, panel, state_style
+
+
+class StreamingPanel:
+    """Handles streaming display separately from scrollback.
+
+    Key insight: The panel must produce identical output for both Live updates
+    and final print to ensure clean transition without visual artifacts.
+    """
+
+    def __init__(self, console: Console, render_interval: float = 0.08) -> None:
+        self._console = console
+        self._render_interval = render_interval
+        self._live: Live | None = None
+        self._status: Status | None = None
+        self._thinking: str = ""
+        self._content: str = ""
+        self._last_render_time = 0.0
+        self._started = False
+
+    def start(self) -> None:
+        """Start streaming - show spinner while waiting for first chunk."""
+        self._thinking = ""
+        self._content = ""
+        self._started = True
+        self._status = self._console.status(
+            "[dim]Contemplating...[/]",
+            spinner="dots",
+            spinner_style="monk.border",
+        )
+        self._status.start()
+
+    def on_chunk(self, chunk: str, is_thinking: bool = False) -> None:
+        """Handle incoming chunk - first chunk transitions from spinner to Live."""
+        if not self._started:
+            self.start()
+
+        # Accumulate content
+        if is_thinking:
+            self._thinking += chunk
+        else:
+            self._content += chunk
+
+        # First content: stop spinner, start Live
+        if self._status is not None and (self._thinking.strip() or self._content.strip()):
+            self._status.stop()
+            self._status = None
+            self._live = Live(
+                self._build_panel(),
+                console=self._console,
+                auto_refresh=True,
+                refresh_per_second=12,
+                transient=True,  # Key: panel disappears when Live stops
+            )
+            self._live.start()
+            self._last_render_time = time.monotonic()
+            return
+
+        # Throttled update for subsequent chunks
+        if self._live is not None:
+            now = time.monotonic()
+            if now - self._last_render_time >= self._render_interval:
+                self._live.update(self._build_panel(), refresh=True)
+                self._last_render_time = now
+
+    def finish(self) -> None:
+        """Finish streaming - stop Live and print final panel to scrollback."""
+        # Stop spinner if still running (no content received)
+        if self._status is not None:
+            self._status.stop()
+            self._status = None
+
+        # Stop Live and print the exact same panel to scrollback
+        if self._live is not None:
+            # Final update to flush any throttled content
+            self._live.update(self._build_panel(), refresh=True)
+            self._live.stop()
+            self._live = None
+
+            # Print to scrollback (only if we had content)
+            if self._thinking.strip() or self._content.strip():
+                self._console.print(self._build_panel())
+
+        self._thinking = ""
+        self._content = ""
+        self._started = False
+
+    def clear(self) -> None:
+        """Clear streaming state without printing."""
+        if self._status is not None:
+            self._status.stop()
+            self._status = None
+        if self._live is not None:
+            self._live.stop()
+            self._live = None
+        self._thinking = ""
+        self._content = ""
+        self._started = False
+
+    def _build_panel(self) -> RenderableType:
+        """Build separate panels for thinking and response content."""
+        panels: list[RenderableType] = []
+
+        thinking = self._clean_think_tags(self._thinking).strip()
+        content = self._clean_think_tags(self._content).strip()
+
+        # Deduplicate: if thinking matches content, skip showing thinking
+        if self._is_duplicate(thinking, content):
+            thinking = ""
+
+        # The Cell panel for reasoning (grey border, grey italic text)
+        if thinking:
+            panels.append(
+                Panel(
+                    Text(thinking, style=THINKING_STYLE),
+                    title="The Cell",
+                    title_align="left",
+                    border_style="grey50",
+                    box=box.ROUNDED,
+                    padding=(0, 1),
+                )
+            )
+
+        # Response panel (normal styling)
+        if content:
+            if self._looks_like_markdown(content):
+                body = Markdown(content)
+            else:
+                body = Text(content, style="monk.text")
+            panels.append(
+                Panel(
+                    body,
+                    title="✠ Monk",
+                    title_align="left",
+                    border_style="monk.border",
+                    box=box.ROUNDED,
+                    padding=(0, 1),
+                )
+            )
+
+        if not panels:
+            return Panel(
+                Text("Waiting...", style="muted"),
+                title="✠ Monk",
+                title_align="left",
+                border_style="monk.border",
+                box=box.ROUNDED,
+                padding=(0, 1),
+            )
+
+        return Group(*panels)
+
+    @staticmethod
+    def _is_duplicate(thinking: str, content: str) -> bool:
+        """Check if thinking content duplicates response content."""
+        if not thinking or not content:
+            return False
+        # Normalize for comparison
+        norm_thinking = " ".join(thinking.lower().split())
+        norm_content = " ".join(content.lower().split())
+        return norm_thinking == norm_content
+
+    @staticmethod
+    def _clean_think_tags(text: str) -> str:
+        """Clean up raw XML tags if they leak into the stream."""
+        text = re.sub(r"<think>", "", text)
+        text = re.sub(r"</think>", "\n\n", text)
+        return text
+
+    @staticmethod
+    def _looks_like_markdown(text: str) -> bool:
+        return any(token in text for token in ("```", "#", "*", "_", ">", "- ", "1. "))
 
 
 class RichRenderer:
-    """Render Protocol Monk events in a Rich-first terminal experience."""
+    """Render Protocol Monk events in a Rich-first terminal experience.
+
+    Uses scrollback-native approach:
+    - Content prints directly to terminal for natural scrollback
+    - StreamingPanel handles transient live display during AI response
+    - No persistent header (status available via /status command)
+    """
 
     def __init__(
         self,
@@ -32,137 +219,103 @@ class RichRenderer:
         self._body_entries: deque[RenderableType] = deque(maxlen=max(body_history_limit, 20))
         self._history_dropped = 0
 
-        self._live: Live | None = None
-        self._live_suspended = False
-        self._locked_for_input = False
-        self._last_render_time = 0.0
+        # Streaming panel for live display
+        self._streaming = StreamingPanel(self._console, self._render_interval)
 
-        self._thinking_text = ""
-        self._content_text = ""
-        self._header_state: dict[str, Any] = {}
-        self._header_renderable = self._build_header_renderable()
+        # State tracking
+        self._is_locked = False
+
+    # --- Banner and Lifecycle ---
 
     def render_banner(self) -> None:
-        self._console.print("=" * 60, style="muted")
-        self._console.print("Protocol Monk Rich UI", style="info")
-        self._console.print("Enter submits | /aa toggles auto-approve | quit exits", style="muted")
-        self._console.print("=" * 60, style="muted")
+        """Print the startup banner to scrollback."""
+        self._console.print()
+        self._console.print("═" * 50, style="monk.border")
+        self._console.print("  Protocol Monk", style="monk.text")
+        self._console.print("  Enter submits | /aa toggles auto-approve | quit exits", style="muted")
+        self._console.print("═" * 50, style="monk.border")
         self._console.print()
 
     def start_live_session(self) -> None:
-        if self._live is not None:
-            self.refresh_frame(force=True)
-            return
-        self._live_suspended = False
-        self._live = Live(
-            self._build_frame(),
-            console=self._console,
-            auto_refresh=True,
-            refresh_per_second=8,
-            vertical_overflow="crop",
-            transient=False,
-        )
-        self._live.start()
-        self.refresh_frame(force=True)
+        """No-op for compatibility. Scrollback is always active."""
+        pass
 
     def stop_live_session(self) -> None:
-        if self._live is None:
-            self._live_suspended = False
-            return
-        try:
-            self._live.stop()
-        except Exception:
-            pass
-        self._live = None
-        self._live_suspended = False
+        """Stop any active streaming."""
+        self._streaming.clear()
 
     def suspend_live_session(self) -> None:
-        self._locked_for_input = True
-        if self._live is None:
-            self._live_suspended = True
-            return
-        try:
-            self._live.stop()
-        except Exception:
-            pass
-        self._live = None
-        self._live_suspended = True
+        """Lock for input - clears streaming state."""
+        self._is_locked = True
+        self._streaming.clear()
 
     def resume_live_session(self) -> None:
-        self._locked_for_input = False
-        if not self._live_suspended and self._live is None:
-            return
-        self._live_suspended = False
-        if self._live is None:
-            self._live = Live(
-                self._build_frame(),
-                console=self._console,
-                auto_refresh=True,
-                refresh_per_second=8,
-                vertical_overflow="crop",
-                transient=False,
-            )
-            self._live.start()
-        self.refresh_frame(force=True)
+        """Unlock after input."""
+        self._is_locked = False
 
     def lock_for_input(self) -> None:
-        self.suspend_live_session()
+        """Call before asking for user input."""
+        self._is_locked = True
+        self._streaming.clear()
 
     def unlock_for_input(self) -> None:
-        self.resume_live_session()
-
-    def update_header(self, **header_updates: Any) -> bool:
-        """Merge header state and return True when values changed."""
-        changed = False
-        for key, value in header_updates.items():
-            if self._header_state.get(key) != value:
-                self._header_state[key] = value
-                changed = True
-        if changed:
-            self._header_renderable = self._build_header_renderable()
-        return changed
+        """Call after user input is received."""
+        self._is_locked = False
 
     def refresh_frame(self, *, force: bool = False) -> None:
-        if self._live is None or self._locked_for_input:
-            return
-        now = time.monotonic()
-        if not force and now - self._last_render_time < self._render_interval:
-            return
-        self._last_render_time = now
-        self._live.update(self._build_frame(), refresh=True)
+        """No-op for compatibility. No persistent Live display."""
+        pass
 
     def render_header_if_changed(self, *, force: bool = False) -> None:
-        """Backward compatible no-print shim for prior renderer contract."""
-        self.refresh_frame(force=force)
+        """No-op for compatibility. No header to render."""
+        pass
 
-    def append_event_line(
-        self,
-        kind: str,
-        text: str,
-        metadata: Mapping[str, Any] | None = None,
-    ) -> None:
-        if metadata and "renderable" in metadata:
-            renderable = metadata["renderable"]
-        else:
-            renderable = self._format_event_line(kind, text)
-        self._append_body_entry(renderable)
-        self.refresh_frame(force=False)
+    def update_header(self, **header_updates: Any) -> bool:
+        """No-op for compatibility. No header state maintained."""
+        return False
 
-    def render_status(self, status: str, message: str = "") -> None:
-        normalized = (status or "idle").strip().lower()
-        self.update_header(state=normalized)
-        self.refresh_frame(force=False)
+    # --- Streaming ---
 
     def clear_stream_visual_state(self) -> None:
         """Clear transient stream visuals before modal input flows."""
-        self._thinking_text = ""
-        self._content_text = ""
-        self.refresh_frame(force=True)
+        self._streaming.clear()
 
     def update_stream(self, *, thinking: str, content: str) -> None:
-        self._thinking_text = thinking
-        self._content_text = content
-        self.refresh_frame(force=False)
+        """Update streaming display with current buffers."""
+        if self._is_locked:
+            return
+
+        # The app.py sends accumulated buffers, not incremental chunks
+        # We need to update our internal state and trigger a refresh
+        self._streaming._thinking = thinking
+        self._streaming._content = content
+
+        # Ensure streaming is active
+        if not self._streaming._started:
+            self._streaming.start()
+
+        # If we have content and status is still running, transition to Live
+        if self._streaming._status is not None and (thinking.strip() or content.strip()):
+            self._streaming._status.stop()
+            self._streaming._status = None
+            if self._streaming._live is None:
+                self._streaming._live = Live(
+                    self._streaming._build_panel(),
+                    console=self._console,
+                    auto_refresh=True,
+                    refresh_per_second=12,
+                    transient=True,
+                )
+                self._streaming._live.start()
+                self._streaming._last_render_time = time.monotonic()
+            return
+
+        # Throttled update
+        if self._streaming._live is not None:
+            now = time.monotonic()
+            if now - self._streaming._last_render_time >= self._render_interval:
+                self._streaming._live.update(self._streaming._build_panel(), refresh=True)
+                self._streaming._last_render_time = now
 
     def finalize_response(
         self,
@@ -171,62 +324,96 @@ class RichRenderer:
         content: str,
         empty_marker: bool = False,
     ) -> None:
-        normalized_thinking = thinking.strip()
-        normalized_content = content.strip()
-        if self._is_reasoning_duplicate(normalized_thinking, normalized_content):
-            normalized_thinking = ""
+        """Commit the completed response to scrollback.
 
-        if normalized_thinking:
-            self._append_body_entry(
-                panel(
-                    Text(normalized_thinking, style="thinking"),
-                    title="Reasoning",
-                    border_style="muted",
-                )
-            )
-        if normalized_content:
-            body = (
-                Markdown(normalized_content)
-                if self._looks_like_markdown(normalized_content)
-                else Text(normalized_content, style="agent.text")
-            )
-            self._append_body_entry(panel(body, title="Assistant", border_style="agent.border"))
-        elif empty_marker:
-            self._append_body_entry(
-                panel(Text("[Empty pass]", style="muted"), title="Assistant", border_style="muted")
+        Prints the EXACT SAME panel that was shown during streaming,
+        ensuring visual consistency with no artifacts on transition.
+        """
+        # Update streaming state with final content
+        self._streaming._thinking = thinking
+        self._streaming._content = content
+
+        # Stop streaming and print the final panel
+        self._streaming.finish()
+
+        # Handle empty response case
+        if empty_marker and not thinking.strip() and not content.strip():
+            self._console.print(
+                create_monk_panel(Text("[Empty pass]", style="muted"))
             )
 
-        self._thinking_text = ""
-        self._content_text = ""
-        self.refresh_frame(force=True)
+        self._console.print()  # Add spacing after response
+
+    def render_status(self, status: str, message: str = "") -> None:
+        """Render a status message (used for state changes)."""
+        normalized = (status or "idle").strip().lower()
+        style = state_style(normalized)
+        text = f"[{style}]{normalized}[/{style}]"
+        if message:
+            text = f"{text}: {message}"
+        self._console.print(text)
+
+    # --- Event Lines (for tool output, messages, etc.) ---
+
+    def append_event_line(
+        self,
+        kind: str,
+        text: str,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Append an event line to scrollback and print immediately."""
+        if metadata and "renderable" in metadata:
+            renderable = metadata["renderable"]
+        else:
+            renderable = self._format_event_line(kind, text)
+        self._console.print(renderable)
 
     def render_tool_confirmation(self, tool_name: str, parameters: Mapping[str, Any]) -> None:
-        table = Table(box=None, show_header=False, padding=(0, 1))
-        table.add_column("k", style="muted", no_wrap=True)
-        table.add_column("v", style="agent.text")
-        if parameters:
-            for key, value in parameters.items():
-                text = str(value)
-                if len(text) > 240:
-                    text = f"{text[:240]}... [truncated {len(text) - 240} chars]"
-                table.add_row(str(key), text)
-        else:
-            table.add_row("params", "(none)")
-        self._append_body_entry(
-            panel(
-                Group(
-                    Text(f"Tool request: {tool_name}", style="tool"),
-                    Text("Respond with y (yes), a (yes + auto), or n (reject).", style="muted"),
-                    table,
-                ),
-                title="Tool Confirmation",
-                border_style="tool",
+        """Render a tool confirmation request panel."""
+        self._streaming.clear()
+
+        # Separate simple and complex params
+        simple_params = {}
+        complex_params = {}
+        for key, value in parameters.items():
+            text = str(value)
+            if "\n" in text or len(text) > 60:
+                complex_params[key] = text
+            else:
+                simple_params[key] = value
+
+        items: list[RenderableType] = [
+            Text(f"I must invoke: {tool_name}", style="monk.text"),
+            Text(""),
+        ]
+
+        if simple_params:
+            table = Table(box=None, show_header=False, padding=(0, 2))
+            table.add_column("Key", style="user.text")
+            table.add_column("Val", style="tech.cyan")
+            for k, v in simple_params.items():
+                table.add_row(f"• {k}", str(v))
+            items.append(table)
+            items.append(Text(""))
+
+        for k, v in complex_params.items():
+            items.append(Text(f"• {k}:", style="user.text"))
+            items.append(Panel(Text(v, style="muted"), border_style="dim"))
+            items.append(Text(""))
+
+        panel_content = Group(*items)
+        self._console.print(
+            Panel(
+                panel_content,
+                title="[tech.cyan]🛠 Sacred Action[/]",
+                border_style="tech.cyan",
+                box=box.ROUNDED,
             )
         )
-        self.refresh_frame(force=True)
 
     def render_tool_start(self, tool_name: str) -> None:
-        self.append_event_line("tool", f"{tool_name}")
+        """Print a tool start indicator."""
+        self._console.print(f"  [tool]▶ {tool_name}[/]")
 
     def render_tool_output_preview(
         self,
@@ -236,14 +423,18 @@ class RichRenderer:
         error: Any = None,
         full_output_available: bool = False,
     ) -> None:
+        """Print a brief tool output preview."""
+        style = "success" if success else "error"
+        symbol = "✓" if success else "✗"
+
         if output is not None and output != "":
             text = str(output)
             summary = text if len(text) <= 160 else f"{text[:160]}... ({len(text)} chars)"
             if full_output_available:
                 summary = f"{summary} [preview truncated; full output available]"
-            self.append_event_line("success" if success else "error", f"{summary}")
+            self._console.print(f"  [{style}]{symbol}[/] [dim]{summary}[/]")
         if not success and error:
-            self.append_event_line("error", str(error))
+            self._console.print(f"  [error]✗ {error}[/]")
 
     def render_tool_output_full(
         self,
@@ -253,77 +444,63 @@ class RichRenderer:
         truncated: bool = False,
         omitted_chars: int = 0,
     ) -> None:
-        body = Text(output_text, style="agent.text")
+        """Print the full tool output in a panel."""
+        body = Text(output_text, style="monk.text")
         if truncated and omitted_chars > 0:
             body.append(
                 f"\n\n[truncated: omitted {omitted_chars} chars]",
                 style="warning",
             )
-        self._append_body_entry(
+        self._console.print(
             panel(
                 body,
                 title=f"Tool Output: {tool_name}",
                 border_style="tool",
             )
         )
-        self.refresh_frame(force=True)
 
     def render_tool_progress(self, *, tool_name: str, progress: Any, message: str) -> None:
+        """Print a tool progress update."""
         label = f"{tool_name} progress"
         if progress is not None:
             label = f"{label} {progress}%"
         if message:
             label = f"{label}: {message}"
-        self.append_event_line("muted", label)
+        self._console.print(f"  [muted]{label}[/]")
 
     def render_tool_complete(self, *, tool_name: str, success: bool, duration: float) -> None:
+        """Print a tool completion indicator."""
         style = "success" if success else "error"
         symbol = "✓" if success else "✗"
-        self.append_event_line(style, f"{symbol} {tool_name} ({duration:.2f}s)")
+        self._console.print(f"  [{style}]{symbol} {tool_name} ({duration:.2f}s)[/]")
 
     def render_warning(self, message: str) -> None:
-        self.append_event_line("warning", message)
+        """Print a warning message."""
+        self._console.print(f"[warning]Warning:[/] [monk.text]{message}[/]")
 
     def render_error(self, message: str, *, recovered: bool = False) -> None:
+        """Print an error message."""
         suffix = " (recovered)" if recovered else ""
-        self.append_event_line("error", f"{message}{suffix}")
+        self._console.print(f"[error]✗ {message}{suffix}[/]")
 
     def render_info(self, message: str) -> None:
-        self.append_event_line("info", message)
+        """Print an info message."""
+        self._console.print(f"[info]ℹ {message}[/]")
 
     def shutdown(self) -> None:
-        self.stop_live_session()
+        """Clean up resources."""
+        self._streaming.clear()
 
-    def _build_frame(self):
-        return Group(self._header_renderable, self._build_body_panel())
-
-    def _build_body_panel(self):
-        renderables: list[RenderableType] = list(self._body_entries)
-
-        thinking = self._thinking_text.strip()
-        content = self._content_text.strip()
-        if thinking:
-            renderables.append(
-                panel(Text(thinking, style="thinking"), title="Thinking", border_style="muted")
-            )
-        if content:
-            body = Markdown(content) if self._looks_like_markdown(content) else Text(content, style="agent.text")
-            renderables.append(panel(body, title="Assistant", border_style="agent.border"))
-
-        if not renderables:
-            renderables.append(Text("Waiting for input...", style="muted"))
-
-        title = "Session"
-        if self._history_dropped > 0:
-            title = f"Session (history capped, dropped={self._history_dropped})"
-        return panel(Group(*renderables), title=title, border_style="muted")
+    # --- Private Helpers ---
 
     def _append_body_entry(self, renderable: RenderableType) -> None:
+        """Store entry in history (for potential future use)."""
         if self._body_entries.maxlen and len(self._body_entries) >= self._body_entries.maxlen:
             self._history_dropped += 1
         self._body_entries.append(renderable)
 
     def _format_event_line(self, kind: str, text: str) -> Text:
+        """Format an event line with appropriate styling."""
         normalized = (kind or "info").strip().lower()
         style_map = {
             "info": ("info", "ℹ "),
@@ -331,11 +508,11 @@ class RichRenderer:
             "error": ("error", "✗ "),
             "tool": ("tool", "▶ "),
             "success": ("success", "✓ "),
-            "assistant": ("agent.text", ""),
+            "assistant": ("monk.text", ""),
             "thinking": ("thinking", ""),
             "muted": ("muted", ""),
         }
-        style, prefix = style_map.get(normalized, ("agent.text", ""))
+        style, prefix = style_map.get(normalized, ("monk.text", ""))
         return Text(f"{prefix}{text}", style=style)
 
     @staticmethod
@@ -351,40 +528,3 @@ class RichRenderer:
         if not thinking or not content:
             return False
         return cls._normalize_for_dedupe(thinking) == cls._normalize_for_dedupe(content)
-
-    def _build_header_renderable(self):
-        header = self._header_state
-        provider = str(header.get("provider", "?") or "?")
-        model = str(header.get("model", "?") or "?")
-        state = str(header.get("state", "idle") or "idle")
-        auto_confirm = bool(header.get("auto_confirm", False))
-        tokens = int(header.get("total_tokens", 0) or 0)
-        context_limit = int(header.get("context_limit", 0) or 0)
-        message_count = int(header.get("message_count", 0) or 0)
-        loaded_files = int(header.get("loaded_files_count", 0) or 0)
-        usage = f"{tokens}/{context_limit}" if context_limit > 0 else f"{tokens}/?"
-        auto_text = "on" if auto_confirm else "off"
-
-        table = Table(
-            Column("state", style=state_style(state), no_wrap=True),
-            Column("provider", style="info", no_wrap=True),
-            Column("model", style="agent.text", no_wrap=False),
-            Column("context", style="muted", no_wrap=True),
-            Column("messages", style="muted", no_wrap=True),
-            Column("files", style="muted", no_wrap=True),
-            Column("auto", style="tool", no_wrap=True),
-            show_header=False,
-            box=box.MINIMAL,
-            padding=(0, 1),
-            expand=True,
-        )
-        table.add_row(
-            f"state={state}",
-            f"provider={provider}",
-            f"model={model}",
-            f"context={usage}",
-            f"messages={message_count}",
-            f"files={loaded_files}",
-            f"auto={auto_text}",
-        )
-        return panel(table, title="Status", border_style="muted")
