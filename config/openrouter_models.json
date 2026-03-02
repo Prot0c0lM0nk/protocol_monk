@@ -63,16 +63,15 @@
       "user_overrides": {},
       "discovered_at": "2026-02-21T00:00:00"
     },
-    "liquid/lfm2-8b-a1b": {
-      "name": "liquid/lfm2-8b-a1b",
-      "family": "liquid",
+    "qwen/qwen3.5-flash-02-23": {
+      "name": "qwen/qwen3.5-flash-02-23",
+      "family": "qwen",
       "is_cloud": true,
-      "context_window": 32768,
+      "context_window": 500000,
       "supports_thinking": true,
       "supports_tools": true,
       "capabilities": [
-        "completion",
-        "tools"
+        "completion"
       ],
       "parameters": {},
       "user_overrides": {},

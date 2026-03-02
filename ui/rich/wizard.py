@@ -83,7 +83,10 @@ class SetupWizard:
         ]
 
     def _get_model_choices(self, settings: Settings) -> List[WizardChoice]:
-        """Get available model choices from settings."""
+        """Get available model choices from settings.
+
+        Only includes models that support tools, as the app requires function calling.
+        """
         models_config = settings.models_config or {}
         models = models_config.get("models", {})
 
@@ -98,16 +101,19 @@ class SetupWizard:
             ]
 
         choices = []
-        for i, (name, config) in enumerate(models.items()):
-            if i >= 20:  # Limit to 20 models for usability
+        for name, config in models.items():
+            # Skip models that don't support tools (required for function calling)
+            if not config.get("supports_tools", False):
+                continue
+
+            if len(choices) >= 20:  # Limit to 20 models for usability
                 break
 
             # Build description with family and context window
             family = config.get("family", "unknown")
             ctx = config.get("context_window", "?")
-            supports_tools = "tools" if config.get("supports_tools") else ""
             supports_thinking = "thinking" if config.get("supports_thinking") else ""
-            features = ", ".join(filter(None, [supports_tools, supports_thinking]))
+            features = supports_thinking if supports_thinking else ""
 
             description = f"{family} | {ctx} ctx"
             if features:
@@ -354,6 +360,8 @@ class SetupWizard:
         # Reload models if provider changed
         if selected_provider != settings.llm_provider:
             self._console.print(f"[dim]Loading {selected_provider} models...[/]")
+            # Clear alias so it doesn't override wizard selection during reload
+            settings.active_model_alias = ""
             try:
                 await settings.reload_models_for_provider(selected_provider)
             except Exception as e:
@@ -458,6 +466,8 @@ class SetupWizard:
             settings.llm_provider = choices["provider"]
 
         if "model" in choices:
+            # Clear the alias so it doesn't override our selection
+            settings.active_model_alias = ""
             settings._set_active_model(choices["model"])
 
         if "workspace" in choices:
