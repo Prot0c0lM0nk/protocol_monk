@@ -239,7 +239,7 @@ class SetupWizard:
             # Panel-based selection
             options = [f"{c.label} - {c.description}" for c in question.choices]
 
-            # Build choices panel
+            # Build choices panel using Text.from_markup to parse style tags
             lines = []
             for i, choice in enumerate(question.choices):
                 marker = "→" if i == 0 else " "
@@ -247,7 +247,7 @@ class SetupWizard:
                 if choice.description:
                     lines.append(f"      [dim]{choice.description}[/]")
 
-            content = Text("\n".join(lines), style="monk.text")
+            content = Text.from_markup("\n".join(lines))
             self._console.print(
                 Panel(
                     content,
@@ -344,11 +344,20 @@ class SetupWizard:
             default=settings.llm_provider,
             panel_title="Select Provider",
         )
-        self._choices["provider"] = await self._ask_question(
+        selected_provider = await self._ask_question(
             provider_question,
             question_number=1,
             total_questions=3,
         )
+        self._choices["provider"] = selected_provider
+
+        # Reload models if provider changed
+        if selected_provider != settings.llm_provider:
+            self._console.print(f"[dim]Loading {selected_provider} models...[/]")
+            try:
+                await settings.reload_models_for_provider(selected_provider)
+            except Exception as e:
+                self._console.print(f"[warning]Failed to load models: {e}[/]")
 
         # Question 2: Model selection
         model_question = WizardQuestion(
@@ -423,8 +432,8 @@ class SetupWizard:
         ]
         self._console.print(
             Panel(
-                Text("\n".join(config_lines), style="monk.text"),
-                title="[monk.border]Choices Saved[/]",
+                Text.from_markup("\n".join(config_lines)),
+                title="Choices Saved",
                 border_style="monk.border",
                 box=box.ROUNDED,
             )

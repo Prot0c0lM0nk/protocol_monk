@@ -161,6 +161,26 @@ class Settings(BaseSettings):
             self.models_config = self._create_fallback_model_config()
             self._set_active_model(self.models_config.get("default_model", ""))
 
+    async def reload_models_for_provider(self, provider: str) -> None:
+        """Reload model config for a specific provider.
+
+        Used by the setup wizard when switching providers.
+
+        Args:
+            provider: The provider to load models for ('ollama' or 'openrouter')
+
+        """
+        original_provider = self.llm_provider
+        self.llm_provider = provider.lower()
+
+        try:
+            await self._discover_models()
+        except Exception as e:
+            # Restore original provider on failure
+            self.llm_provider = original_provider
+            logger.error(f"Failed to load models for provider '{provider}': {e}")
+            raise
+
     def _set_active_model(self, model_alias: str) -> None:
         """Set the active model from alias or name."""
         if not self.models_config:
