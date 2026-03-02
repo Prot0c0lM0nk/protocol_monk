@@ -7,6 +7,7 @@ import logging
 from typing import Callable, Sequence
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.application import run_in_terminal
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -36,8 +37,9 @@ class RichInputHandler:
 
         @kb.add("c-o")  # Ctrl+O
         def _(event):
+            _ = event
             if self._on_ctrl_o:
-                self._on_ctrl_o()
+                run_in_terminal(self._on_ctrl_o, in_executor=False)
 
         return kb
 

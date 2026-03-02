@@ -44,78 +44,85 @@ class StreamingPanel:
         self._last_render_time = 0.0
         self._started = False
 
-    def start(self) -> None:
-        """Start streaming - show spinner while waiting for first chunk."""
-        self._thinking = ""
-        self._content = ""
+    def begin_thinking(self, message: str = "Contemplating...") -> None:
+        """Start a new pass with a spinner while waiting for stream content."""
+        self.clear()
         self._started = True
         self._status = self._console.status(
-            "[dim]Contemplating...[/]",
+            f"[dim]{message}[/]",
             spinner="dots",
             spinner_style="monk.border",
         )
         self._status.start()
 
-    def on_chunk(self, chunk: str, is_thinking: bool = False) -> None:
-        """Handle incoming chunk - first chunk transitions from spinner to Live."""
-        if not self._started:
-            self.start()
-
-        # Accumulate content
-        if is_thinking:
-            self._thinking += chunk
-        else:
-            self._content += chunk
-
-        # First content: stop spinner, start Live
-        if self._status is not None and (self._thinking.strip() or self._content.strip()):
+    def stop_thinking(self) -> None:
+        """Stop spinner if currently active."""
+        if self._status is not None:
             self._status.stop()
             self._status = None
+
+    def set_buffers(self, *, thinking: str, content: str) -> None:
+        """Replace internal stream buffers with caller-managed aggregates."""
+        self._thinking = thinking
+        self._content = content
+        self._started = True
+
+    def update_buffers(self, *, thinking: str, content: str) -> None:
+        """Update panel buffers and refresh a transient Live display."""
+        self.set_buffers(thinking=thinking, content=content)
+
+        if not (thinking.strip() or content.strip()):
+            return
+
+        self.stop_thinking()
+
+        if self._live is None:
             self._live = Live(
                 self._build_panel(),
                 console=self._console,
-                auto_refresh=True,
+                auto_refresh=False,
                 refresh_per_second=12,
                 transient=True,  # Key: panel disappears when Live stops
             )
             self._live.start()
-            self._last_render_time = time.monotonic()
+            # Allow the first update to render immediately.
+            self._last_render_time = 0.0
+
+        self.refresh()
+
+    def refresh(self, *, force: bool = False) -> None:
+        """Refresh Live panel with throttling."""
+        if self._live is None:
             return
 
-        # Throttled update for subsequent chunks
-        if self._live is not None:
-            now = time.monotonic()
-            if now - self._last_render_time >= self._render_interval:
-                self._live.update(self._build_panel(), refresh=True)
-                self._last_render_time = now
-
-    def finish(self) -> None:
-        """Finish streaming - stop Live and print final panel to scrollback."""
-        # Stop spinner if still running (no content received)
-        if self._status is not None:
-            self._status.stop()
-            self._status = None
-
-        # Stop Live and print the exact same panel to scrollback
-        if self._live is not None:
-            # Final update to flush any throttled content
+        now = time.monotonic()
+        if force or now - self._last_render_time >= self._render_interval:
             self._live.update(self._build_panel(), refresh=True)
+            self._last_render_time = now
+
+    def finish(self) -> bool:
+        """Finish streaming - stop Live and print final panel to scrollback."""
+        had_content = bool(self._thinking.strip() or self._content.strip())
+        self.stop_thinking()
+
+        if self._live is not None:
+            # Final update to flush any throttled content.
+            self.refresh(force=True)
             self._live.stop()
             self._live = None
 
-            # Print to scrollback (only if we had content)
-            if self._thinking.strip() or self._content.strip():
-                self._console.print(self._build_panel())
+        # Print to scrollback if we had content, even if no Live ever started.
+        if had_content:
+            self._console.print(self._build_panel())
 
         self._thinking = ""
         self._content = ""
         self._started = False
+        return had_content
 
     def clear(self) -> None:
         """Clear streaming state without printing."""
-        if self._status is not None:
-            self._status.stop()
-            self._status = None
+        self.stop_thinking()
         if self._live is not None:
             self._live.stop()
             self._live = None
@@ -223,7 +230,7 @@ class RichRenderer:
         self._streaming = StreamingPanel(self._console, self._render_interval)
 
         # State tracking
-        self._is_locked = False
+        self._input_lock_depth = 0
 
     # --- Banner and Lifecycle ---
 
@@ -246,21 +253,24 @@ class RichRenderer:
 
     def suspend_live_session(self) -> None:
         """Lock for input - clears streaming state."""
-        self._is_locked = True
-        self._streaming.clear()
+        self.lock_for_input()
 
     def resume_live_session(self) -> None:
         """Unlock after input."""
-        self._is_locked = False
+        self.unlock_for_input()
 
     def lock_for_input(self) -> None:
         """Call before asking for user input."""
-        self._is_locked = True
-        self._streaming.clear()
+        self._input_lock_depth += 1
+        if self._input_lock_depth == 1:
+            self._streaming.clear()
 
     def unlock_for_input(self) -> None:
         """Call after user input is received."""
-        self._is_locked = False
+        if self._input_lock_depth > 0:
+            self._input_lock_depth -= 1
+        if self._input_lock_depth < 0:
+            self._input_lock_depth = 0
 
     def refresh_frame(self, *, force: bool = False) -> None:
         """No-op for compatibility. No persistent Live display."""
@@ -280,42 +290,22 @@ class RichRenderer:
         """Clear transient stream visuals before modal input flows."""
         self._streaming.clear()
 
+    def start_thinking(self, message: str = "Contemplating...") -> None:
+        """Start spinner while the model is thinking before stream content arrives."""
+        if self._input_lock_depth > 0:
+            return
+        self._streaming.begin_thinking(message)
+
+    def stop_thinking(self) -> None:
+        """Stop the thinking spinner."""
+        self._streaming.stop_thinking()
+
     def update_stream(self, *, thinking: str, content: str) -> None:
         """Update streaming display with current buffers."""
-        if self._is_locked:
+        if self._input_lock_depth > 0:
             return
 
-        # The app.py sends accumulated buffers, not incremental chunks
-        # We need to update our internal state and trigger a refresh
-        self._streaming._thinking = thinking
-        self._streaming._content = content
-
-        # Ensure streaming is active
-        if not self._streaming._started:
-            self._streaming.start()
-
-        # If we have content and status is still running, transition to Live
-        if self._streaming._status is not None and (thinking.strip() or content.strip()):
-            self._streaming._status.stop()
-            self._streaming._status = None
-            if self._streaming._live is None:
-                self._streaming._live = Live(
-                    self._streaming._build_panel(),
-                    console=self._console,
-                    auto_refresh=True,
-                    refresh_per_second=12,
-                    transient=True,
-                )
-                self._streaming._live.start()
-                self._streaming._last_render_time = time.monotonic()
-            return
-
-        # Throttled update
-        if self._streaming._live is not None:
-            now = time.monotonic()
-            if now - self._streaming._last_render_time >= self._render_interval:
-                self._streaming._live.update(self._streaming._build_panel(), refresh=True)
-                self._streaming._last_render_time = now
+        self._streaming.update_buffers(thinking=thinking, content=content)
 
     def finalize_response(
         self,
@@ -329,9 +319,8 @@ class RichRenderer:
         Prints the EXACT SAME panel that was shown during streaming,
         ensuring visual consistency with no artifacts on transition.
         """
-        # Update streaming state with final content
-        self._streaming._thinking = thinking
-        self._streaming._content = content
+        # Final content may arrive via RESPONSE_COMPLETE even when no stream chunks were sent.
+        self._streaming.set_buffers(thinking=thinking, content=content)
 
         # Stop streaming and print the final panel
         self._streaming.finish()

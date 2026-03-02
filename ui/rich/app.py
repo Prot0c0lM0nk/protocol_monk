@@ -68,6 +68,7 @@ class RichPromptToolkitUI:
         self._pending_tool_outputs: deque[ToolOutputRecord] = deque()
         self._tool_results: deque[ToolOutputRecord] = deque(maxlen=self.TOOL_RESULT_QUEUE_MAX)
         self._tool_progress_seen: dict[str, tuple[Any, str]] = {}
+        self._tool_viewer_task: asyncio.Task | None = None
 
         self._status_symbols = {
             "idle": "idle",
@@ -85,6 +86,8 @@ class RichPromptToolkitUI:
 
     async def start(self) -> None:
         await self._bus.subscribe(EventTypes.STATUS_CHANGED, self._handle_status_changed)
+        await self._bus.subscribe(EventTypes.THINKING_STARTED, self._handle_thinking_started)
+        await self._bus.subscribe(EventTypes.THINKING_STOPPED, self._handle_thinking_stopped)
         await self._bus.subscribe(EventTypes.STREAM_CHUNK, self._handle_stream_chunk)
         await self._bus.subscribe(EventTypes.RESPONSE_COMPLETE, self._handle_response_complete)
         await self._bus.subscribe(
@@ -161,6 +164,9 @@ class RichPromptToolkitUI:
         for task in list(self._confirmation_tasks.values()):
             task.cancel()
         self._confirmation_tasks.clear()
+        if self._tool_viewer_task is not None:
+            self._tool_viewer_task.cancel()
+            self._tool_viewer_task = None
         self._renderer.shutdown()
         logger.info("RichPromptToolkitUI stopped")
 
@@ -218,6 +224,17 @@ class RichPromptToolkitUI:
             status = str(data.get("status", "idle"))
             message = str(data.get("message", "") or "")
         self._current_state = status
+
+    async def _handle_thinking_started(self, data: Any) -> None:
+        if isinstance(data, dict):
+            message = str(data.get("message", "") or "")
+        else:
+            message = str(getattr(data, "message", "") or "")
+        self._renderer.start_thinking(message or "Contemplating...")
+
+    async def _handle_thinking_stopped(self, data: Any) -> None:
+        _ = data
+        self._renderer.stop_thinking()
 
     async def _handle_stream_chunk(self, data: dict) -> None:
         chunk = data.get("chunk", "")
@@ -454,7 +471,17 @@ class RichPromptToolkitUI:
 
     def _handle_ctrl_o(self) -> None:
         """Handle Ctrl+O keypress - schedule viewer on main loop."""
-        asyncio.create_task(self._show_tool_output_viewer())
+        if self._tool_viewer_task is not None and not self._tool_viewer_task.done():
+            return
+
+        task = asyncio.create_task(self._show_tool_output_viewer())
+        self._tool_viewer_task = task
+
+        def _clear_task(_: asyncio.Task) -> None:
+            if self._tool_viewer_task is task:
+                self._tool_viewer_task = None
+
+        task.add_done_callback(_clear_task)
 
     async def _show_tool_output_viewer(self) -> None:
         """Show panel with recent tool results, allow viewing full output.
