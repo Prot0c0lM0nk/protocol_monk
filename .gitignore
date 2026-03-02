@@ -1,0 +1,8 @@
+# Runtime-generated model maps (local only)
+config/models.json
+config/openrouter_models.json
+
+# Generated artifacts
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "default_model": "z-ai/glm-5",
+  "models": {
+    "z-ai/glm-5": {
+      "name": "z-ai/glm-5",
+      "family": "glm",
+      "context_window": 204800,
+      "supports_tools": true,
+      "supports_thinking": true,
+      "parameters": {},
+      "user_overrides": {}
+    }
+  }
+}
