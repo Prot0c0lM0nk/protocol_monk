@@ -129,15 +129,19 @@ class OpenRouterProvider(BaseProvider):
 
                     delta = choice.get("delta") or {}
                     content = delta.get("content")
+                    content_text = ""
                     if isinstance(content, str) and content:
+                        content_text = content
                         yield ProviderSignal(type="content", data=content)
                     elif isinstance(content, list):
                         extracted = self._extract_content_parts(content)
                         if extracted:
+                            content_text = extracted
                             yield ProviderSignal(type="content", data=extracted)
 
                     reasoning_text = self._extract_reasoning_from_chunk(choice)
-                    if reasoning_text:
+                    # Skip reasoning if it duplicates content (some providers send both)
+                    if reasoning_text and reasoning_text != content_text:
                         telemetry["reasoning_emitted"] = True
                         yield ProviderSignal(type="thinking", data=reasoning_text)
 
@@ -210,14 +214,21 @@ class OpenRouterProvider(BaseProvider):
     @classmethod
     def _extract_reasoning_from_chunk(cls, choice: Dict[str, Any]) -> str:
         parts: List[str] = []
+        seen: set = set()
 
         delta = choice.get("delta")
         if isinstance(delta, dict):
-            parts.extend(cls._extract_reasoning_from_payload(delta))
+            for part in cls._extract_reasoning_from_payload(delta):
+                if part not in seen:
+                    parts.append(part)
+                    seen.add(part)
 
         message = choice.get("message")
         if isinstance(message, dict):
-            parts.extend(cls._extract_reasoning_from_payload(message))
+            for part in cls._extract_reasoning_from_payload(message):
+                if part not in seen:
+                    parts.append(part)
+                    seen.add(part)
 
         return "".join(parts)
 
@@ -225,12 +236,15 @@ class OpenRouterProvider(BaseProvider):
     def _extract_reasoning_from_payload(payload: Dict[str, Any]) -> List[str]:
         parts: List[str] = []
 
+        # Some providers send reasoning in multiple fields that may be duplicates
+        # Prioritize 'reasoning' field, then check 'reasoning_content' only if different
         direct = payload.get("reasoning")
         if isinstance(direct, str) and direct:
             parts.append(direct)
 
         alias = payload.get("reasoning_content")
-        if isinstance(alias, str) and alias:
+        # Only add if it's different from 'reasoning' (some providers alias these)
+        if isinstance(alias, str) and alias and alias != direct:
             parts.append(alias)
 
         details = payload.get("reasoning_details")
@@ -239,19 +253,19 @@ class OpenRouterProvider(BaseProvider):
                 if not isinstance(detail, dict):
                     continue
                 text = detail.get("text")
-                if isinstance(text, str) and text:
+                if isinstance(text, str) and text and text not in parts:
                     parts.append(text)
 
                 summary = detail.get("summary")
-                if isinstance(summary, str) and summary:
+                if isinstance(summary, str) and summary and summary not in parts:
                     parts.append(summary)
                 elif isinstance(summary, list):
                     for item in summary:
-                        if isinstance(item, str) and item:
+                        if isinstance(item, str) and item and item not in parts:
                             parts.append(item)
                         elif isinstance(item, dict):
                             item_text = item.get("text")
-                            if isinstance(item_text, str) and item_text:
+                            if isinstance(item_text, str) and item_text and item_text not in parts:
                                 parts.append(item_text)
 
         return parts
