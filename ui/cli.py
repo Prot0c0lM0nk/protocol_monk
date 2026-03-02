@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import sys
 from typing import Any
 
 from prompt_toolkit import PromptSession
@@ -9,6 +10,7 @@ from prompt_toolkit.shortcuts import button_dialog
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from protocol_monk.protocol.bus import EventBus
+from protocol_monk.protocol.command_dispatcher import build_signoff_prompt, is_signoff_input
 from protocol_monk.protocol.events import EventTypes
 from protocol_monk.agent.structs import UserRequest, ConfirmationResponse
 from protocol_monk.config.settings import Settings
@@ -109,6 +111,7 @@ class PromptToolkitCLI:
         await self._bus.subscribe(
             EventTypes.AUTO_CONFIRM_CHANGED, self._handle_auto_confirm_changed
         )
+        await self._bus.subscribe(EventTypes.COMMAND_RESULT, self._handle_command_result)
 
         logger.info("PromptToolkitCLI started and listening")
 
@@ -119,7 +122,8 @@ class PromptToolkitCLI:
         print("\n" + "=" * 60)
         print("Protocol Monk CLI")
         print("Press Enter to submit")
-        print("Type 'quit' or 'exit' to stop")
+        print("Slash commands: /aa /reset /status /compact")
+        print("Type 'quit', 'exit', or 'bye' to sign off")
         print("=" * 60 + "\n")
 
         while self._running:
@@ -137,41 +141,21 @@ class PromptToolkitCLI:
                 with patch_stdout():
                     user_text = await self._session.prompt_async(prompt)
 
-                # Handle exit commands
-                if user_text.lower().strip() in ("quit", "exit", "q"):
-                    print("Goodbye!")
-                    self._running = False
+                normalized = user_text.strip()
+                if self._is_signoff_command(normalized):
+                    await self._run_signoff_and_shutdown(normalized)
                     break
 
-                cmd = user_text.lower().strip()
-                if cmd in ("/auto-approve", "/autoapprove", "/aa"):
-                    await self._bus.emit(
-                        EventTypes.SYSTEM_COMMAND_ISSUED,
-                        {
-                            "command": "toggle_auto_confirm",
-                            "auto_confirm": not self._auto_confirm,
-                        },
-                    )
-                    continue
-                if cmd in ("/auto-approve on", "/autoapprove on", "/aa on"):
-                    await self._bus.emit(
-                        EventTypes.SYSTEM_COMMAND_ISSUED,
-                        {"command": "toggle_auto_confirm", "auto_confirm": True},
-                    )
-                    continue
-                if cmd in ("/auto-approve off", "/autoapprove off", "/aa off"):
-                    await self._bus.emit(
-                        EventTypes.SYSTEM_COMMAND_ISSUED,
-                        {"command": "toggle_auto_confirm", "auto_confirm": False},
-                    )
+                if normalized.startswith("/"):
+                    await self._dispatch_slash_command(normalized)
                     continue
 
-                if user_text.strip():
+                if normalized:
                     # Emit user input
-                    await self._emit_user_input(user_text)
+                    await self._emit_user_input(normalized)
 
             except (EOFError, KeyboardInterrupt):
-                print("\nGoodbye!")
+                print("\nInterrupted. Exiting.")
                 self._running = False
                 break
 
@@ -205,6 +189,33 @@ class PromptToolkitCLI:
             timestamp=time.time(),
         )
         await self._bus.emit(EventTypes.TOOL_CONFIRMATION_SUBMITTED, response)
+
+    @staticmethod
+    def _is_signoff_command(text: str) -> bool:
+        return is_signoff_input(text)
+
+    async def _dispatch_slash_command(self, text: str) -> None:
+        await self._bus.emit(
+            EventTypes.SYSTEM_COMMAND_ISSUED,
+            {"command": "dispatch_slash", "text": text},
+        )
+
+    async def _run_signoff_and_shutdown(self, trigger: str) -> None:
+        await self._emit_user_input(build_signoff_prompt(trigger))
+        await self._render_shutdown_sequence()
+        self._running = False
+
+    async def _render_shutdown_sequence(self) -> None:
+        await self._typewriter_line("✠ The session is sealed.")
+        await self._typewriter_line("✠ I close this terminal cell now.")
+
+    async def _typewriter_line(self, text: str, delay: float = 0.012) -> None:
+        for char in text:
+            sys.stdout.write(char)
+            sys.stdout.flush()
+            await asyncio.sleep(delay)
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
     # Event Handlers
 
@@ -413,6 +424,40 @@ class PromptToolkitCLI:
     async def _handle_auto_confirm_changed(self, data: dict) -> None:
         """Track auto-confirm state updates."""
         self._auto_confirm = bool(data.get("auto_confirm", False))
+
+    async def _handle_command_result(self, data: dict) -> None:
+        if not isinstance(data, dict):
+            return
+        command = str(data.get("command", "") or "").strip().lower()
+        ok = bool(data.get("ok", False))
+        message = str(data.get("message", "") or "").strip()
+        payload = data.get("data") if isinstance(data.get("data"), dict) else {}
+
+        if command == "status" and ok:
+            rows = [
+                ("Provider", payload.get("provider", "")),
+                ("Model", payload.get("model", "")),
+                ("State", payload.get("state", "")),
+                ("Tokens", payload.get("total_tokens", 0)),
+                ("Context Limit", payload.get("context_limit", 0)),
+                ("Messages", payload.get("message_count", 0)),
+                ("Loaded Files", payload.get("loaded_files_count", 0)),
+                (
+                    "Auto-Approve",
+                    "enabled" if bool(payload.get("auto_confirm", False)) else "disabled",
+                ),
+            ]
+            print()
+            print(f"{Colors.INFO}Status{Colors.RESET}")
+            for label, value in rows:
+                print(f"{Colors.DIM}  {label:<14}{Colors.RESET} {value}")
+            print()
+            return
+
+        if not message:
+            return
+        color = Colors.INFO if ok else Colors.WARNING
+        print(f"{color}  ℹ {message}{Colors.RESET}")
 
     def _normalize_pass_id(self, pass_id: Any) -> str:
         text = str(pass_id).strip() if pass_id is not None else ""

@@ -1,0 +1,7 @@
+Maintain your Protocol Monk role.
+
+The work session is complete and the user is signing off ({trigger}).
+Respond with a brief closing message that:
+- acknowledges completion of this session,
+- offers a respectful signoff in monk voice,
+- confirms shutdown may proceed.

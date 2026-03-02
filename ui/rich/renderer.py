@@ -239,7 +239,10 @@ class RichRenderer:
         self._console.print()
         self._console.print("═" * 50, style="monk.border")
         self._console.print("  Protocol Monk", style="monk.text")
-        self._console.print("  Enter submits | /aa toggles auto-approve | quit exits", style="muted")
+        self._console.print(
+            "  Enter submits | /aa /reset /status /compact | quit|exit|bye sign off",
+            style="muted",
+        )
         self._console.print("═" * 50, style="monk.border")
         self._console.print()
 
@@ -341,6 +344,42 @@ class RichRenderer:
         if message:
             text = f"{text}: {message}"
         self._console.print(text)
+
+    def render_status_snapshot(self, payload: Mapping[str, Any]) -> None:
+        """Render a concise status snapshot for /status command."""
+        rows = [
+            ("Provider", str(payload.get("provider", ""))),
+            ("Model", str(payload.get("model", ""))),
+            ("State", str(payload.get("state", ""))),
+            ("Tokens", str(payload.get("total_tokens", ""))),
+            ("Context Limit", str(payload.get("context_limit", ""))),
+            ("Messages", str(payload.get("message_count", ""))),
+            ("Loaded Files", str(payload.get("loaded_files_count", ""))),
+            (
+                "Auto-Approve",
+                "enabled" if bool(payload.get("auto_confirm", False)) else "disabled",
+            ),
+        ]
+
+        table = Table(
+            Column("Field", style="user.text", no_wrap=True),
+            Column("Value", style="monk.text"),
+            show_header=False,
+            box=None,
+            padding=(0, 2),
+        )
+        for label, value in rows:
+            table.add_row(label, value)
+
+        self._console.print(
+            Panel(
+                table,
+                title="[tech.cyan]Status[/]",
+                border_style="tech.cyan",
+                box=box.ROUNDED,
+                padding=(0, 1),
+            )
+        )
 
     # --- Event Lines (for tool output, messages, etc.) ---
 

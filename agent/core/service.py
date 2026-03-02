@@ -7,6 +7,11 @@ from typing import Any, Dict, List, Tuple
 
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
+from protocol_monk.protocol.command_dispatcher import (
+    COMPACT_PROMPT_TEMPLATE_FILENAME,
+    load_prompt_template,
+    parse_slash_command,
+)
 from protocol_monk.agent.structs import (
     AgentResponse,
     UserRequest,
@@ -540,6 +545,51 @@ class AgentService:
             loaded_files_count=0,
         )
 
+    async def _emit_command_result(
+        self,
+        command: str,
+        ok: bool,
+        message: str,
+        data: Dict[str, Any] | None = None,
+    ) -> None:
+        payload = {
+            "command": str(command or "").strip().lower(),
+            "ok": bool(ok),
+            "message": str(message or ""),
+            "data": data or {},
+        }
+        await self._bus.emit(EventTypes.COMMAND_RESULT, payload)
+
+    async def _emit_status_snapshot(self) -> Dict[str, Any]:
+        stats = await self._resolve_context_stats()
+        state = getattr(self._state.current, "value", str(self._state.current))
+        return {
+            "provider": str(getattr(self._settings, "llm_provider", "")),
+            "model": str(getattr(self._settings, "active_model_name", "")),
+            "state": str(state),
+            "total_tokens": int(getattr(stats, "total_tokens", 0) or 0),
+            "context_limit": int(
+                getattr(self._settings, "context_window_limit", 0) or 0
+            ),
+            "message_count": int(getattr(stats, "message_count", 0) or 0),
+            "loaded_files_count": int(getattr(stats, "loaded_files_count", 0) or 0),
+            "auto_confirm": bool(self._auto_confirm),
+        }
+
+    def _build_compact_history(
+        self,
+        history: List[Message],
+        compact_system_prompt: str,
+    ) -> List[Message]:
+        compact_system = Message(
+            role="system",
+            content=str(compact_system_prompt or "").strip(),
+            timestamp=time.time(),
+            metadata={"id": str(uuid.uuid4()), "mode": "compact"},
+        )
+        conversation_only = [msg for msg in history if msg.role != "system"]
+        return [compact_system, *conversation_only]
+
     async def _set_status(
         self,
         state: AgentState,
@@ -677,6 +727,8 @@ class AgentService:
             # Process different system commands
             if command == "cancel_current_task":
                 await self._handle_cancel_task()
+            elif command == "dispatch_slash":
+                await self._handle_slash_dispatch(str(payload.get("text", "") or ""))
             elif command == "reset_context":
                 await self._handle_reset_context()
             elif command == "refresh_status":
@@ -693,6 +745,12 @@ class AgentService:
                         "details": f"Command '{command}' is not recognized",
                     },
                 )
+                await self._emit_command_result(
+                    "system",
+                    False,
+                    f"Unknown system command: {command}",
+                    {"command": command},
+                )
 
         except Exception as e:
             self._logger.error(f"Error handling system command: {e}", exc_info=True)
@@ -700,6 +758,178 @@ class AgentService:
                 EventTypes.ERROR,
                 {"message": "Error processing system command", "details": str(e)},
             )
+            await self._emit_command_result(
+                "system",
+                False,
+                "Error processing system command",
+                {"details": str(e)},
+            )
+
+    async def _handle_slash_dispatch(self, text: str) -> None:
+        parsed = parse_slash_command(text)
+        if not parsed.ok:
+            await self._emit_command_result(
+                "slash",
+                False,
+                parsed.error or "Invalid slash command.",
+                {"input": text},
+            )
+            return
+
+        command_name = str(parsed.command)
+        if command_name == "toggle_auto_confirm":
+            mode = parsed.arguments.get("mode")
+            if mode == "set":
+                target = bool(parsed.arguments.get("value", False))
+            else:
+                target = not self._auto_confirm
+            ok = await self._handle_toggle_auto_confirm(target)
+            await self._emit_command_result(
+                "auto_confirm",
+                ok,
+                (
+                    f"Auto-confirm {'enabled' if target else 'disabled'}"
+                    if ok
+                    else "Failed to update auto-confirm"
+                ),
+                {"auto_confirm": bool(target)},
+            )
+            return
+
+        if command_name == "reset_context":
+            ok = await self._handle_reset_context()
+            await self._emit_command_result(
+                "reset",
+                ok,
+                "Context reset successfully" if ok else "Context reset failed",
+            )
+            return
+
+        if command_name == "status":
+            try:
+                snapshot = await self._emit_status_snapshot()
+                await self._emit_command_result(
+                    "status",
+                    True,
+                    "Status snapshot",
+                    snapshot,
+                )
+            except Exception as exc:
+                await self._emit_command_result(
+                    "status",
+                    False,
+                    "Failed to capture status",
+                    {"details": str(exc)},
+                )
+            return
+
+        if command_name == "compact":
+            await self._handle_compact_command()
+            return
+
+        await self._emit_command_result(
+            "slash",
+            False,
+            f"Unsupported slash command: {command_name}",
+        )
+
+    async def _handle_compact_command(self) -> None:
+        async with self._request_lock:
+            turn_id = f"compact-{uuid.uuid4()}"
+            try:
+                history = self._context.get_full_history()
+                if len(history) <= 1:
+                    await self._emit_command_result(
+                        "compact",
+                        False,
+                        "No conversation history to compact.",
+                    )
+                    return
+
+                compact_prompt = load_prompt_template(COMPACT_PROMPT_TEMPLATE_FILENAME)
+                compact_history = self._build_compact_history(history, compact_prompt)
+
+                await self._set_status(
+                    AgentState.THINKING,
+                    "Compacting context...",
+                    turn_id=turn_id,
+                    round_index=0,
+                )
+                response = await run_thinking_loop(
+                    context_history=compact_history,
+                    provider=self._provider,
+                    bus=self._bus,
+                    registry=self._registry,
+                    settings=self._settings,
+                    turn_id=turn_id,
+                    round_index=0,
+                )
+                summary = str(response.content or "").strip()
+                if not summary:
+                    await self._set_status(
+                        AgentState.IDLE,
+                        "Ready",
+                        turn_id=turn_id,
+                        round_index=0,
+                    )
+                    await self._emit_command_result(
+                        "compact",
+                        False,
+                        "Compaction produced an empty summary. Context unchanged.",
+                    )
+                    return
+
+                await self._context.reset()
+                normal_system_prompt = str(getattr(self._settings, "system_prompt", "")).strip()
+                if not normal_system_prompt:
+                    current_system = self._context.get_system_prompt()
+                    normal_system_prompt = str(
+                        getattr(current_system, "content", "") or ""
+                    ).strip()
+                if normal_system_prompt:
+                    await self._context.set_system_prompt_text(normal_system_prompt)
+
+                stats = await self._context.add_assistant_pass(
+                    content=summary,
+                    thinking="",
+                    pass_id=f"compact-{response.pass_id or uuid.uuid4()}",
+                    tokens=max(1, int(response.tokens or 0)),
+                    tool_call_count=0,
+                    tool_calls=[],
+                )
+                await self._emit_context_update(stats, turn_id=turn_id, round_index=1)
+                await self._set_status(
+                    AgentState.IDLE,
+                    "Ready",
+                    turn_id=turn_id,
+                    round_index=1,
+                )
+                await self._emit_command_result(
+                    "compact",
+                    True,
+                    "Context compacted and reset successfully.",
+                    {
+                        "summary_chars": len(summary),
+                        "summary_tokens": max(1, int(response.tokens or 0)),
+                        "message_count": stats.message_count,
+                        "total_tokens": stats.total_tokens,
+                    },
+                )
+            except Exception as exc:
+                if self._state.current != AgentState.IDLE:
+                    await self._set_status(
+                        AgentState.IDLE,
+                        "Ready",
+                        turn_id=turn_id,
+                        round_index=0,
+                    )
+                self._logger.error("Error compacting context: %s", exc, exc_info=True)
+                await self._emit_command_result(
+                    "compact",
+                    False,
+                    "Compaction failed. Context unchanged.",
+                    {"details": str(exc)},
+                )
 
     async def _handle_cancel_task(self) -> None:
         """
@@ -734,7 +964,7 @@ class AgentService:
                 {"message": "Error cancelling task", "details": str(e)},
             )
 
-    async def _handle_reset_context(self) -> None:
+    async def _handle_reset_context(self) -> bool:
         """
         Handle context reset command.
         """
@@ -758,6 +988,7 @@ class AgentService:
                     status=AgentState.IDLE.value, message="Context reset"
                 )
                 await self._bus.emit(EventTypes.STATUS_CHANGED, status_payload)
+            return True
 
         except Exception as e:
             self._logger.error(f"Error resetting context: {e}", exc_info=True)
@@ -765,22 +996,25 @@ class AgentService:
                 EventTypes.ERROR,
                 {"message": "Error resetting context", "details": str(e)},
             )
+            return False
 
-    async def _handle_refresh_status(self) -> None:
+    async def _handle_refresh_status(self) -> bool:
         """
         Emit a status-bar refresh payload without going through user input.
         """
         try:
             stats = await self._resolve_context_stats()
             await self._emit_context_update(stats)
+            return True
         except Exception as e:
             self._logger.error(f"Error refreshing status: {e}", exc_info=True)
             await self._bus.emit(
                 EventTypes.ERROR,
                 {"message": "Error refreshing status", "details": str(e)},
             )
+            return False
 
-    async def _handle_toggle_auto_confirm(self, auto_confirm: bool) -> None:
+    async def _handle_toggle_auto_confirm(self, auto_confirm: bool) -> bool:
         """
         Handle auto-confirm toggle command.
         """
@@ -797,9 +1031,11 @@ class AgentService:
                     "message": f"Auto-confirm {'enabled' if self._auto_confirm else 'disabled'}"
                 },
             )
+            return True
         except Exception as e:
             self._logger.error(f"Error toggling auto-confirm: {e}", exc_info=True)
             await self._bus.emit(
                 EventTypes.ERROR,
                 {"message": "Error toggling auto-confirm", "details": str(e)},
             )
+            return False

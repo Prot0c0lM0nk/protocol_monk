@@ -172,6 +172,24 @@ class ContextCoordinator:
     def get_stats(self) -> ContextStats:
         return self._get_stats()
 
+    def get_full_history(self) -> List[Message]:
+        """Return the complete context history (system + conversation)."""
+        return self._store.get_full_history()
+
+    def get_system_prompt(self) -> Optional[Message]:
+        """Return the active system prompt."""
+        return self._store.get_system_prompt()
+
+    async def set_system_prompt_text(self, text: str) -> None:
+        """Replace the active system prompt for this session."""
+        msg = Message(
+            role="system",
+            content=str(text or "").strip(),
+            timestamp=time.time(),
+            metadata={"id": str(uuid.uuid4())},
+        )
+        self._store.set_system_prompt(msg)
+
     async def reset(self) -> None:
         """
         Reset the context by clearing all messages except the system prompt.

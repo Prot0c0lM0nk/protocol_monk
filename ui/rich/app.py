@@ -12,10 +12,15 @@ from typing import Any
 
 from protocol_monk.agent.structs import ConfirmationResponse, UserRequest
 from protocol_monk.config.settings import Settings
+from protocol_monk.protocol.command_dispatcher import (
+    build_signoff_prompt,
+    is_signoff_input,
+)
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
 from protocol_monk.ui.rich.input_handler import RichInputHandler
 from protocol_monk.ui.rich.renderer import RichRenderer
+from protocol_monk.ui.rich.typewriter import TYPEWRITER_PRESETS, typewriter_print
 
 logger = logging.getLogger("RichPromptToolkitUI")
 
@@ -114,6 +119,7 @@ class RichPromptToolkitUI:
             EventTypes.PROVIDER_SWITCHED,
             self._handle_provider_switched,
         )
+        await self._bus.subscribe(EventTypes.COMMAND_RESULT, self._handle_command_result)
         logger.info("RichPromptToolkitUI started and listening")
 
     async def run(self) -> None:
@@ -146,9 +152,8 @@ class RichPromptToolkitUI:
                 if not normalized:
                     continue
 
-                if normalized.lower() in ("quit", "exit", "q"):
-                    self._renderer.render_info("Goodbye!")
-                    self._running = False
+                if self._is_signoff_command(normalized):
+                    await self._run_signoff_and_shutdown(normalized)
                     break
 
                 handled = await self._process_local_command(normalized)
@@ -171,29 +176,39 @@ class RichPromptToolkitUI:
         logger.info("RichPromptToolkitUI stopped")
 
     async def _process_local_command(self, text: str) -> bool:
-        cmd = text.lower().strip()
-        if cmd in ("/auto-approve", "/autoapprove", "/aa"):
-            await self._bus.emit(
-                EventTypes.SYSTEM_COMMAND_ISSUED,
-                {
-                    "command": "toggle_auto_confirm",
-                    "auto_confirm": not self._auto_confirm,
-                },
-            )
-            return True
-        if cmd in ("/auto-approve on", "/autoapprove on", "/aa on"):
-            await self._bus.emit(
-                EventTypes.SYSTEM_COMMAND_ISSUED,
-                {"command": "toggle_auto_confirm", "auto_confirm": True},
-            )
-            return True
-        if cmd in ("/auto-approve off", "/autoapprove off", "/aa off"):
-            await self._bus.emit(
-                EventTypes.SYSTEM_COMMAND_ISSUED,
-                {"command": "toggle_auto_confirm", "auto_confirm": False},
-            )
-            return True
-        return False
+        cmd = text.strip()
+        if not cmd.startswith("/"):
+            return False
+        await self._dispatch_slash_command(cmd)
+        return True
+
+    @staticmethod
+    def _is_signoff_command(text: str) -> bool:
+        return is_signoff_input(text)
+
+    async def _dispatch_slash_command(self, text: str) -> None:
+        await self._bus.emit(
+            EventTypes.SYSTEM_COMMAND_ISSUED,
+            {"command": "dispatch_slash", "text": text},
+        )
+
+    async def _run_signoff_and_shutdown(self, trigger: str) -> None:
+        signoff_prompt = build_signoff_prompt(trigger)
+        await self._emit_user_input(signoff_prompt)
+        await self._render_shutdown_sequence()
+        self._running = False
+
+    async def _render_shutdown_sequence(self) -> None:
+        await typewriter_print(
+            "✠ The session is sealed.\n",
+            config=TYPEWRITER_PRESETS["fast"],
+            style="monk.text",
+        )
+        await typewriter_print(
+            "✠ I now extinguish the console lamps and close this cell.\n",
+            config=TYPEWRITER_PRESETS["fast"],
+            style="muted",
+        )
 
     def _get_prompt(self) -> str:
         return "✠☦✠> "
@@ -443,6 +458,24 @@ class RichPromptToolkitUI:
         )
         if provider:
             self._renderer.render_info(f"Provider switched to: {provider}")
+
+    async def _handle_command_result(self, data: dict) -> None:
+        if not isinstance(data, dict):
+            return
+        command = str(data.get("command", "") or "").strip().lower()
+        ok = bool(data.get("ok", False))
+        message = str(data.get("message", "") or "").strip()
+        payload = data.get("data") if isinstance(data.get("data"), dict) else {}
+
+        if command == "status" and ok:
+            self._renderer.render_status_snapshot(payload)
+            return
+        if not message:
+            return
+        if ok:
+            self._renderer.render_info(message)
+        else:
+            self._renderer.render_warning(message)
 
     async def _drain_tool_output_queue(self) -> None:
         while self._pending_tool_outputs and self._current_state == "idle":

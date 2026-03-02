@@ -15,6 +15,10 @@ class ContextStore:
         """Sets the immutable system prompt."""
         self._system_prompt = message
 
+    def get_system_prompt(self) -> Optional[Message]:
+        """Return the active system prompt message."""
+        return self._system_prompt
+
     def add(self, message: Message) -> None:
         """Appends a message to the history."""
         self._messages.append(message)
