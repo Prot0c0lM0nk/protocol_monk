@@ -437,6 +437,7 @@ class PromptToolkitCLI:
             rows = [
                 ("Provider", payload.get("provider", "")),
                 ("Model", payload.get("model", "")),
+                ("Working Dir", payload.get("working_directory", "")),
                 ("State", payload.get("state", "")),
                 ("Tokens", payload.get("total_tokens", 0)),
                 ("Context Limit", payload.get("context_limit", 0)),

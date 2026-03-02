@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import json
+import os
 import time
 import uuid
 from typing import Any, Dict, List, Tuple
@@ -563,9 +564,16 @@ class AgentService:
     async def _emit_status_snapshot(self) -> Dict[str, Any]:
         stats = await self._resolve_context_stats()
         state = getattr(self._state.current, "value", str(self._state.current))
+        workspace_root = getattr(self._settings, "workspace_root", None)
+        if workspace_root is None:
+            workspace_root = getattr(self._settings, "workspace", None)
+        working_directory = (
+            str(workspace_root) if workspace_root is not None else os.getcwd()
+        )
         return {
             "provider": str(getattr(self._settings, "llm_provider", "")),
             "model": str(getattr(self._settings, "active_model_name", "")),
+            "working_directory": working_directory,
             "state": str(state),
             "total_tokens": int(getattr(stats, "total_tokens", 0) or 0),
             "context_limit": int(

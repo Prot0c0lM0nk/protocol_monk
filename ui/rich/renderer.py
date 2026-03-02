@@ -350,6 +350,7 @@ class RichRenderer:
         rows = [
             ("Provider", str(payload.get("provider", ""))),
             ("Model", str(payload.get("model", ""))),
+            ("Working Dir", str(payload.get("working_directory", ""))),
             ("State", str(payload.get("state", ""))),
             ("Tokens", str(payload.get("total_tokens", ""))),
             ("Context Limit", str(payload.get("context_limit", ""))),
