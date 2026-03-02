@@ -8,7 +8,6 @@ from datetime import datetime
 from protocol_monk.exceptions.config import ConfigError
 from protocol_monk.utils.model_discovery import discover_models
 from protocol_monk.utils.openrouter_model_map import (
-    build_default_openrouter_model_map,
     load_or_initialize_openrouter_model_map,
 )
 
@@ -49,10 +48,12 @@ class Settings(BaseSettings):
     models_json_path: Path = Field(default=Path("protocol_monk/config/models.json"))
     openrouter_models_json_path: Path = Field(
         default=Path("protocol_monk/config/openrouter_models.json"),
-        env="OPENROUTER_MODELS_JSON_PATH",
+        validation_alias="OPENROUTER_MODELS_JSON_PATH",
     )
-    force_model_discovery: bool = Field(default=False, env="FORCE_MODEL_DISCOVERY")
-    active_model_alias: str = Field(default="", env="ACTIVE_MODEL_ALIAS")
+    force_model_discovery: bool = Field(
+        default=False, validation_alias="FORCE_MODEL_DISCOVERY"
+    )
+    active_model_alias: str = Field(default="", validation_alias="ACTIVE_MODEL_ALIAS")
 
     # Computed fields
     models_config: Optional[Dict[str, Any]] = None  # Will be loaded from models.json
@@ -158,6 +159,8 @@ class Settings(BaseSettings):
             raise
         except Exception as e:
             logger.error(f"Model configuration loading failed: {e}")
+            if self.llm_provider == "openrouter":
+                raise ConfigError(f"Failed to load OpenRouter model map: {e}") from e
             self.models_config = self._create_fallback_model_config()
             self._set_active_model(self.models_config.get("default_model", ""))
 
@@ -209,9 +212,6 @@ class Settings(BaseSettings):
 
     def _create_fallback_model_config(self) -> Dict[str, Any]:
         """Create minimal fallback config if model loading fails."""
-        if self.llm_provider == "openrouter":
-            return build_default_openrouter_model_map(context_window=2000)
-
         return {
             "version": "1.0",
             "last_updated": datetime.now().isoformat(),

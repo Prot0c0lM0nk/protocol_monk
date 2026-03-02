@@ -57,12 +57,12 @@ class RichInputHandler:
         *,
         tool_name: str,
         parameters: dict,
-        timeout: float = 20.0,
         console: Console | None = None,
     ) -> str | None:
         """Return one of: approve, approve_auto, reject.
 
         Uses a scrollback-native panel-based approach - no modal dialogs.
+        Waits for explicit user input indefinitely.
         """
         _ = parameters  # Parameters are displayed in the Rich confirmation panel.
         target_console = console or default_console
@@ -79,10 +79,7 @@ class RichInputHandler:
         # Prompt for selection
         try:
             while True:
-                answer = await asyncio.wait_for(
-                    self.prompt("Approve? [Y]es / [A]uto / [N]o (default N): "),
-                    timeout=timeout,
-                )
+                answer = await self.prompt("Approve? [Y]es / [A]uto / [N]o (default N): ")
                 normalized = answer.strip().lower()
 
                 if not normalized:
@@ -97,12 +94,6 @@ class RichInputHandler:
 
                 target_console.print("[error]Invalid choice. Use Y, A, or N.[/]")
 
-        except asyncio.TimeoutError:
-            logger.warning(
-                "Confirmation timed out for %s; rejecting by default.",
-                tool_name,
-            )
-            return "reject"
         except (EOFError, KeyboardInterrupt):
             return "reject"
         except Exception as exc:

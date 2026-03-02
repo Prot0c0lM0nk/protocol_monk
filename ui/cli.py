@@ -184,9 +184,8 @@ class PromptToolkitCLI:
         logger.info("PromptToolkitCLI stopped")
 
     def _get_prompt(self) -> str:
-        """Get the current prompt with state symbol."""
-        symbol = self._status_symbols.get(self._current_state, "?")
-        return f"({symbol}) > "
+        """Get the current prompt."""
+        return "✠☦✠> "
 
     async def _emit_user_input(self, text: str) -> None:
         """Emit user input event."""
@@ -297,25 +296,22 @@ class PromptToolkitCLI:
                 f"Parameters:\n{params_text}"
             )
             with patch_stdout():
-                result = await asyncio.wait_for(
-                    button_dialog(
-                        title="Tool Execution",
-                        text=dialog_text,
-                        buttons=[
-                            ("Yes", "approve"),
-                            ("Yes + Auto-Approve Edits", "approve_auto"),
-                            ("No (Return Control)", "reject"),
-                        ],
-                        style=ORTHODOX_DIALOG_STYLE,
-                    ).run_async(),
-                    timeout=20.0,
+                result = await button_dialog(
+                    title="Tool Execution",
+                    text=dialog_text,
+                    buttons=[
+                        ("Yes", "approve"),
+                        ("Yes + Auto-Approve Edits", "approve_auto"),
+                        ("No (Return Control)", "reject"),
+                    ],
+                    style=ORTHODOX_DIALOG_STYLE,
+                ).run_async()
+            if result is None:
+                logger.warning(
+                    "Confirmation dialog closed for %s; falling back to text prompt.",
+                    tool_call_id,
                 )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "Confirmation dialog timed out for %s; falling back to text prompt.",
-                tool_call_id,
-            )
-            result = await self._prompt_confirmation_text(tool_name)
+                result = await self._prompt_confirmation_text(tool_name)
         except Exception as exc:
             logger.error("Confirmation dialog error: %s", exc, exc_info=True)
             result = "reject"

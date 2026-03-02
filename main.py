@@ -112,6 +112,8 @@ async def main():
         ui_backend, ui_note = _resolve_ui_backend(requested_ui_backend)
         _apply_rich_log_suppression(ui_backend, root_level)
 
+        boot: BootAnimation | None = None
+
         # Run boot animation for Rich UI
         if ui_backend == "rich":
             boot = BootAnimation()
@@ -244,7 +246,8 @@ async def main():
             await agent_service.start()
 
             # Phase 4: Starting UI
-            boot.update_phase(BootPhase.UI, "Ready")
+            if boot is not None:
+                boot.update_phase(BootPhase.UI, "Ready")
 
             if ui_backend == "cli":
                 from protocol_monk.ui.cli import PromptToolkitCLI

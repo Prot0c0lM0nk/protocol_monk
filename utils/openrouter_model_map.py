@@ -1,172 +1,129 @@
-"""Persistent OpenRouter model map bootstrap and loading helpers."""
+"""Strict OpenRouter model map loader for user-managed JSON config."""
 
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
-DEFAULT_CONTEXT_WINDOW = 2000
-DEFAULT_MODEL = "mistralai/ministral-14b-2512"
-
-_MODEL_FAMILIES = {
-    "qwen/qwen3.5-397b-a17b": "qwen",
-    "z-ai/glm-5": "glm",
-    "z-ai/glm-4.7-flash": "glm",
-    "mistralai/ministral-14b-2512": "mistral",
-}
+from protocol_monk.exceptions.config import ConfigError
 
 
-def _now_iso() -> str:
-    return datetime.now().isoformat()
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise ConfigError(message)
 
 
-def _default_model_entry(
-    name: str, context_window: int, timestamp: str
-) -> Dict[str, Any]:
-    return {
-        "name": name,
-        "family": _MODEL_FAMILIES[name],
-        "is_cloud": True,
-        "context_window": context_window,
-        "supports_thinking": False,
-        "supports_tools": True,
-        "capabilities": ["completion", "tools"],
-        "parameters": {},
-        "user_overrides": {},
-        "discovered_at": timestamp,
+def _validate_model_entry(model_key: str, entry: Any) -> None:
+    _require(
+        isinstance(entry, dict),
+        f"OpenRouter model '{model_key}' must be an object.",
+    )
+
+    required_keys = {
+        "name",
+        "family",
+        "context_window",
+        "supports_tools",
+        "supports_thinking",
+        "parameters",
+        "user_overrides",
     }
+    missing = sorted(required_keys - set(entry.keys()))
+    _require(
+        not missing,
+        (
+            f"OpenRouter model '{model_key}' is missing required keys: "
+            + ", ".join(missing)
+        ),
+    )
+
+    _require(
+        isinstance(entry["name"], str) and bool(entry["name"].strip()),
+        f"OpenRouter model '{model_key}' field 'name' must be a non-empty string.",
+    )
+    _require(
+        isinstance(entry["family"], str) and bool(entry["family"].strip()),
+        f"OpenRouter model '{model_key}' field 'family' must be a non-empty string.",
+    )
+    _require(
+        isinstance(entry["context_window"], int)
+        and not isinstance(entry["context_window"], bool)
+        and entry["context_window"] > 0,
+        f"OpenRouter model '{model_key}' field 'context_window' must be a positive integer.",
+    )
+    _require(
+        isinstance(entry["supports_tools"], bool),
+        f"OpenRouter model '{model_key}' field 'supports_tools' must be a boolean.",
+    )
+    _require(
+        isinstance(entry["supports_thinking"], bool),
+        f"OpenRouter model '{model_key}' field 'supports_thinking' must be a boolean.",
+    )
+    _require(
+        isinstance(entry["parameters"], dict),
+        f"OpenRouter model '{model_key}' field 'parameters' must be an object.",
+    )
+    _require(
+        isinstance(entry["user_overrides"], dict),
+        f"OpenRouter model '{model_key}' field 'user_overrides' must be an object.",
+    )
 
 
-def build_default_openrouter_model_map(
-    context_window: int = DEFAULT_CONTEXT_WINDOW,
-) -> Dict[str, Any]:
-    """
-    Build a deterministic model map for the OpenRouter-backed models.
-    """
-    timestamp = _now_iso()
-    models = {
-        name: _default_model_entry(
-            name, context_window=context_window, timestamp=timestamp
+def _validate_model_map(path: Path, loaded: Any) -> Dict[str, Any]:
+    _require(
+        isinstance(loaded, dict),
+        f"OpenRouter model map must be a top-level JSON object: {path}",
+    )
+
+    models = loaded.get("models")
+    _require(
+        isinstance(models, dict),
+        f"OpenRouter model map field 'models' must be an object: {path}",
+    )
+    _require(bool(models), f"OpenRouter model map field 'models' cannot be empty: {path}")
+
+    default_model = loaded.get("default_model")
+    _require(
+        isinstance(default_model, str) and bool(default_model.strip()),
+        f"OpenRouter model map field 'default_model' must be a non-empty string: {path}",
+    )
+    _require(
+        default_model in models,
+        (
+            "OpenRouter model map 'default_model' must reference an existing key in "
+            f"'models': {default_model}"
+        ),
+    )
+
+    for model_key, model_entry in models.items():
+        _require(
+            isinstance(model_key, str) and bool(model_key.strip()),
+            "OpenRouter model map has an invalid empty model key.",
         )
-        for name in _MODEL_FAMILIES
-    }
-    return {
-        "version": "1.0",
-        "last_updated": timestamp,
-        "default_model": DEFAULT_MODEL,
-        "models": models,
-    }
+        _validate_model_entry(model_key, model_entry)
 
-
-def _is_valid_model_map(config: Dict[str, Any]) -> bool:
-    if not isinstance(config, dict):
-        return False
-    if not isinstance(config.get("models"), dict):
-        return False
-    if not config["models"]:
-        return False
-    return True
-
-
-def _save(path: Path, config: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(config, handle, indent=2, ensure_ascii=False)
-
-
-def _normalize_existing_model_map(config: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Ensure expected top-level keys and required model entries exist.
-    Preserve existing user overrides where present.
-    """
-    normalized = dict(config)
-    models = normalized.get("models")
-    if not isinstance(models, dict):
-        models = {}
-
-    timestamp = _now_iso()
-    changed = False
-    for name in _MODEL_FAMILIES:
-        if name in models and isinstance(models[name], dict):
-            model_entry = models[name]
-            if "family" not in model_entry:
-                model_entry["family"] = _MODEL_FAMILIES[name]
-                changed = True
-            if "supports_tools" not in model_entry:
-                model_entry["supports_tools"] = True
-                changed = True
-            if "is_cloud" not in model_entry:
-                model_entry["is_cloud"] = True
-                changed = True
-            if "context_window" not in model_entry:
-                model_entry["context_window"] = DEFAULT_CONTEXT_WINDOW
-                changed = True
-            if "parameters" not in model_entry or not isinstance(
-                model_entry.get("parameters"), dict
-            ):
-                model_entry["parameters"] = {}
-                changed = True
-            if "user_overrides" not in model_entry or not isinstance(
-                model_entry.get("user_overrides"), dict
-            ):
-                model_entry["user_overrides"] = {}
-                changed = True
-            if "capabilities" not in model_entry:
-                model_entry["capabilities"] = ["completion", "tools"]
-                changed = True
-            if "name" not in model_entry:
-                model_entry["name"] = name
-                changed = True
-            if "discovered_at" not in model_entry:
-                model_entry["discovered_at"] = timestamp
-                changed = True
-        else:
-            models[name] = _default_model_entry(
-                name=name,
-                context_window=DEFAULT_CONTEXT_WINDOW,
-                timestamp=timestamp,
-            )
-            changed = True
-
-    if normalized.get("default_model") not in models:
-        normalized["default_model"] = DEFAULT_MODEL
-        changed = True
-    if "version" not in normalized:
-        normalized["version"] = "1.0"
-        changed = True
-    normalized["models"] = models
-    if changed:
-        normalized["last_updated"] = timestamp
-
-    return normalized
+    return loaded
 
 
 def load_or_initialize_openrouter_model_map(path: Path) -> Dict[str, Any]:
-    """
-    Load an existing OpenRouter model map from disk, creating one if missing.
-    """
+    """Load and validate the OpenRouter model map from disk (no auto-initialization)."""
     path = Path(path)
     if not path.exists():
-        config = build_default_openrouter_model_map()
-        _save(path, config)
-        return config
+        raise ConfigError(
+            f"OpenRouter model map not found: {path}. "
+            "Create the file or set OPENROUTER_MODELS_JSON_PATH to a valid path."
+        )
 
     try:
         with path.open("r", encoding="utf-8") as handle:
             loaded = json.load(handle)
-    except Exception:
-        config = build_default_openrouter_model_map()
-        _save(path, config)
-        return config
+    except json.JSONDecodeError as exc:
+        raise ConfigError(
+            "OpenRouter model map is not valid JSON "
+            f"({path}:{exc.lineno}:{exc.colno}): {exc.msg}"
+        ) from exc
+    except OSError as exc:
+        raise ConfigError(f"Failed to read OpenRouter model map {path}: {exc}") from exc
 
-    if not _is_valid_model_map(loaded):
-        config = build_default_openrouter_model_map()
-        _save(path, config)
-        return config
-
-    normalized = _normalize_existing_model_map(loaded)
-    if normalized != loaded:
-        _save(path, normalized)
-    return normalized
+    return _validate_model_map(path, loaded)

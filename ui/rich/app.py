@@ -196,8 +196,7 @@ class RichPromptToolkitUI:
         return False
 
     def _get_prompt(self) -> str:
-        symbol = self._status_symbols.get(self._current_state, "?")
-        return f"({symbol}) > "
+        return "✠☦✠> "
 
     async def _emit_user_input(self, text: str) -> None:
         request = UserRequest(
