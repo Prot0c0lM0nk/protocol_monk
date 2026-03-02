@@ -15,7 +15,6 @@ _MODEL_FAMILIES = {
     "z-ai/glm-5": "glm",
     "z-ai/glm-4.7-flash": "glm",
     "mistralai/ministral-14b-2512": "mistral",
-    "liquid/lfm2-8b-a1b": "liquid",
 }
 
 

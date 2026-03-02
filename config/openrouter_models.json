@@ -76,21 +76,6 @@
       "parameters": {},
       "user_overrides": {},
       "discovered_at": "2026-02-21T00:00:00"
-    },
-    "liquid/lfm2-8b-a1b": {
-      "name": "liquid/lfm2-8b-a1b",
-      "family": "liquid",
-      "is_cloud": true,
-      "context_window": 2000,
-      "supports_thinking": false,
-      "supports_tools": true,
-      "capabilities": [
-        "completion",
-        "tools"
-      ],
-      "parameters": {},
-      "user_overrides": {},
-      "discovered_at": "2026-03-01T20:37:51.258789"
     }
   }
 }
