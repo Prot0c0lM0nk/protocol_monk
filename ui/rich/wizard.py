@@ -1,14 +1,12 @@
-"""Interactive Setup Wizard and Glitch Clear Effect for Protocol Monk.
+"""Interactive Setup Wizard for Protocol Monk.
 
-Implements an animated setup wizard with typewriter questions and
-Matrix-style glitch clear screen effect.
+Implements an animated setup wizard with typewriter questions.
+Configures provider, model, and workspace for each session.
 """
 
 from __future__ import annotations
 
 import asyncio
-import random
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Sequence
@@ -24,10 +22,6 @@ from .typewriter import TypewriterConfig, TYPEWRITER_PRESETS, typewriter_print
 
 if TYPE_CHECKING:
     from protocol_monk.config.settings import Settings
-
-
-# Matrix-style character set for glitch effect
-GLITCH_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%&*<>[]{}|/\\~░▒▓█"
 
 
 @dataclass
@@ -47,6 +41,7 @@ class WizardQuestion:
     choices: Sequence[WizardChoice] | None = None  # None = text input
     default: str = ""
     allow_custom: bool = False  # For text input, allow custom values
+    panel_title: str = "Select"  # Title for the selection panel
 
 
 class SetupWizard:
@@ -55,9 +50,9 @@ class SetupWizard:
     Configures the session with 3 questions:
     1. Provider selection (Ollama/OpenRouter)
     2. Model selection (from discovery)
-    3. Workspace path input
+    3. Workspace path selection (Desktop directories)
 
-    After wizard completes, performs a glitch clear effect.
+    After wizard completes, clears screen for boot animation.
     """
 
     def __init__(
@@ -66,12 +61,10 @@ class SetupWizard:
         console: Console | None = None,
         input_handler: RichInputHandler | None = None,
         typewriter_config: TypewriterConfig | None = None,
-        glitch_chars: str = GLITCH_CHARS,
     ) -> None:
         self._console = console or default_console
         self._input_handler = input_handler or RichInputHandler()
         self._typewriter_config = typewriter_config or TYPEWRITER_PRESETS["dramatic"]
-        self._glitch_chars = glitch_chars
         self._choices: Dict[str, Any] = {}
 
     def _get_provider_choices(self) -> List[WizardChoice]:
@@ -130,6 +123,95 @@ class SetupWizard:
 
         return choices
 
+    def _get_workspace_choices(self, current_workspace: str = "") -> List[WizardChoice]:
+        """Get workspace choices from Desktop directories.
+
+        Args:
+            current_workspace: Current workspace path to highlight as default
+
+        Returns:
+            List of WizardChoice objects for workspace selection
+        """
+        desktop = Path.home() / "Desktop"
+        choices: List[WizardChoice] = []
+
+        # Add current workspace if it exists and is a directory
+        if current_workspace:
+            current_path = Path(current_workspace)
+            if current_path.exists() and current_path.is_dir():
+                choices.append(
+                    WizardChoice(
+                        label=f"Current: {current_path.name}",
+                        value=str(current_path),
+                        description=f"{current_path}",
+                    )
+                )
+
+        # Add Desktop directories
+        if desktop.exists():
+            for item in sorted(desktop.iterdir()):
+                if item.is_dir() and not item.name.startswith('.'):
+                    # Skip if already added as current workspace
+                    if str(item) == current_workspace:
+                        continue
+                    choices.append(
+                        WizardChoice(
+                            label=item.name,
+                            value=str(item),
+                            description=f"~/Desktop/{item.name}",
+                        )
+                    )
+
+        # Limit to 15 choices for usability
+        if len(choices) > 15:
+            choices = choices[:15]
+
+        # Add "Other..." option for custom path
+        choices.append(
+            WizardChoice(
+                label="Other...",
+                value="__custom__",
+                description="Enter a custom path",
+            )
+        )
+
+        return choices
+
+    def _get_workspace_choices(self) -> List[WizardChoice]:
+        """Get workspace choices from Desktop directories."""
+        desktop = Path.home() / "Desktop"
+        choices: List[WizardChoice] = []
+
+        if desktop.exists() and desktop.is_dir():
+            try:
+                for item in sorted(desktop.iterdir(), key=lambda x: x.name.lower()):
+                    if item.is_dir() and not item.name.startswith('.'):
+                        # Truncate long names for display
+                        display_name = item.name[:30] + "..." if len(item.name) > 30 else item.name
+                        choices.append(
+                            WizardChoice(
+                                label=display_name,
+                                value=str(item),
+                                description=f"~/Desktop/{item.name}",
+                            )
+                        )
+            except PermissionError:
+                pass  # Fall through to default choices
+
+        # Limit to 15 directories for usability
+        choices = choices[:15]
+
+        # Add "Other..." option for custom path
+        choices.append(
+            WizardChoice(
+                label="Other...",
+                value="__custom__",
+                description="Enter a custom path",
+            )
+        )
+
+        return choices
+
     async def _ask_question(
         self,
         question: WizardQuestion,
@@ -169,7 +251,7 @@ class SetupWizard:
             self._console.print(
                 Panel(
                     content,
-                    title="Select Provider",
+                    title=question.panel_title,
                     title_align="left",
                     border_style="monk.border",
                     box=box.ROUNDED,
@@ -228,107 +310,6 @@ class SetupWizard:
                 except (EOFError, KeyboardInterrupt):
                     return question.default
 
-    async def _glitch_clear(
-        self,
-        *,
-        rows: int | None = None,
-        density: float = 0.15,
-        iterations: int = 3,
-        delay: float = 0.05,
-        final_delay: float = 0.15,
-    ) -> None:
-        """Perform Matrix-style glitch clear effect.
-
-        Fills the screen with random characters, then progressively
-        clears them to create a "digital rain" wipe effect.
-
-        Args:
-            rows: Number of rows to fill (default: terminal height)
-            density: Fraction of cells to fill per iteration (0.0-1.0)
-            iterations: Number of fill iterations before clearing
-            delay: Delay between iterations
-            final_delay: Delay before final clear
-
-        """
-        try:
-            import shutil
-
-            terminal_width = shutil.get_terminal_size().columns
-            terminal_height = shutil.get_terminal_size().lines
-        except Exception:
-            terminal_width = 80
-            terminal_height = 24
-
-        if rows is None:
-            rows = terminal_height
-
-        # Step 1: Fill screen with random characters progressively
-        for iteration in range(iterations):
-            fill_ratio = (iteration + 1) / iterations
-            chars_per_row = int(terminal_width * density * fill_ratio)
-
-            for row in range(rows):
-                # Randomly scatter characters across the row
-                positions = random.sample(
-                    range(terminal_width),
-                    min(chars_per_row, terminal_width),
-                )
-                line_chars = []
-                for pos in range(terminal_width):
-                    if pos in positions:
-                        char = random.choice(self._glitch_chars)
-                        # Use different styles for visual interest
-                        style = random.choice(["dim", "monk.text", "tech.cyan"])
-                        line_chars.append(f"[{style}]{char}[/{style}]")
-                    else:
-                        line_chars.append(" ")
-
-                if line_chars:
-                    # Move to the specific row and print
-                    self._console.print("\r\033[K", end="")  # Clear current line
-                    self._console.print("".join(line_chars), end="")
-
-            await asyncio.sleep(delay)
-
-        # Step 2: Progressive clear - characters "fall away"
-        for clear_pass in range(3):
-            rows_to_clear = int(rows * (clear_pass + 1) / 3)
-
-            for row in range(rows):
-                if row < rows_to_clear:
-                    # Clear this row with more white space
-                    clear_amount = random.randint(0, terminal_width // 3)
-                    remaining = terminal_width - clear_amount
-
-                    if remaining > 0 and random.random() < 0.5:
-                        # Fade from left or right
-                        if random.random() < 0.5:
-                            # Clear from left
-                            line = " " * clear_amount
-                            remaining_chars = [
-                                random.choice(self._glitch_chars)
-                                for _ in range(min(remaining, 20))
-                            ]
-                            line += " ".join(remaining_chars[:remaining])
-                        else:
-                            # Clear from right
-                            remaining_chars = [
-                                random.choice(self._glitch_chars)
-                                for _ in range(min(remaining, 20))
-                            ]
-                            line = " ".join(remaining_chars[:remaining])
-                            line += " " * clear_amount
-                        self._console.print(f"\r{line}\033[K", end="")
-                    else:
-                        self._console.print("\r\033[K", end="")  # Clear line
-
-            await asyncio.sleep(delay)
-
-        # Step 3: Final clear - screen goes dark
-        await asyncio.sleep(final_delay)
-        self._console.print("\033[2J\033[H", end="")  # Clear screen and move to home
-        self._console.print()
-
     async def run(
         self,
         settings: Settings,
@@ -361,6 +342,7 @@ class SetupWizard:
             question="What is the Source?",
             choices=self._get_provider_choices(),
             default=settings.llm_provider,
+            panel_title="Select Provider",
         )
         self._choices["provider"] = await self._ask_question(
             provider_question,
@@ -373,6 +355,7 @@ class SetupWizard:
             question="The Mind of?",
             choices=self._get_model_choices(settings),
             default=settings.active_model_name,
+            panel_title="Select Model",
         )
         self._choices["model"] = await self._ask_question(
             model_question,
@@ -380,19 +363,46 @@ class SetupWizard:
             total_questions=3,
         )
 
-        # Question 3: Workspace path
+        # Question 3: Workspace selection (Desktop directories)
+        workspace_choices = self._get_workspace_choices()
         workspace_default = str(settings.workspace) if settings.workspace else str(Path.cwd())
+
+        # Find default index in choices
+        workspace_default_index = 0
+        for i, choice in enumerate(workspace_choices):
+            if choice.value == workspace_default:
+                workspace_default_index = i
+                break
+
         workspace_question = WizardQuestion(
             question="Your Path of choice?",
-            choices=None,  # Text input
-            default=workspace_default,
-            allow_custom=True,
+            choices=workspace_choices,
+            default=workspace_choices[workspace_default_index].value
+            if workspace_default_index < len(workspace_choices)
+            else workspace_choices[0].value,
+            panel_title="Select Workspace",
         )
-        self._choices["workspace"] = await self._ask_question(
+        workspace_result = await self._ask_question(
             workspace_question,
             question_number=3,
             total_questions=3,
         )
+
+        # Handle "Other..." selection
+        if workspace_result == "__custom__":
+            custom_question = WizardQuestion(
+                question="Enter custom path:",
+                choices=None,  # Text input
+                default=workspace_default,
+                allow_custom=True,
+            )
+            self._choices["workspace"] = await self._ask_question(
+                custom_question,
+                question_number=3,
+                total_questions=3,
+            )
+        else:
+            self._choices["workspace"] = workspace_result
 
         # Print confirmation
         self._console.print()
@@ -422,8 +432,8 @@ class SetupWizard:
 
         await asyncio.sleep(0.5)
 
-        # Perform glitch clear effect
-        await self._glitch_clear()
+        # Clear screen for boot animation
+        self._console.clear()
 
         return self._choices
 

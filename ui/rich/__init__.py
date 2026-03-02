@@ -1,6 +1,12 @@
 """Rich UI backend for Protocol Monk."""
 
 from protocol_monk.ui.rich.app import RichPromptToolkitUI
+from protocol_monk.ui.rich.boot import (
+    BootAnimation,
+    BootPhase,
+    run_boot_sequence,
+    run_boot_sequence_async,
+)
 from protocol_monk.ui.rich.typewriter import (
     TypewriterConfig,
     TYPEWRITER_PRESETS,
@@ -8,7 +14,6 @@ from protocol_monk.ui.rich.typewriter import (
     typewriter_text,
 )
 from protocol_monk.ui.rich.wizard import (
-    GLITCH_CHARS,
     SetupWizard,
     WizardChoice,
     WizardQuestion,
@@ -16,6 +21,10 @@ from protocol_monk.ui.rich.wizard import (
 
 __all__ = [
     "RichPromptToolkitUI",
+    "BootAnimation",
+    "BootPhase",
+    "run_boot_sequence",
+    "run_boot_sequence_async",
     "TypewriterConfig",
     "TYPEWRITER_PRESETS",
     "typewriter_print",
@@ -23,5 +32,4 @@ __all__ = [
     "SetupWizard",
     "WizardChoice",
     "WizardQuestion",
-    "GLITCH_CHARS",
 ]

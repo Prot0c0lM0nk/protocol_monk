@@ -26,6 +26,9 @@ from protocol_monk.utils.logger import EventLogger
 from protocol_monk.utils.session_transcript import SessionTranscriptSink
 from protocol_monk.providers.factory import create_provider
 
+# 6. Import UI Components
+from protocol_monk.ui.rich.boot import BootAnimation, BootPhase
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -73,7 +76,7 @@ def _validate_context_tracking_tools(registry: ToolRegistry) -> tuple[list[str],
 async def main():
     """Main entry point for Protocol Monk."""
     try:
-        logger.info("Phase 1: Loading Configuration...")
+        # Phase 1: Loading Configuration
         app_root = Path(os.getcwd()) / "protocol_monk"
         settings = load_settings(app_root)
 
@@ -92,29 +95,29 @@ async def main():
         # Initialize model discovery (async)
         await settings.initialize()
 
-        # [FIX] Lazy logging
-        logger.info("Active model: %s", settings.active_model_name)
-
         # Run Setup Wizard (skip in non-interactive mode)
         skip_wizard = os.getenv("PROTOCOL_MONK_SKIP_WIZARD", "").lower() in ("1", "true", "yes")
         if not skip_wizard:
             from protocol_monk.ui.rich.wizard import SetupWizard
 
-            logger.info("Phase 1.5: Running Setup Wizard...")
             wizard = SetupWizard()
             try:
                 choices = await wizard.run(settings)
                 wizard.apply_choices(settings, choices)
-                logger.info(
-                    "Wizard complete: provider=%s, model=%s, workspace=%s",
-                    choices.get("provider"),
-                    choices.get("model"),
-                    choices.get("workspace"),
-                )
             except (EOFError, KeyboardInterrupt):
-                logger.info("Wizard cancelled by user. Using defaults.")
+                pass  # User cancelled, use defaults
 
-        logger.info("Phase 2: Wiring Components...")
+        # Determine UI backend
+        requested_ui_backend = os.getenv("PROTOCOL_MONK_UI", "rich")
+        ui_backend, ui_note = _resolve_ui_backend(requested_ui_backend)
+        _apply_rich_log_suppression(ui_backend, root_level)
+
+        # Run boot animation for Rich UI
+        if ui_backend == "rich":
+            boot = BootAnimation()
+            await boot.run_animation(duration_per_art=0.5)
+
+        # Phase 2: Wiring Components
 
         # A. Nervous System
         bus = EventBus()
@@ -127,7 +130,6 @@ async def main():
             max_total_bytes=settings.trace_max_total_bytes,
         )
         await transcript_sink.start()
-        logger.info("Session transcript: %s", transcript_sink.path)
 
         # Start the EventLogger only in debug runs to avoid duplicate UI output.
         if settings.log_level == "DEBUG":
@@ -139,8 +141,6 @@ async def main():
         register_default_tools(registry, settings)
         registered_tools = registry.list_tool_names()
 
-        # [FIX] Lazy logging
-        logger.info("Registered Tools (%d): %s", len(registered_tools), registered_tools)
         await bus.emit(
             EventTypes.INFO,
             {
@@ -187,11 +187,6 @@ async def main():
 
         # C. The Provider (The Model Interface)
         provider = create_provider(settings)
-        logger.info(
-            "Selected provider: %s | Active model: %s",
-            settings.llm_provider,
-            settings.active_model_name,
-        )
         await bus.emit(
             EventTypes.INFO,
             {
@@ -203,9 +198,6 @@ async def main():
             },
         )
 
-        requested_ui_backend = os.getenv("PROTOCOL_MONK_UI", "rich")
-        ui_backend, ui_note = _resolve_ui_backend(requested_ui_backend)
-        _apply_rich_log_suppression(ui_backend, root_level)
         if ui_note:
             logger.warning(ui_note)
             await bus.emit(
@@ -230,8 +222,6 @@ async def main():
         )
 
         # D. Scratch Manager (Cleanup)
-        # [FIX] Removed unused 'scratch_manager' variable (using _ instead)
-        # unless we pass it to coordinator later.
         with ScratchManager(Path(os.getcwd())) as _:
 
             # E. Memory Systems (The Brain)
@@ -251,31 +241,27 @@ async def main():
                 settings=settings,
             )
 
-            logger.info("Phase 3: Starting Services...")
             await agent_service.start()
+
+            # Phase 4: Starting UI
+            boot.update_phase(BootPhase.UI, "Ready")
 
             if ui_backend == "cli":
                 from protocol_monk.ui.cli import PromptToolkitCLI
 
                 cli = PromptToolkitCLI(bus, settings)
                 await cli.start()
-
-                logger.info("Phase 4: Starting CLI...")
                 await cli.run()
             else:
                 from protocol_monk.ui.rich.app import RichPromptToolkitUI
 
                 rich_ui = RichPromptToolkitUI(bus=bus, settings=settings)
                 await rich_ui.start()
-
-                logger.info("Phase 4: Starting Rich UI...")
                 await rich_ui.run()
 
-            logger.info("Shutdown complete.")
             return 0
 
     except Exception as e:
-        # [FIX] Lazy logging for exceptions
         logger.critical("Startup Failed: %s", e, exc_info=True)
         return 1
 
