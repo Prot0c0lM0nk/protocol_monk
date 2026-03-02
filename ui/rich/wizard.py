@@ -7,13 +7,14 @@ Configures provider, model, and workspace for each session.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Sequence
 
 from rich import box
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 from .input_handler import RichInputHandler
@@ -31,6 +32,7 @@ class WizardChoice:
     label: str
     value: str
     description: str = ""
+    display: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -42,6 +44,8 @@ class WizardQuestion:
     default: str = ""
     allow_custom: bool = False  # For text input, allow custom values
     panel_title: str = "Select"  # Title for the selection panel
+    table_columns: Sequence[str] | None = None  # Optional explicit table columns
+    page_size: int = 10  # Pagination size when choices are long
 
 
 class SetupWizard:
@@ -73,14 +77,80 @@ class SetupWizard:
             WizardChoice(
                 label="Ollama",
                 value="ollama",
-                description="Local inference via Ollama",
+                description="Use configured Ollama-compatible endpoint",
+                display={
+                    "Provider": "Ollama",
+                    "Notes": "Configured Ollama-compatible endpoint",
+                },
             ),
             WizardChoice(
                 label="OpenRouter",
                 value="openrouter",
-                description="Cloud models via OpenRouter API",
+                description="Use configured OpenRouter-compatible endpoint",
+                display={
+                    "Provider": "OpenRouter",
+                    "Notes": "Configured OpenRouter-compatible endpoint",
+                },
             ),
         ]
+
+    @staticmethod
+    def _format_context_window(value: Any) -> str:
+        """Format context window value for display."""
+        if isinstance(value, int):
+            return f"{value:,}"
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return "?"
+
+    @staticmethod
+    def _extract_capabilities(config: Dict[str, Any]) -> List[str]:
+        """Extract capability labels with fallback from boolean support flags."""
+        raw = config.get("capabilities")
+        capabilities: List[str] = []
+        if isinstance(raw, list):
+            capabilities = [str(item).strip().lower() for item in raw if str(item).strip()]
+        elif isinstance(raw, str) and raw.strip():
+            capabilities = [part.strip().lower() for part in raw.split(",") if part.strip()]
+
+        if not capabilities:
+            if config.get("supports_tools"):
+                capabilities.append("tools")
+            if config.get("supports_thinking"):
+                capabilities.append("thinking")
+
+        # Deduplicate while preserving order
+        deduped: List[str] = []
+        seen: set[str] = set()
+        for cap in capabilities:
+            if cap in seen:
+                continue
+            seen.add(cap)
+            deduped.append(cap)
+        return deduped
+
+    def _build_model_choice(self, name: str, config: Dict[str, Any]) -> WizardChoice:
+        """Create a model choice with structured display metadata."""
+        family = str(config.get("family", "unknown"))
+        context_text = self._format_context_window(config.get("context_window"))
+        capabilities = self._extract_capabilities(config)
+        capabilities_text = ", ".join(capabilities) if capabilities else "-"
+
+        description = f"{family} | {context_text} ctx"
+        if capabilities:
+            description = f"{description} | {capabilities_text}"
+
+        return WizardChoice(
+            label=name,
+            value=name,
+            description=description,
+            display={
+                "Model": name,
+                "Family": family,
+                "Context": context_text,
+                "Capabilities": capabilities_text,
+            },
+        )
 
     def _get_model_choices(self, settings: Settings) -> List[WizardChoice]:
         """Get available model choices from settings.
@@ -97,6 +167,12 @@ class SetupWizard:
                     label="Default Model",
                     value="default",
                     description="Use default model configuration",
+                    display={
+                        "Model": "Default Model",
+                        "Family": "unknown",
+                        "Context": "?",
+                        "Capabilities": "-",
+                    },
                 ),
             ]
 
@@ -106,26 +182,12 @@ class SetupWizard:
             if not config.get("supports_tools", False):
                 continue
 
-            if len(choices) >= 20:  # Limit to 20 models for usability
-                break
+            choices.append(self._build_model_choice(name, config))
 
-            # Build description with family and context window
-            family = config.get("family", "unknown")
-            ctx = config.get("context_window", "?")
-            supports_thinking = "thinking" if config.get("supports_thinking") else ""
-            features = supports_thinking if supports_thinking else ""
-
-            description = f"{family} | {ctx} ctx"
-            if features:
-                description = f"{description} | {features}"
-
-            choices.append(
-                WizardChoice(
-                    label=name,
-                    value=name,
-                    description=description,
-                )
-            )
+        if not choices:
+            default_model = models_config.get("default_model") or next(iter(models.keys()), "default")
+            fallback_config = models.get(default_model, {})
+            choices.append(self._build_model_choice(default_model, fallback_config))
 
         return choices
 
@@ -140,83 +202,82 @@ class SetupWizard:
         """
         desktop = Path.home() / "Desktop"
         choices: List[WizardChoice] = []
+        added_paths: set[str] = set()
 
         # Add current workspace if it exists and is a directory
         if current_workspace:
             current_path = Path(current_workspace)
             if current_path.exists() and current_path.is_dir():
+                current_path_text = str(current_path)
                 choices.append(
                     WizardChoice(
-                        label=f"Current: {current_path.name}",
-                        value=str(current_path),
-                        description=f"{current_path}",
+                        label=current_path.name or current_path_text,
+                        value=current_path_text,
+                        description=current_path_text,
+                        display={
+                            "Workspace": current_path.name or current_path_text,
+                            "Path": current_path_text,
+                            "Current": "Yes",
+                        },
                     )
                 )
+                added_paths.add(current_path_text)
 
         # Add Desktop directories
-        if desktop.exists():
-            for item in sorted(desktop.iterdir()):
-                if item.is_dir() and not item.name.startswith('.'):
-                    # Skip if already added as current workspace
-                    if str(item) == current_workspace:
-                        continue
-                    choices.append(
-                        WizardChoice(
-                            label=item.name,
-                            value=str(item),
-                            description=f"~/Desktop/{item.name}",
-                        )
-                    )
-
-        # Limit to 15 choices for usability
-        if len(choices) > 15:
-            choices = choices[:15]
-
-        # Add "Other..." option for custom path
-        choices.append(
-            WizardChoice(
-                label="Other...",
-                value="__custom__",
-                description="Enter a custom path",
-            )
-        )
-
-        return choices
-
-    def _get_workspace_choices(self) -> List[WizardChoice]:
-        """Get workspace choices from Desktop directories."""
-        desktop = Path.home() / "Desktop"
-        choices: List[WizardChoice] = []
-
         if desktop.exists() and desktop.is_dir():
             try:
                 for item in sorted(desktop.iterdir(), key=lambda x: x.name.lower()):
                     if item.is_dir() and not item.name.startswith('.'):
-                        # Truncate long names for display
-                        display_name = item.name[:30] + "..." if len(item.name) > 30 else item.name
+                        item_path_text = str(item)
+                        if item_path_text in added_paths:
+                            continue
                         choices.append(
                             WizardChoice(
-                                label=display_name,
-                                value=str(item),
-                                description=f"~/Desktop/{item.name}",
+                                label=item.name,
+                                value=item_path_text,
+                                description=item_path_text,
+                                display={
+                                    "Workspace": item.name,
+                                    "Path": item_path_text,
+                                    "Current": "",
+                                },
                             )
                         )
             except PermissionError:
                 pass  # Fall through to default choices
 
-        # Limit to 15 directories for usability
-        choices = choices[:15]
-
         # Add "Other..." option for custom path
         choices.append(
             WizardChoice(
                 label="Other...",
                 value="__custom__",
                 description="Enter a custom path",
+                display={
+                    "Workspace": "Other...",
+                    "Path": "Enter a custom path",
+                    "Current": "",
+                },
             )
         )
 
         return choices
+
+    @staticmethod
+    def _choice_column_value(choice: WizardChoice, column_name: str) -> str:
+        """Resolve a table column value for a choice."""
+        if choice.display and column_name in choice.display:
+            return choice.display[column_name]
+
+        lowered = column_name.lower()
+        if lowered in {"option", "provider", "model", "workspace"}:
+            return choice.label
+        if lowered in {"notes", "details", "description"}:
+            return choice.description
+        if lowered == "path":
+            return choice.value
+        if lowered == "current":
+            return ""
+        return ""
 
     async def _ask_question(
         self,
@@ -242,43 +303,92 @@ class SetupWizard:
         await asyncio.sleep(self._typewriter_config.pause_before_prompt)
 
         if question.choices:
-            # Panel-based selection
-            options = [f"{c.label} - {c.description}" for c in question.choices]
-
-            # Build choices panel using Text.from_markup to parse style tags
-            lines = []
-            for i, choice in enumerate(question.choices):
-                marker = "→" if i == 0 else " "
-                lines.append(f"{marker} [{i}] {choice.label}")
-                if choice.description:
-                    lines.append(f"      [dim]{choice.description}[/]")
-
-            content = Text.from_markup("\n".join(lines))
-            self._console.print(
-                Panel(
-                    content,
-                    title=question.panel_title,
-                    title_align="left",
-                    border_style="monk.border",
-                    box=box.ROUNDED,
-                )
-            )
-
             # Get selection
+            columns = list(question.table_columns or ("Option", "Details"))
+            page_size = max(1, int(question.page_size))
             max_index = len(question.choices) - 1
             default_index = 0
             for i, choice in enumerate(question.choices):
                 if choice.value == question.default:
                     default_index = i
                     break
+            total_pages = (len(question.choices) - 1) // page_size + 1
+            current_page = default_index // page_size
 
             while True:
+                start_idx = current_page * page_size
+                end_idx = min(start_idx + page_size, len(question.choices))
+
+                table = Table(
+                    box=box.SIMPLE_HEAD,
+                    show_lines=False,
+                    expand=True,
+                    header_style="tech.cyan",
+                )
+                table.add_column("#", justify="right", style="monk.text", no_wrap=True)
+                for column_name in columns:
+                    table.add_column(column_name, style="monk.text", overflow="fold")
+
+                for idx in range(start_idx, end_idx):
+                    choice = question.choices[idx]
+                    index_marker = f"{idx} *" if idx == default_index else str(idx)
+                    row_values = [
+                        self._choice_column_value(choice, column_name)
+                        for column_name in columns
+                    ]
+                    table.add_row(index_marker, *row_values)
+
+                footer_lines = [
+                    f"[dim]Rows {start_idx}-{end_idx - 1} of 0-{max_index}.[/]",
+                ]
+                if total_pages > 1:
+                    footer_lines.append(
+                        f"[dim]Page {current_page + 1}/{total_pages}. Enter 'n'/'next' or 'p'/'prev' to navigate.[/]"
+                    )
+                footer_lines.append(
+                    f"[dim]Press Enter for default ({default_index}).[/]"
+                )
+                footer = Text.from_markup("\n".join(footer_lines))
+
+                content = Group(table, footer)
+                panel_title = question.panel_title
+                if total_pages > 1:
+                    panel_title = f"{panel_title} ({current_page + 1}/{total_pages})"
+                self._console.print(
+                    Panel(
+                        content,
+                        title=panel_title,
+                        title_align="left",
+                        border_style="monk.border",
+                        box=box.ROUNDED,
+                    )
+                )
+
                 try:
-                    prompt = f"Select [0-{max_index}] (default {default_index}): "
+                    if total_pages > 1:
+                        prompt = (
+                            f"Select [0-{max_index}] (default {default_index}, n/p pages): "
+                        )
+                    else:
+                        prompt = f"Select [0-{max_index}] (default {default_index}): "
                     answer = await self._input_handler.prompt(prompt)
-                    if not answer.strip():
+                    answer_clean = answer.strip().lower()
+                    if not answer_clean:
                         return question.choices[default_index].value
-                    selection = int(answer.strip())
+                    if answer_clean in {"n", "next"}:
+                        if current_page < total_pages - 1:
+                            current_page += 1
+                        else:
+                            self._console.print("[warning]Already on the last page.[/]")
+                        continue
+                    if answer_clean in {"p", "prev"}:
+                        if current_page > 0:
+                            current_page -= 1
+                        else:
+                            self._console.print("[warning]Already on the first page.[/]")
+                        continue
+
+                    selection = int(answer_clean)
                     if 0 <= selection < len(question.choices):
                         return question.choices[selection].value
                     self._console.print("[error]Invalid selection. Try again.[/]")
@@ -349,6 +459,8 @@ class SetupWizard:
             choices=self._get_provider_choices(),
             default=settings.llm_provider,
             panel_title="Select Provider",
+            table_columns=("Provider", "Notes"),
+            page_size=8,
         )
         selected_provider = await self._ask_question(
             provider_question,
@@ -373,6 +485,8 @@ class SetupWizard:
             choices=self._get_model_choices(settings),
             default=settings.active_model_name,
             panel_title="Select Model",
+            table_columns=("Model", "Family", "Context", "Capabilities"),
+            page_size=10,
         )
         self._choices["model"] = await self._ask_question(
             model_question,
@@ -381,8 +495,8 @@ class SetupWizard:
         )
 
         # Question 3: Workspace selection (Desktop directories)
-        workspace_choices = self._get_workspace_choices()
         workspace_default = str(settings.workspace) if settings.workspace else str(Path.cwd())
+        workspace_choices = self._get_workspace_choices(current_workspace=workspace_default)
 
         # Find default index in choices
         workspace_default_index = 0
@@ -398,6 +512,8 @@ class SetupWizard:
             if workspace_default_index < len(workspace_choices)
             else workspace_choices[0].value,
             panel_title="Select Workspace",
+            table_columns=("Workspace", "Path", "Current"),
+            page_size=10,
         )
         workspace_result = await self._ask_question(
             workspace_question,

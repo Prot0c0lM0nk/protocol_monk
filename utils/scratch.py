@@ -51,7 +51,7 @@ class ScratchManager:
         if self.scratch_dir.exists():
             try:
                 shutil.rmtree(self.scratch_dir)
-                self.logger.info("Cleaned up old scratch files.")
+                self.logger.debug("Cleaned up old scratch files.")
             except Exception as e:
                 raise ScratchManagerError(
                     f"Failed to cleanup scratch directory: {e}",
