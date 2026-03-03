@@ -30,8 +30,9 @@ from .styles import THINKING_STYLE, create_monk_panel, panel, state_style
 class StreamingPanel:
     """Handles streaming display separately from scrollback.
 
-    Key insight: The panel must produce identical output for both Live updates
-    and final print to ensure clean transition without visual artifacts.
+    Key insight: streaming and final render phases have different constraints.
+    During streaming we keep rendering stable (plain text body), while final
+    commit can render markdown for richer presentation.
     """
 
     def __init__(self, console: Console, render_interval: float = 0.08) -> None:
@@ -68,7 +69,7 @@ class StreamingPanel:
         self._started = True
 
     def update_buffers(self, *, thinking: str, content: str) -> None:
-        """Update panel buffers and refresh a transient Live display."""
+        """Update panel buffers and refresh a Live display."""
         self.set_buffers(thinking=thinking, content=content)
 
         if not (thinking.strip() or content.strip()):
@@ -78,11 +79,11 @@ class StreamingPanel:
 
         if self._live is None:
             self._live = Live(
-                self._build_panel(),
+                self._build_panel(final=False),
                 console=self._console,
                 auto_refresh=False,
                 refresh_per_second=12,
-                transient=True,  # Key: panel disappears when Live stops
+                transient=False,
             )
             self._live.start()
             # Allow the first update to render immediately.
@@ -97,7 +98,7 @@ class StreamingPanel:
 
         now = time.monotonic()
         if force or now - self._last_render_time >= self._render_interval:
-            self._live.update(self._build_panel(), refresh=True)
+            self._live.update(self._build_panel(final=False), refresh=True)
             self._last_render_time = now
 
     def finish(self) -> bool:
@@ -106,14 +107,13 @@ class StreamingPanel:
         self.stop_thinking()
 
         if self._live is not None:
-            # Final update to flush any throttled content.
-            self.refresh(force=True)
+            # Push one final committed frame before stopping Live.
+            self._live.update(self._build_panel(final=True), refresh=True)
             self._live.stop()
             self._live = None
-
-        # Print to scrollback if we had content, even if no Live ever started.
-        if had_content:
-            self._console.print(self._build_panel())
+        elif had_content:
+            # Fallback-only path: response completed without opening Live.
+            self._console.print(self._build_panel(final=True))
 
         self._thinking = ""
         self._content = ""
@@ -130,7 +130,7 @@ class StreamingPanel:
         self._content = ""
         self._started = False
 
-    def _build_panel(self) -> RenderableType:
+    def _build_panel(self, *, final: bool) -> RenderableType:
         """Build separate panels for thinking and response content."""
         panels: list[RenderableType] = []
 
@@ -156,7 +156,7 @@ class StreamingPanel:
 
         # Response panel (normal styling)
         if content:
-            if self._looks_like_markdown(content):
+            if final and self._looks_like_markdown(content):
                 body = Markdown(content)
             else:
                 body = Text(content, style="monk.text")
