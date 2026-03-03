@@ -277,6 +277,16 @@ class RichPromptToolkitUI:
         if not thinking_text:
             thinking_text = str(data.get("thinking", "")).strip()
 
+        has_tool_calls = bool(data.get("has_tool_calls", False))
+        if not has_tool_calls:
+            tool_calls = data.get("tool_calls")
+            has_tool_calls = isinstance(tool_calls, list) and bool(tool_calls)
+
+        # Tool-calling intermediate passes often carry reasoning only. Skip
+        # committing those to scrollback so "The Cell" doesn't duplicate.
+        if has_tool_calls and not response_text:
+            return
+
         self._renderer.finalize_response(
             thinking=thinking_text,
             content=response_text,
