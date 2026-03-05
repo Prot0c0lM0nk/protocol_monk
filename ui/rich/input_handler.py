@@ -115,7 +115,7 @@ class RichInputHandler:
                 return True
             if normalized in {"n", "no"}:
                 return False
-            print("Invalid choice. Use y or n.")
+            default_console.print("Invalid choice. Use y or n.")
 
     async def select_with_arrows(
         self,

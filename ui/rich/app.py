@@ -50,6 +50,7 @@ class RichPromptToolkitUI:
     FULL_OUTPUT_SOFT_CAP = 20_000
     TOOL_OUTPUT_QUEUE_MAX = 10
     TOOL_RESULT_QUEUE_MAX = 20
+    SIGNOFF_WAIT_TIMEOUT_SECONDS = 20.0
 
     def __init__(
         self,
@@ -74,6 +75,8 @@ class RichPromptToolkitUI:
         self._tool_results: deque[ToolOutputRecord] = deque(maxlen=self.TOOL_RESULT_QUEUE_MAX)
         self._tool_progress_seen: dict[str, tuple[Any, str]] = {}
         self._tool_viewer_task: asyncio.Task | None = None
+        self._pending_signoff_turn_id: str | None = None
+        self._pending_signoff_done: asyncio.Event | None = None
 
         self._status_symbols = {
             "idle": "idle",
@@ -194,7 +197,25 @@ class RichPromptToolkitUI:
 
     async def _run_signoff_and_shutdown(self, trigger: str) -> None:
         signoff_prompt = build_signoff_prompt(trigger)
-        await self._emit_user_input(signoff_prompt)
+        signoff_turn_id = str(uuid.uuid4())
+        self._pending_signoff_turn_id = signoff_turn_id
+        self._pending_signoff_done = asyncio.Event()
+
+        await self._emit_user_input(signoff_prompt, request_id=signoff_turn_id)
+
+        try:
+            await asyncio.wait_for(
+                self._pending_signoff_done.wait(),
+                timeout=self.SIGNOFF_WAIT_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            self._renderer.render_warning(
+                "Signoff response timed out; continuing shutdown sequence."
+            )
+        finally:
+            self._pending_signoff_turn_id = None
+            self._pending_signoff_done = None
+
         await self._render_shutdown_sequence()
         self._running = False
 
@@ -213,14 +234,16 @@ class RichPromptToolkitUI:
     def _get_prompt(self) -> str:
         return "✠☦✠> "
 
-    async def _emit_user_input(self, text: str) -> None:
+    async def _emit_user_input(self, text: str, *, request_id: str | None = None) -> str:
+        turn_id = str(request_id or uuid.uuid4())
         request = UserRequest(
             text=text,
             source="rich",
-            request_id=str(uuid.uuid4()),
+            request_id=turn_id,
             timestamp=time.time(),
         )
         await self._bus.emit(EventTypes.USER_INPUT_SUBMITTED, request)
+        return turn_id
 
     async def _emit_tool_confirmation(self, tool_call_id: str, decision: str) -> None:
         response = ConfirmationResponse(
@@ -267,6 +290,7 @@ class RichPromptToolkitUI:
         )
 
     async def _handle_response_complete(self, data: dict) -> None:
+        turn_id = str(data.get("turn_id", "") or "")
         pass_id = self._normalize_pass_id(data.get("pass_id"))
         buffer = self._pass_buffers.pop(pass_id, {"content": "", "thinking": ""})
         response_text = str(buffer.get("content", "")).strip()
@@ -282,9 +306,12 @@ class RichPromptToolkitUI:
             tool_calls = data.get("tool_calls")
             has_tool_calls = isinstance(tool_calls, list) and bool(tool_calls)
 
-        # Tool-calling intermediate passes often carry reasoning only. Skip
-        # committing those to scrollback so "The Cell" doesn't duplicate.
-        if has_tool_calls and not response_text:
+        if has_tool_calls:
+            self._renderer.finalize_tool_transition(
+                thinking=thinking_text,
+                content=response_text,
+            )
+            self._complete_pending_signoff(turn_id)
             return
 
         self._renderer.finalize_response(
@@ -292,6 +319,7 @@ class RichPromptToolkitUI:
             content=response_text,
             empty_marker=not response_text and not thinking_text,
         )
+        self._complete_pending_signoff(turn_id)
 
     async def _handle_tool_confirmation_requested(self, data: dict) -> None:
         tool_name = data.get("tool_name", "")
@@ -341,6 +369,7 @@ class RichPromptToolkitUI:
 
     async def _handle_tool_start(self, data: dict) -> None:
         tool_name = data.get("tool_name", "")
+        self._renderer.clear_stream_visual_state()
         self._renderer.render_tool_start(tool_name)
 
     async def _handle_tool_result(self, data: dict) -> None:
@@ -566,6 +595,15 @@ class RichPromptToolkitUI:
     def _normalize_pass_id(self, pass_id: Any) -> str:
         text = str(pass_id).strip() if pass_id is not None else ""
         return text or self._default_pass_id
+
+    def _complete_pending_signoff(self, turn_id: str) -> None:
+        if not turn_id:
+            return
+        if self._pending_signoff_turn_id != turn_id:
+            return
+        if self._pending_signoff_done is None:
+            return
+        self._pending_signoff_done.set()
 
     @classmethod
     def _is_large_output(cls, output_text: str) -> bool:

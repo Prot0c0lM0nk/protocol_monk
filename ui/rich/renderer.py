@@ -101,19 +101,35 @@ class StreamingPanel:
             self._live.update(self._build_panel(final=False), refresh=True)
             self._last_render_time = now
 
-    def finish(self) -> bool:
-        """Finish streaming - stop Live and print final panel to scrollback."""
+    def is_live_active(self) -> bool:
+        """Return True when Live rendering is currently active."""
+        return self._live is not None
+
+    def print_above_live(self, renderable: RenderableType | str) -> None:
+        """Print above active Live frame when possible."""
+        if self._live is not None:
+            self._live.console.print(renderable)
+            return
+        self._console.print(renderable)
+
+    def finish(self, *, final: bool = True) -> bool:
+        """Finish streaming and commit the current frame.
+
+        Args:
+            final: If True, render final-phase view (allows markdown upgrade).
+                If False, preserve the stream-phase frame exactly as displayed.
+        """
         had_content = bool(self._thinking.strip() or self._content.strip())
         self.stop_thinking()
 
         if self._live is not None:
             # Push one final committed frame before stopping Live.
-            self._live.update(self._build_panel(final=True), refresh=True)
+            self._live.update(self._build_panel(final=final), refresh=True)
             self._live.stop()
             self._live = None
         elif had_content:
             # Fallback-only path: response completed without opening Live.
-            self._console.print(self._build_panel(final=True))
+            self._console.print(self._build_panel(final=final))
 
         self._thinking = ""
         self._content = ""
@@ -290,7 +306,7 @@ class RichRenderer:
     # --- Streaming ---
 
     def clear_stream_visual_state(self) -> None:
-        """Clear transient stream visuals before modal input flows."""
+        """Freeze/reset active stream visuals before tool/input flows."""
         self._streaming.clear()
 
     def start_thinking(self, message: str = "Contemplating...") -> None:
@@ -326,15 +342,25 @@ class RichRenderer:
         self._streaming.set_buffers(thinking=thinking, content=content)
 
         # Stop streaming and print the final panel
-        self._streaming.finish()
+        self._streaming.finish(final=True)
 
         # Handle empty response case
         if empty_marker and not thinking.strip() and not content.strip():
-            self._console.print(
+            self._emit(
                 create_monk_panel(Text("[Empty pass]", style="muted"))
             )
 
-        self._console.print()  # Add spacing after response
+        self._emit("")  # Add spacing after response
+
+    def finalize_tool_transition(
+        self,
+        *,
+        thinking: str,
+        content: str,
+    ) -> None:
+        """Freeze stream visuals before tool events without final render promotion."""
+        self._streaming.set_buffers(thinking=thinking, content=content)
+        self._streaming.finish(final=False)
 
     def render_status(self, status: str, message: str = "") -> None:
         """Render a status message (used for state changes)."""
@@ -343,7 +369,7 @@ class RichRenderer:
         text = f"[{style}]{normalized}[/{style}]"
         if message:
             text = f"{text}: {message}"
-        self._console.print(text)
+        self._emit(text)
 
     def render_status_snapshot(self, payload: Mapping[str, Any]) -> None:
         """Render a concise status snapshot for /status command."""
@@ -372,7 +398,7 @@ class RichRenderer:
         for label, value in rows:
             table.add_row(label, value)
 
-        self._console.print(
+        self._emit(
             Panel(
                 table,
                 title="[tech.cyan]Status[/]",
@@ -395,7 +421,7 @@ class RichRenderer:
             renderable = metadata["renderable"]
         else:
             renderable = self._format_event_line(kind, text)
-        self._console.print(renderable)
+        self._emit(renderable)
 
     def render_tool_confirmation(self, tool_name: str, parameters: Mapping[str, Any]) -> None:
         """Render a tool confirmation request panel."""
@@ -431,7 +457,7 @@ class RichRenderer:
             items.append(Text(""))
 
         panel_content = Group(*items)
-        self._console.print(
+        self._emit(
             Panel(
                 panel_content,
                 title="[tech.cyan]🛠 Sacred Action[/]",
@@ -441,8 +467,8 @@ class RichRenderer:
         )
 
     def render_tool_start(self, tool_name: str) -> None:
-        """Print a tool start indicator."""
-        self._console.print(f"  [tool]▶ {tool_name}[/]")
+        """Tool start marker intentionally suppressed to reduce scrollback noise."""
+        _ = tool_name
 
     def render_tool_output_preview(
         self,
@@ -461,9 +487,9 @@ class RichRenderer:
             summary = text if len(text) <= 160 else f"{text[:160]}... ({len(text)} chars)"
             if full_output_available:
                 summary = f"{summary} [preview truncated; full output available]"
-            self._console.print(f"  [{style}]{symbol}[/] [dim]{summary}[/]")
+            self._emit(f"  [{style}]{symbol}[/] [dim]{summary}[/]")
         if not success and error:
-            self._console.print(f"  [error]✗ {error}[/]")
+            self._emit(f"  [error]✗ {error}[/]")
 
     def render_tool_output_full(
         self,
@@ -480,7 +506,7 @@ class RichRenderer:
                 f"\n\n[truncated: omitted {omitted_chars} chars]",
                 style="warning",
             )
-        self._console.print(
+        self._emit(
             panel(
                 body,
                 title=f"Tool Output: {tool_name}",
@@ -489,38 +515,44 @@ class RichRenderer:
         )
 
     def render_tool_progress(self, *, tool_name: str, progress: Any, message: str) -> None:
-        """Print a tool progress update."""
-        label = f"{tool_name} progress"
-        if progress is not None:
-            label = f"{label} {progress}%"
-        if message:
-            label = f"{label}: {message}"
-        self._console.print(f"  [muted]{label}[/]")
+        """Tool progress line intentionally suppressed to reduce UI noise."""
+        _ = tool_name, progress, message
 
     def render_tool_complete(self, *, tool_name: str, success: bool, duration: float) -> None:
         """Print a tool completion indicator."""
         style = "success" if success else "error"
         symbol = "✓" if success else "✗"
-        self._console.print(f"  [{style}]{symbol} {tool_name} ({duration:.2f}s)[/]")
+        self._emit(f"  [{style}]{symbol} {tool_name} ({duration:.2f}s)[/]")
 
     def render_warning(self, message: str) -> None:
         """Print a warning message."""
-        self._console.print(f"[warning]Warning:[/] [monk.text]{message}[/]")
+        self._emit(f"[warning]Warning:[/] [monk.text]{message}[/]")
 
     def render_error(self, message: str, *, recovered: bool = False) -> None:
         """Print an error message."""
         suffix = " (recovered)" if recovered else ""
-        self._console.print(f"[error]✗ {message}{suffix}[/]")
+        self._emit(f"[error]✗ {message}{suffix}[/]")
 
     def render_info(self, message: str) -> None:
         """Print an info message."""
-        self._console.print(f"[info]ℹ {message}[/]")
+        self._emit(f"[info]ℹ {message}[/]")
 
     def shutdown(self) -> None:
         """Clean up resources."""
         self._streaming.clear()
 
     # --- Private Helpers ---
+
+    def _emit(self, renderable: RenderableType | str, *, prefer_live: bool = True) -> None:
+        """Emit output through active Live console when appropriate."""
+        if (
+            prefer_live
+            and self._input_lock_depth == 0
+            and self._streaming.is_live_active()
+        ):
+            self._streaming.print_above_live(renderable)
+            return
+        self._console.print(renderable)
 
     def _append_body_entry(self, renderable: RenderableType) -> None:
         """Store entry in history (for potential future use)."""
