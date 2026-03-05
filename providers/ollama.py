@@ -64,6 +64,13 @@ class OllamaProvider(BaseProvider):
             # 3. Process the streaming response
             seen_tool_call_ids: Dict[str, int] = {}
             generated_tool_call_count = 0
+            pending_tool_requests: List[ToolRequest] = []
+            tool_call_diagnostics: Dict[str, int] = {
+                "missing_id_generated": 0,
+                "duplicate_id_normalized": 0,
+                "missing_name_after_normalization": 0,
+                "non_json_arguments_wrapped": 0,
+            }
 
             async for chunk in stream:
                 msg = chunk.message
@@ -77,11 +84,13 @@ class OllamaProvider(BaseProvider):
                 if thinking:
                     yield ProviderSignal(type="thinking", data=thinking)
 
-                # Handle tool calls when they appear
+                # Handle tool calls - buffer until stream completion
                 if msg.tool_calls:
                     for tc in msg.tool_calls:
                         tool_name = self._extract_tool_call_name(tc)
-                        tool_arguments = self._extract_tool_call_arguments(tc)
+                        tool_arguments, args_wrapped = self._extract_tool_call_arguments(tc)
+                        if args_wrapped:
+                            tool_call_diagnostics["non_json_arguments_wrapped"] += 1
                         raw_call_id = self._extract_tool_call_id(tc)
 
                         # If still empty, infer from argument keys
@@ -97,7 +106,8 @@ class OllamaProvider(BaseProvider):
                         if not raw_call_id:
                             generated_tool_call_count += 1
                             raw_call_id = f"call_generated_{generated_tool_call_count}"
-                            logger.warning(
+                            tool_call_diagnostics["missing_id_generated"] += 1
+                            logger.debug(
                                 "Ollama tool call '%s' was missing an id. Generated %s.",
                                 tool_name or "<missing name>",
                                 raw_call_id,
@@ -106,13 +116,15 @@ class OllamaProvider(BaseProvider):
                             raw_call_id, seen_tool_call_ids
                         )
                         if was_duplicate:
-                            logger.warning(
+                            tool_call_diagnostics["duplicate_id_normalized"] += 1
+                            logger.debug(
                                 "Ollama emitted duplicate tool call id '%s'. Normalized to '%s'.",
                                 raw_call_id,
                                 call_id,
                             )
                         if not tool_name:
-                            logger.warning(
+                            tool_call_diagnostics["missing_name_after_normalization"] += 1
+                            logger.debug(
                                 "Ollama tool call '%s' has no function name after normalization.",
                                 call_id,
                             )
@@ -137,10 +149,15 @@ class OllamaProvider(BaseProvider):
                             requires_confirmation=False,
                             metadata=tool_metadata,
                         )
-                        yield ProviderSignal(type="tool_call", data=req)
+                        pending_tool_requests.append(req)
 
-                # Handle final metrics when done
+                # Handle final metrics when done - emit buffered tool calls first
                 if chunk.done:
+                    # Emit all buffered tool calls before metrics
+                    for req in pending_tool_requests:
+                        yield ProviderSignal(type="tool_call", data=req)
+                    pending_tool_requests.clear()
+
                     metrics = {
                         "provider": "ollama",
                         "request_model": model_name,
@@ -150,8 +167,13 @@ class OllamaProvider(BaseProvider):
                         "load_duration": chunk.load_duration,
                         "prompt_eval_count": chunk.prompt_eval_count,
                         "eval_count": chunk.eval_count,
+                        "tool_call_diagnostics": tool_call_diagnostics,
                     }
                     yield ProviderSignal(type="metrics", data=metrics)
+
+            # Defensive: flush any remaining tool calls if stream ended without chunk.done
+            for req in pending_tool_requests:
+                yield ProviderSignal(type="tool_call", data=req)
 
         except asyncio.CancelledError:
             if logger.isEnabledFor(logging.DEBUG):
@@ -366,7 +388,15 @@ class OllamaProvider(BaseProvider):
         return ""
 
     @staticmethod
-    def _extract_tool_call_arguments(tool_call: Any) -> Dict[str, Any]:
+    def _extract_tool_call_arguments(tool_call: Any) -> tuple[Dict[str, Any], bool]:
+        """
+        Extract tool call arguments from a tool call object.
+
+        Returns:
+            A tuple of (arguments_dict, was_wrapped) where was_wrapped is True
+            if the arguments were not valid JSON and had to be wrapped in a
+            {'value': ...} structure.
+        """
         arguments: Any = None
 
         function = getattr(tool_call, "function", None)
@@ -394,24 +424,24 @@ class OllamaProvider(BaseProvider):
                         arguments = dumped.get("arguments")
 
         if arguments is None:
-            return {}
+            return {}, False
         if isinstance(arguments, dict):
-            return arguments
+            return arguments, False
         if isinstance(arguments, str):
             text = arguments.strip()
             if not text:
-                return {}
+                return {}, False
             try:
                 parsed = json.loads(text)
             except json.JSONDecodeError:
-                logger.warning(
+                logger.debug(
                     "Ollama tool call arguments are not valid JSON; wrapping as string payload."
                 )
-                return {"value": arguments}
+                return {"value": arguments}, True
             if isinstance(parsed, dict):
-                return parsed
-            return {"value": parsed}
-        return {"value": arguments}
+                return parsed, False
+            return {"value": parsed}, True
+        return {"value": arguments}, True
 
     @staticmethod
     def _normalize_tool_call_id(

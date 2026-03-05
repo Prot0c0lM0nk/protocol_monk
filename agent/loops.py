@@ -191,7 +191,7 @@ async def run_thinking_loop(
                         },
                     )
                 tool_requests.append(req)
-                logger.info(f"Received Tool Call: {req.name}")
+                logger.debug(f"Received Tool Call: {req.name}")
 
             elif signal.type == "metrics":
                 # Capture token counts
