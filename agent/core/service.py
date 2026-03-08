@@ -27,6 +27,7 @@ from protocol_monk.agent.context.coordinator import ContextCoordinator
 from protocol_monk.agent.core.state_machine import StateMachine, AgentState
 from protocol_monk.tools.registry import ToolRegistry
 from protocol_monk.config.settings import Settings
+from protocol_monk.skill_runtime import SkillRuntime
 
 # [NEW] Import Execution components
 from protocol_monk.agent.core.execution import ToolExecutor
@@ -52,6 +53,7 @@ class AgentService:
         registry: ToolRegistry,
         provider: Any,
         settings: Settings,
+        skill_runtime: SkillRuntime | None = None,
     ):
         self._bus = bus
         self._context = coordinator
@@ -68,6 +70,7 @@ class AgentService:
         self._pending_confirmations: Dict[str, asyncio.Future] = {}
         self._auto_confirm = bool(getattr(settings, "auto_confirm", False))
         self._request_lock = asyncio.Lock()
+        self._skill_runtime = skill_runtime
 
     async def start(self) -> None:
         """
@@ -93,6 +96,88 @@ class AgentService:
                 "arguments": req.parameters,
             },
         }
+
+    async def _emit_skill_runtime_warnings(
+        self,
+        warnings: List[str],
+        *,
+        turn_id: str | None = None,
+        round_index: int | None = None,
+    ) -> None:
+        for warning in warnings:
+            payload: Dict[str, Any] = {
+                "message": "Skill runtime warning",
+                "details": warning,
+            }
+            if turn_id:
+                payload["turn_id"] = turn_id
+            if round_index is not None:
+                payload["round_index"] = round_index
+            await self._bus.emit(EventTypes.WARNING, payload)
+
+    async def _augment_history_with_active_skills(
+        self,
+        history: List[Message],
+        *,
+        turn_id: str,
+        round_index: int,
+    ) -> List[Message]:
+        if self._skill_runtime is None:
+            return history
+
+        skill_message, warnings = self._skill_runtime.build_active_skill_system_message()
+        await self._emit_skill_runtime_warnings(
+            warnings,
+            turn_id=turn_id,
+            round_index=round_index,
+        )
+        if not skill_message:
+            return history
+
+        injected = Message(
+            role="system",
+            content=skill_message,
+            timestamp=time.time(),
+            metadata={
+                "id": str(uuid.uuid4()),
+                "source": "session_skills",
+                "active_skills": self._skill_runtime.active_skill_names(),
+            },
+        )
+        if history and history[0].role == "system":
+            return [history[0], injected, *history[1:]]
+        return [injected, *history]
+
+    async def _resolve_skill_catalog(
+        self,
+    ) -> tuple[bool, List[Dict[str, Any]], List[str], str]:
+        if self._skill_runtime is None:
+            return False, [], [], "Skill runtime is not configured."
+
+        skills, warnings = self._skill_runtime.list_skills()
+        active = set(self._skill_runtime.active_skill_names())
+        payload_skills = [
+            {
+                "name": skill.name,
+                "description": skill.description,
+                "source_dir": str(skill.source_dir),
+                "active": skill.name in active,
+            }
+            for skill in skills
+        ]
+        if not payload_skills:
+            message = (
+                f"No skills found in {self._skill_runtime.skills_root}"
+            )
+        else:
+            lines = ["Available skills:"]
+            for skill in payload_skills:
+                status = "active" if skill["active"] else "inactive"
+                lines.append(
+                    f"- {skill['name']} [{status}]: {skill['description']}"
+                )
+            message = "\n".join(lines)
+        return True, payload_skills, warnings, message
 
     async def _persist_assistant_response(
         self,
@@ -266,6 +351,11 @@ class AgentService:
 
                 # 4. Trigger LLM Thinking Loop (THE BRAIN)
                 history = self._context._store.get_full_history()
+                history = await self._augment_history_with_active_skills(
+                    history,
+                    turn_id=turn_id,
+                    round_index=0,
+                )
                 self._logger.info("Entering Thinking Loop...")
 
                 response = await run_thinking_loop(
@@ -444,6 +534,11 @@ class AgentService:
                         round_index=rounds,
                     )
                     history = self._context._store.get_full_history()
+                    history = await self._augment_history_with_active_skills(
+                        history,
+                        turn_id=turn_id,
+                        round_index=rounds,
+                    )
                     response = await run_thinking_loop(
                         context_history=history,
                         provider=self._provider,
@@ -829,6 +924,65 @@ class AgentService:
                     "Failed to capture status",
                     {"details": str(exc)},
                 )
+            return
+
+        if command_name == "skills":
+            ok, payload_skills, warnings, message = await self._resolve_skill_catalog()
+            await self._emit_skill_runtime_warnings(warnings)
+            active_skills = (
+                self._skill_runtime.active_skill_names()
+                if self._skill_runtime is not None
+                else []
+            )
+            await self._emit_command_result(
+                "skills",
+                ok,
+                message,
+                {
+                    "skills": payload_skills,
+                    "active_skills": active_skills,
+                },
+            )
+            return
+
+        if command_name == "activate_skill":
+            if self._skill_runtime is None:
+                await self._emit_command_result(
+                    "activate_skill",
+                    False,
+                    "Skill runtime is not configured.",
+                )
+                return
+            ok, message, warnings = self._skill_runtime.activate(
+                str(parsed.arguments.get("name", "") or "")
+            )
+            await self._emit_skill_runtime_warnings(warnings)
+            await self._emit_command_result(
+                "activate_skill",
+                ok,
+                message,
+                {"active_skills": self._skill_runtime.active_skill_names()},
+            )
+            return
+
+        if command_name == "deactivate_skill":
+            if self._skill_runtime is None:
+                await self._emit_command_result(
+                    "deactivate_skill",
+                    False,
+                    "Skill runtime is not configured.",
+                )
+                return
+            ok, message, warnings = self._skill_runtime.deactivate(
+                str(parsed.arguments.get("name", "") or "")
+            )
+            await self._emit_skill_runtime_warnings(warnings)
+            await self._emit_command_result(
+                "deactivate_skill",
+                ok,
+                message,
+                {"active_skills": self._skill_runtime.active_skill_names()},
+            )
             return
 
         if command_name == "compact":

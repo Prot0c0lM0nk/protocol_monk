@@ -44,6 +44,7 @@ def parse_slash_command(text: str) -> SlashCommandParseResult:
     parts = normalized.split()
     command_text = parts[0].lower()
     args = [part.lower() for part in parts[1:]]
+    argument_text = normalized[len(parts[0]) :].strip()
 
     if command_text in AUTO_CONFIRM_ALIASES:
         if not args:
@@ -69,6 +70,29 @@ def parse_slash_command(text: str) -> SlashCommandParseResult:
             result.error = "Usage: /status"
             return result
         result.command = "status"
+        return result
+
+    if command_text == "/skills":
+        if args:
+            result.error = "Usage: /skills"
+            return result
+        result.command = "skills"
+        return result
+
+    if command_text == "/activate-skill":
+        if not argument_text:
+            result.error = "Usage: /activate-skill <skill-name>"
+            return result
+        result.command = "activate_skill"
+        result.arguments = {"name": argument_text}
+        return result
+
+    if command_text == "/deactivate-skill":
+        if not argument_text:
+            result.error = "Usage: /deactivate-skill <skill-name>"
+            return result
+        result.command = "deactivate_skill"
+        result.arguments = {"name": argument_text}
         return result
 
     if command_text == "/compact":

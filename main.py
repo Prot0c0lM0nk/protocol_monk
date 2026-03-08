@@ -25,6 +25,7 @@ from protocol_monk.utils.scratch import ScratchManager
 from protocol_monk.utils.logger import EventLogger
 from protocol_monk.utils.session_transcript import SessionTranscriptSink
 from protocol_monk.providers.factory import create_provider
+from protocol_monk.skill_runtime import SkillRuntime
 
 # 6. Import UI Components
 from protocol_monk.ui.rich.boot import BootAnimation, BootPhase
@@ -225,6 +226,8 @@ async def main():
 
         # D. Scratch Manager (Cleanup)
         with ScratchManager(Path(os.getcwd())) as _:
+            repo_root = app_root.parent
+            skill_runtime = SkillRuntime(repo_root / "skills")
 
             # E. Memory Systems (The Brain)
             context_store = ContextStore()
@@ -241,6 +244,7 @@ async def main():
                 registry=registry,
                 provider=provider,
                 settings=settings,
+                skill_runtime=skill_runtime,
             )
 
             await agent_service.start()
