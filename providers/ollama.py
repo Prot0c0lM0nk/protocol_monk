@@ -39,6 +39,21 @@ class OllamaProvider(BaseProvider):
             logger.error(f"Ollama Connection Failed: {e}")
             return False
 
+    def build_request_payload(
+        self,
+        messages: List[Message],
+        model_name: str,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        return {
+            "model": model_name,
+            "messages": self._serialize_messages(messages),
+            "tools": tools or [],
+            "options": options or {},
+            "stream": True,
+        }
+
     async def stream_chat(
         self,
         messages: List[Message],
@@ -46,19 +61,18 @@ class OllamaProvider(BaseProvider):
         tools: Optional[List[Dict[str, Any]]] = None,
         options: Optional[Dict[str, Any]] = None,  # [FIX] Accept options
     ) -> AsyncIterator[ProviderSignal]:
-
-        # 1. Prepare Payload
-        ollama_messages = self._serialize_messages(messages)
+        request_payload = self.build_request_payload(
+            messages,
+            model_name,
+            tools=tools,
+            options=options,
+        )
 
         try:
             # 2. Call SDK with streaming
             # We pass 'options' (temperature, etc.) directly to Ollama
             stream = await self.client.chat(
-                model=model_name,
-                messages=ollama_messages,
-                tools=tools,
-                options=options,  # [FIX] Pass options to SDK
-                stream=True,
+                **request_payload,
             )
 
             # 3. Process the streaming response
@@ -166,7 +180,9 @@ class OllamaProvider(BaseProvider):
                         "total_duration": chunk.total_duration,
                         "load_duration": chunk.load_duration,
                         "prompt_eval_count": chunk.prompt_eval_count,
+                        "prompt_eval_duration": getattr(chunk, "prompt_eval_duration", None),
                         "eval_count": chunk.eval_count,
+                        "eval_duration": getattr(chunk, "eval_duration", None),
                         "tool_call_diagnostics": tool_call_diagnostics,
                     }
                     yield ProviderSignal(type="metrics", data=metrics)

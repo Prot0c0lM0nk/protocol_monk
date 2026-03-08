@@ -44,13 +44,13 @@ class OpenRouterProvider(BaseProvider):
             logger.error("OpenRouter connection failed: %s", exc)
             return False
 
-    async def stream_chat(
+    def build_request_payload(
         self,
         messages: List[Message],
         model_name: str,
         tools: Optional[List[Dict[str, Any]]] = None,
         options: Optional[Dict[str, Any]] = None,
-    ) -> AsyncIterator[ProviderSignal]:
+    ) -> Dict[str, Any]:
         payload_messages = self._serialize_messages(messages)
         request_options = self._sanitize_options(options or {})
 
@@ -63,6 +63,21 @@ class OpenRouterProvider(BaseProvider):
             "stream_options": {"include_usage": True},
         }
         request_payload.update(request_options)
+        return request_payload
+
+    async def stream_chat(
+        self,
+        messages: List[Message],
+        model_name: str,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> AsyncIterator[ProviderSignal]:
+        request_payload = self.build_request_payload(
+            messages,
+            model_name,
+            tools=tools,
+            options=options,
+        )
 
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(

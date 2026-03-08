@@ -378,7 +378,21 @@ class RichRenderer:
             ("Model", str(payload.get("model", ""))),
             ("Working Dir", str(payload.get("working_directory", ""))),
             ("State", str(payload.get("state", ""))),
-            ("Tokens", str(payload.get("total_tokens", ""))),
+            ("Stored History", self._metric_value(payload.get("stored_history_tokens"))),
+            (
+                "Next Request",
+                self._metric_value(payload.get("estimated_next_request_tokens")),
+            ),
+            (
+                "Reserved Output",
+                self._metric_value(payload.get("reserved_completion_tokens")),
+            ),
+            ("Last Prompt", self._metric_value(payload.get("last_prompt_tokens"))),
+            (
+                "Last Completion",
+                self._metric_value(payload.get("last_completion_tokens")),
+            ),
+            ("Last Total", self._metric_value(payload.get("last_total_tokens"))),
             ("Context Limit", str(payload.get("context_limit", ""))),
             ("Messages", str(payload.get("message_count", ""))),
             ("Loaded Files", str(payload.get("loaded_files_count", ""))),
@@ -407,6 +421,83 @@ class RichRenderer:
                 padding=(0, 1),
             )
         )
+
+    def render_metrics_snapshot(self, payload: Mapping[str, Any]) -> None:
+        """Render a detailed metrics snapshot for /metrics command."""
+        summary_rows = [
+            ("Provider", str(payload.get("provider", ""))),
+            ("Model", str(payload.get("model", ""))),
+            ("State", str(payload.get("state", ""))),
+            ("Stored History", self._metric_value(payload.get("stored_history_tokens"))),
+            (
+                "Next Request",
+                self._metric_value(payload.get("estimated_next_request_tokens")),
+            ),
+            (
+                "Reserved Output",
+                self._metric_value(payload.get("reserved_completion_tokens")),
+            ),
+            ("Last Prompt", self._metric_value(payload.get("last_prompt_tokens"))),
+            (
+                "Last Completion",
+                self._metric_value(payload.get("last_completion_tokens")),
+            ),
+            ("Last Total", self._metric_value(payload.get("last_total_tokens"))),
+            ("Context Limit", self._metric_value(payload.get("context_limit"))),
+        ]
+
+        summary = Table(
+            Column("Field", style="user.text", no_wrap=True),
+            Column("Value", style="monk.text"),
+            show_header=False,
+            box=None,
+            padding=(0, 2),
+        )
+        for label, value in summary_rows:
+            summary.add_row(label, value)
+
+        renderables: list[RenderableType] = [summary]
+        recent_records = payload.get("recent_records")
+        if isinstance(recent_records, list) and recent_records:
+            recent_table = Table(
+                Column("Pass", style="user.text", no_wrap=True),
+                Column("Prompt", style="monk.text", justify="right"),
+                Column("Completion", style="monk.text", justify="right"),
+                Column("Total", style="monk.text", justify="right"),
+                Column("Delta", style="monk.text", justify="right"),
+                Column("TPS", style="monk.text", justify="right"),
+                show_header=True,
+                box=box.SIMPLE_HEAD,
+                padding=(0, 1),
+            )
+            for record in recent_records[:5]:
+                if not isinstance(record, Mapping):
+                    continue
+                recent_table.add_row(
+                    str(record.get("pass_id", "")),
+                    self._metric_value(record.get("prompt_tokens")),
+                    self._metric_value(record.get("completion_tokens")),
+                    self._metric_value(record.get("total_tokens")),
+                    self._metric_value(record.get("prompt_token_delta")),
+                    self._metric_value(record.get("tokens_per_second")),
+                )
+            renderables.extend([Text(""), recent_table])
+
+        self._emit(
+            Panel(
+                Group(*renderables),
+                title="[tech.cyan]Metrics[/]",
+                border_style="tech.cyan",
+                box=box.ROUNDED,
+                padding=(0, 1),
+            )
+        )
+
+    @staticmethod
+    def _metric_value(value: Any) -> str:
+        if value is None:
+            return "n/a"
+        return str(value)
 
     # --- Event Lines (for tool output, messages, etc.) ---
 

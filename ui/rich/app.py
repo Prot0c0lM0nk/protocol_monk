@@ -509,6 +509,9 @@ class RichPromptToolkitUI:
         if command == "status" and ok:
             self._renderer.render_status_snapshot(payload)
             return
+        if command == "metrics" and ok:
+            self._renderer.render_metrics_snapshot(payload)
+            return
         if not message:
             return
         if ok:

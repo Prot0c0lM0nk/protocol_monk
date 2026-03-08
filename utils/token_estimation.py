@@ -369,11 +369,11 @@ class BetterTokenizerManager:
         self._tokenizers = {}
         self._estimators = {}
         self._cache = {}
+        self.logger = logging.getLogger(__name__)
         self._use_heavy_tokenizers = self._check_heavy_dependencies()
         self._cache_lock = asyncio.Lock()
         self._model_map_lock = asyncio.Lock()
         self._model_map = None
-        self.logger = logging.getLogger(__name__)
 
     def _check_heavy_dependencies(self) -> bool:
         """Check if heavy ML dependencies are available."""
@@ -408,7 +408,9 @@ class BetterTokenizerManager:
                 hub_id = model_map.get(model_name, model_map.get("DEFAULT", "gpt2"))
 
                 tokenizer = await asyncio.to_thread(
-                    AutoTokenizer.from_pretrained, hub_id
+                    AutoTokenizer.from_pretrained,
+                    hub_id,
+                    local_files_only=True,
                 )
                 self._tokenizers[model_name] = tokenizer
                 self.logger.info(f"Loaded precise tokenizer for {model_name}")

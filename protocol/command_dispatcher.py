@@ -72,6 +72,13 @@ def parse_slash_command(text: str) -> SlashCommandParseResult:
         result.command = "status"
         return result
 
+    if command_text == "/metrics":
+        if args:
+            result.error = "Usage: /metrics"
+            return result
+        result.command = "metrics"
+        return result
+
     if command_text == "/skills":
         if args:
             result.error = "Usage: /skills"

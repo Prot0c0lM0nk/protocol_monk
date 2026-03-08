@@ -1,4 +1,3 @@
-import json
 from typing import List, Set, Optional
 from protocol_monk.agent.structs import Message, ContextStats
 
@@ -65,21 +64,20 @@ def _get_tool_call_id(message: Message) -> Optional[str]:
 
 def _message_tokens(message: Message) -> int:
     """
-    Estimate tokens for a message including content, metadata, and tool fields.
+    Estimate tokens for replayable message content only.
     """
     total = count_tokens(message.content or "")
 
-    # Include metadata in token count
-    if message.metadata:
-        total += count_tokens(json.dumps(message.metadata, ensure_ascii=False, default=str))
+    images = message.metadata.get("images") if isinstance(message.metadata, dict) else None
+    if images:
+        total += count_tokens(str(images))
 
-    # Include first-class tool fields
     if message.tool_call_id:
         total += count_tokens(message.tool_call_id)
     if message.name:
         total += count_tokens(message.name)
     if message.tool_calls:
-        total += count_tokens(json.dumps(message.tool_calls, ensure_ascii=False, default=str))
+        total += count_tokens(str(message.tool_calls))
 
     return total
 
@@ -207,4 +205,29 @@ def prune_messages(messages: List[Message], target_token_count: int) -> List[Mes
     for chunk in pruned_chunks:
         result.extend(chunk)
 
+    return result
+
+
+def drop_oldest_turn_chunk(messages: List[Message]) -> List[Message]:
+    """
+    Remove the oldest non-system turn chunk while preserving system messages.
+    """
+    if not messages:
+        return []
+
+    chunks = _build_turn_chunks(messages)
+    drop_index = None
+    for index, chunk in enumerate(chunks):
+        if any(msg.role != "system" for msg in chunk):
+            drop_index = index
+            break
+
+    if drop_index is None:
+        return list(messages)
+
+    result: List[Message] = []
+    for index, chunk in enumerate(chunks):
+        if index == drop_index:
+            continue
+        result.extend(chunk)
     return result

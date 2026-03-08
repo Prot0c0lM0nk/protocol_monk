@@ -55,17 +55,17 @@ class ContextCoordinator:
             return logic.count_tokens(text)
 
     def _count_history_tokens(self, history: List[Message]) -> int:
-        """Count tokens including content, metadata, and first-class tool fields."""
+        """Count tokens for replayable history only."""
         total = 0
         for m in history:
-            # Content tokens
             total += self._estimate_tokens(m.content or "")
-            # Metadata tokens (serialized to match provider payload)
-            if m.metadata:
+
+            images = m.metadata.get("images") if isinstance(m.metadata, dict) else None
+            if images:
                 total += self._estimate_tokens(
-                    json.dumps(m.metadata, ensure_ascii=False, default=str)
+                    json.dumps(images, ensure_ascii=False, default=str)
                 )
-            # First-class tool fields tokens
+
             if m.tool_call_id:
                 total += self._estimate_tokens(m.tool_call_id)
             if m.name:
@@ -179,6 +179,17 @@ class ContextCoordinator:
     def get_system_prompt(self) -> Optional[Message]:
         """Return the active system prompt."""
         return self._store.get_system_prompt()
+
+    def replace_history(self, history: List[Message]) -> ContextStats:
+        """Replace persisted history and sync file tracking to the new message set."""
+        self._store.replace_history(history)
+        active_ids = {
+            m.metadata.get("id")
+            for m in history
+            if isinstance(m.metadata, dict) and m.metadata.get("id")
+        }
+        self._tracker.sync_with_history(active_ids)
+        return self._get_stats()
 
     async def set_system_prompt_text(self, text: str) -> None:
         """Replace the active system prompt for this session."""

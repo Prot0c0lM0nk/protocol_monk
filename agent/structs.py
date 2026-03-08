@@ -71,6 +71,10 @@ class AgentResponse:
     tokens: int
     thinking: str = ""
     pass_id: str = ""
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    provider_metrics: Dict[str, Any] = field(default_factory=dict)
 
 
 # --- 3. Tool Lifecycle ---

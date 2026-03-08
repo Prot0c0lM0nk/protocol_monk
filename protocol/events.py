@@ -12,6 +12,7 @@ class EventTypes(str, Enum):
     STATUS_CHANGED = "status_changed"
     WARNING = "warning"
     ERROR = "error"
+    METRICS_UPDATED = "metrics_updated"
 
     # 2. Conversation Events (Downstream)
     STREAM_CHUNK = "stream_chunk"

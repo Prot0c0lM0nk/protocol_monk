@@ -123,7 +123,7 @@ class PromptToolkitCLI:
         print("Protocol Monk CLI")
         print("Press Enter to submit")
         print(
-            "Slash commands: /aa /reset /status /compact /skills "
+            "Slash commands: /aa /reset /status /metrics /compact /skills "
             "/activate-skill /deactivate-skill"
         )
         print("Type 'quit', 'exit', or 'bye' to sign off")
@@ -442,7 +442,12 @@ class PromptToolkitCLI:
                 ("Model", payload.get("model", "")),
                 ("Working Dir", payload.get("working_directory", "")),
                 ("State", payload.get("state", "")),
-                ("Tokens", payload.get("total_tokens", 0)),
+                ("Stored History", payload.get("stored_history_tokens", 0)),
+                ("Next Request", payload.get("estimated_next_request_tokens", 0)),
+                ("Reserved Output", payload.get("reserved_completion_tokens", 0)),
+                ("Last Prompt", payload.get("last_prompt_tokens", "n/a")),
+                ("Last Completion", payload.get("last_completion_tokens", "n/a")),
+                ("Last Total", payload.get("last_total_tokens", "n/a")),
                 ("Context Limit", payload.get("context_limit", 0)),
                 ("Messages", payload.get("message_count", 0)),
                 ("Loaded Files", payload.get("loaded_files_count", 0)),
@@ -455,6 +460,40 @@ class PromptToolkitCLI:
             print(f"{Colors.INFO}Status{Colors.RESET}")
             for label, value in rows:
                 print(f"{Colors.DIM}  {label:<14}{Colors.RESET} {value}")
+            print()
+            return
+
+        if command == "metrics" and ok:
+            rows = [
+                ("Provider", payload.get("provider", "")),
+                ("Model", payload.get("model", "")),
+                ("State", payload.get("state", "")),
+                ("Stored History", payload.get("stored_history_tokens", 0)),
+                ("Next Request", payload.get("estimated_next_request_tokens", 0)),
+                ("Reserved Output", payload.get("reserved_completion_tokens", 0)),
+                ("Last Prompt", payload.get("last_prompt_tokens", "n/a")),
+                ("Last Completion", payload.get("last_completion_tokens", "n/a")),
+                ("Last Total", payload.get("last_total_tokens", "n/a")),
+                ("Context Limit", payload.get("context_limit", 0)),
+            ]
+            print()
+            print(f"{Colors.INFO}Metrics{Colors.RESET}")
+            for label, value in rows:
+                print(f"{Colors.DIM}  {label:<17}{Colors.RESET} {value}")
+            recent_records = payload.get("recent_records")
+            if isinstance(recent_records, list) and recent_records:
+                print(f"{Colors.DIM}  Recent Passes{Colors.RESET}")
+                for record in recent_records[:5]:
+                    if not isinstance(record, dict):
+                        continue
+                    print(
+                        "    "
+                        f"{record.get('pass_id', '')}: "
+                        f"prompt={record.get('prompt_tokens', 'n/a')} "
+                        f"completion={record.get('completion_tokens', 'n/a')} "
+                        f"total={record.get('total_tokens', 'n/a')} "
+                        f"delta={record.get('prompt_token_delta', 'n/a')}"
+                    )
             print()
             return
 

@@ -12,6 +12,7 @@ from protocol_monk.agent.structs import (
     ToolRequest,
     ToolResult,
 )
+from protocol_monk.agent.usage_ledger import normalize_provider_usage
 from protocol_monk.agent.core.execution import ToolExecutor
 from protocol_monk.agent.core.state_machine import AgentState
 from protocol_monk.tools.registry import ToolRegistry
@@ -58,6 +59,7 @@ async def run_thinking_loop(
     settings: Settings,  # NEW: Add settings parameter
     turn_id: str,
     round_index: int = 0,
+    preflight_metrics: Optional[Dict[str, Any]] = None,
 ) -> AgentResponse:
     """
     Consumes ProviderSignals and builds the response.
@@ -74,7 +76,10 @@ async def run_thinking_loop(
     full_text = ""
     full_thinking = ""
     tool_requests: List[ToolRequest] = []
-    token_usage = 0
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    provider_metrics: Dict[str, Any] = {}
     chunk_sequence = 0
     content_chunk_count = 0
     thinking_chunk_count = 0
@@ -85,16 +90,24 @@ async def run_thinking_loop(
     # Use model name and parameters from settings
     model_name = settings.active_model_name
     context_limit = int(getattr(settings, "context_window_limit", 0) or 0)
-
-    estimated_context_tokens = sum(
-        len(getattr(msg, "content", "") or "") // 4 for msg in context_history
+    estimate = dict(preflight_metrics or {})
+    estimated_context_tokens = int(
+        estimate.get("estimated_next_request_tokens", 0) or 0
     )
+    if estimated_context_tokens <= 0:
+        estimated_context_tokens = sum(
+            len(getattr(msg, "content", "") or "") // 4 for msg in context_history
+        )
     await bus.emit(
         EventTypes.INFO,
         {
             "message": "Thinking loop context diagnostics",
             "data": {
                 "estimated_tokens": estimated_context_tokens,
+                "reserved_completion_tokens": int(
+                    estimate.get("reserved_completion_tokens", 0) or 0
+                ),
+                "tool_count": len(tool_definitions),
                 "context_limit": context_limit,
                 "message_count": len(context_history),
                 "model_name": model_name,
@@ -111,13 +124,19 @@ async def run_thinking_loop(
             ),
         },
     )
-    if context_limit > 0 and estimated_context_tokens >= context_limit:
+    if (
+        context_limit > 0
+        and estimated_context_tokens
+        + int(estimate.get("reserved_completion_tokens", 0) or 0)
+        >= context_limit
+    ):
         await bus.emit(
             EventTypes.WARNING,
             {
                 "message": "Context may overflow model window",
                 "details": (
                     f"estimated_tokens={estimated_context_tokens} "
+                    f"reserved_completion_tokens={int(estimate.get('reserved_completion_tokens', 0) or 0)} "
                     f"limit={context_limit} model={model_name}"
                 ),
                 **_build_correlation(
@@ -194,21 +213,20 @@ async def run_thinking_loop(
                 logger.debug(f"Received Tool Call: {req.name}")
 
             elif signal.type == "metrics":
-                # Capture token counts
                 data = signal.data or {}
-                if "eval_count" in data:
-                    token_usage = data["eval_count"]
-                else:
-                    usage = data.get("usage")
-                    if isinstance(usage, dict):
-                        total_tokens = usage.get("total_tokens")
-                        if isinstance(total_tokens, int) and total_tokens > 0:
-                            token_usage = total_tokens
+                provider_metrics = dict(data)
+                normalized_usage = normalize_provider_usage(provider_metrics)
+                prompt_tokens = normalized_usage.get("prompt_tokens")
+                completion_tokens = normalized_usage.get("completion_tokens")
+                total_tokens = normalized_usage.get("total_tokens")
 
                 metrics_summary = {
                     "provider": data.get("provider"),
                     "request_model": data.get("request_model"),
-                    "response_model": data.get("model"),
+                    "response_model": data.get("response_model") or data.get("model"),
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens,
                     "usage": data.get("usage"),
                     "finish_reasons": data.get("finish_reasons"),
                     "chunk_count": data.get("chunk_count"),
@@ -269,9 +287,21 @@ async def run_thinking_loop(
     response = AgentResponse(
         content=full_text,
         tool_calls=tool_requests,
-        tokens=token_usage if token_usage > 0 else len(full_text) // 4,
+        tokens=(
+            int(total_tokens)
+            if isinstance(total_tokens, int) and total_tokens >= 0
+            else len(full_text) // 4
+        ),
         thinking=full_thinking,
         pass_id=pass_id,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=(
+            int(total_tokens)
+            if isinstance(total_tokens, int) and total_tokens >= 0
+            else len(full_text) // 4
+        ),
+        provider_metrics=provider_metrics,
     )
 
     await bus.emit(
@@ -323,6 +353,9 @@ async def run_thinking_loop(
             "content": response.content,
             "thinking": response.thinking,
             "tokens": response.tokens,
+            "prompt_tokens": response.prompt_tokens,
+            "completion_tokens": response.completion_tokens,
+            "total_tokens": response.total_tokens,
             "tool_calls": response.tool_calls,
             # Keep compatibility for any existing consumers while transitioning.
             "has_tool_calls": bool(response.tool_calls),

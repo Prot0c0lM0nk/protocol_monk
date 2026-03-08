@@ -6,6 +6,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Tuple
 
+from protocol_monk.agent.context import logic as context_logic
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
 from protocol_monk.protocol.command_dispatcher import (
@@ -27,6 +28,10 @@ from protocol_monk.agent.context.coordinator import ContextCoordinator
 from protocol_monk.agent.core.state_machine import StateMachine, AgentState
 from protocol_monk.tools.registry import ToolRegistry
 from protocol_monk.config.settings import Settings
+from protocol_monk.agent.usage_ledger import (
+    UsageLedger,
+    build_request_payload_for_provider,
+)
 from protocol_monk.skill_runtime import SkillRuntime
 
 # [NEW] Import Execution components
@@ -71,6 +76,9 @@ class AgentService:
         self._auto_confirm = bool(getattr(settings, "auto_confirm", False))
         self._request_lock = asyncio.Lock()
         self._skill_runtime = skill_runtime
+        self._usage_ledger = UsageLedger(
+            model_name=str(getattr(settings, "active_model_name", "") or "")
+        )
 
     async def start(self) -> None:
         """
@@ -115,6 +123,52 @@ class AgentService:
                 payload["round_index"] = round_index
             await self._bus.emit(EventTypes.WARNING, payload)
 
+    @staticmethod
+    def _compose_history_with_system_injection(
+        history: List[Message],
+        injected: Message | None,
+    ) -> List[Message]:
+        if injected is None:
+            return list(history)
+        if history and history[0].role == "system":
+            return [history[0], injected, *history[1:]]
+        return [injected, *history]
+
+    async def _build_active_skill_injection(
+        self,
+        *,
+        turn_id: str | None = None,
+        round_index: int | None = None,
+        emit_warnings: bool = True,
+    ) -> Message | None:
+        if self._skill_runtime is None:
+            return None
+
+        skill_message, warnings = self._skill_runtime.build_active_skill_system_message()
+        if emit_warnings:
+            await self._emit_skill_runtime_warnings(
+                warnings,
+                turn_id=turn_id,
+                round_index=round_index,
+            )
+        if not skill_message:
+            return None
+
+        return Message(
+            role="system",
+            content=skill_message,
+            timestamp=time.time(),
+            metadata={
+                "id": str(uuid.uuid4()),
+                "source": "session_skills",
+                "active_skills": (
+                    self._skill_runtime.active_skill_names()
+                    if self._skill_runtime is not None
+                    else []
+                ),
+            },
+        )
+
     async def _augment_history_with_active_skills(
         self,
         history: List[Message],
@@ -122,31 +176,12 @@ class AgentService:
         turn_id: str,
         round_index: int,
     ) -> List[Message]:
-        if self._skill_runtime is None:
-            return history
-
-        skill_message, warnings = self._skill_runtime.build_active_skill_system_message()
-        await self._emit_skill_runtime_warnings(
-            warnings,
+        injected = await self._build_active_skill_injection(
             turn_id=turn_id,
             round_index=round_index,
+            emit_warnings=True,
         )
-        if not skill_message:
-            return history
-
-        injected = Message(
-            role="system",
-            content=skill_message,
-            timestamp=time.time(),
-            metadata={
-                "id": str(uuid.uuid4()),
-                "source": "session_skills",
-                "active_skills": self._skill_runtime.active_skill_names(),
-            },
-        )
-        if history and history[0].role == "system":
-            return [history[0], injected, *history[1:]]
-        return [injected, *history]
+        return self._compose_history_with_system_injection(history, injected)
 
     async def _resolve_skill_catalog(
         self,
@@ -214,6 +249,154 @@ class AgentService:
             round_index=round_index,
         )
         return stats
+
+    async def _estimate_request_metrics(
+        self,
+        history: List[Message],
+    ) -> Dict[str, Any]:
+        request_payload = build_request_payload_for_provider(
+            self._provider,
+            history,
+            str(getattr(self._settings, "active_model_name", "") or ""),
+            tools=self._registry.get_openai_tools(),
+            options=getattr(self._settings, "model_parameters", {}) or {},
+        )
+        return await self._usage_ledger.estimate_request(
+            request_payload=request_payload,
+            context_limit=int(getattr(self._settings, "context_window_limit", 0) or 0),
+        )
+
+    async def _prepare_history_for_model_call(
+        self,
+        *,
+        base_history: List[Message],
+        full_history: List[Message],
+        turn_id: str,
+        round_index: int,
+        persist_pruned_history: bool,
+    ) -> tuple[List[Message], Dict[str, Any]]:
+        current_history = list(full_history)
+        base_ids = {id(message) for message in base_history}
+        estimate = await self._estimate_request_metrics(current_history)
+        pruned_chunks = 0
+
+        while not estimate.get("within_limit", True):
+            pruned_history = context_logic.drop_oldest_turn_chunk(current_history)
+            if len(pruned_history) == len(current_history):
+                break
+            current_history = pruned_history
+            pruned_chunks += 1
+            estimate = await self._estimate_request_metrics(current_history)
+
+        if pruned_chunks > 0:
+            await self._bus.emit(
+                EventTypes.INFO,
+                {
+                    "message": "Preflight pruning applied",
+                    "data": {
+                        "pruned_turn_chunks": pruned_chunks,
+                        "estimated_next_request_tokens": estimate.get(
+                            "estimated_next_request_tokens"
+                        ),
+                        "reserved_completion_tokens": estimate.get(
+                            "reserved_completion_tokens"
+                        ),
+                        "context_limit": estimate.get("context_limit"),
+                    },
+                    "turn_id": turn_id,
+                    "round_index": round_index,
+                },
+            )
+
+            if persist_pruned_history:
+                pruned_base_history = [
+                    message for message in current_history if id(message) in base_ids
+                ]
+                stats = self._context.replace_history(pruned_base_history)
+                await self._emit_context_update(
+                    stats,
+                    turn_id=turn_id,
+                    round_index=round_index,
+                )
+
+        if not estimate.get("within_limit", True):
+            await self._bus.emit(
+                EventTypes.WARNING,
+                {
+                    "message": "Context may overflow model window",
+                    "details": (
+                        f"estimated_next_request_tokens={estimate.get('estimated_next_request_tokens', 0)} "
+                        f"reserved_completion_tokens={estimate.get('reserved_completion_tokens', 0)} "
+                        f"limit={estimate.get('context_limit', 0)}"
+                    ),
+                    "data": estimate,
+                    "turn_id": turn_id,
+                    "round_index": round_index,
+                },
+            )
+
+        return current_history, estimate
+
+    async def _record_usage_metrics(
+        self,
+        *,
+        turn_id: str,
+        round_index: int,
+        response: AgentResponse,
+        request_estimate: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        record = self._usage_ledger.record_usage(
+            turn_id=turn_id,
+            pass_id=response.pass_id,
+            round_index=round_index,
+            raw_metrics=response.provider_metrics,
+            request_estimate=request_estimate,
+        )
+        await self._bus.emit(
+            EventTypes.METRICS_UPDATED,
+            {
+                "turn_id": turn_id,
+                "pass_id": response.pass_id,
+                "round_index": round_index,
+                "record": record,
+                "raw_provider_metrics": record.get("raw_provider_metrics", {}),
+            },
+        )
+        return record
+
+    async def _run_model_pass(
+        self,
+        *,
+        base_history: List[Message],
+        full_history: List[Message],
+        turn_id: str,
+        round_index: int,
+        persist_pruned_history: bool,
+    ) -> AgentResponse:
+        prepared_history, request_estimate = await self._prepare_history_for_model_call(
+            base_history=base_history,
+            full_history=full_history,
+            turn_id=turn_id,
+            round_index=round_index,
+            persist_pruned_history=persist_pruned_history,
+        )
+        response = await run_thinking_loop(
+            context_history=prepared_history,
+            provider=self._provider,
+            bus=self._bus,
+            registry=self._registry,
+            settings=self._settings,
+            turn_id=turn_id,
+            round_index=round_index,
+            preflight_metrics=request_estimate,
+        )
+        await self._record_usage_metrics(
+            turn_id=turn_id,
+            round_index=round_index,
+            response=response,
+            request_estimate=request_estimate,
+        )
+        return response
 
     @staticmethod
     def _split_tool_calls(
@@ -305,20 +488,18 @@ class AgentService:
                 turn_id=turn_id,
                 round_index=round_index,
             )
-        history = self._context._store.get_full_history()
+        history = self._context.get_full_history()
         repair_prompt = self._build_tool_call_repair_prompt(malformed_tool_calls)
         augmented_history = [
             *history,
             Message(role="system", content=repair_prompt, timestamp=time.time()),
         ]
-        response = await run_thinking_loop(
-            context_history=augmented_history,
-            provider=self._provider,
-            bus=self._bus,
-            registry=self._registry,
-            settings=self._settings,
+        response = await self._run_model_pass(
+            base_history=history,
+            full_history=augmented_history,
             turn_id=turn_id,
             round_index=round_index,
+            persist_pruned_history=True,
         )
         await self._persist_assistant_response(
             response,
@@ -350,22 +531,20 @@ class AgentService:
                 await self._emit_context_update(stats, turn_id=turn_id, round_index=0)
 
                 # 4. Trigger LLM Thinking Loop (THE BRAIN)
-                history = self._context._store.get_full_history()
-                history = await self._augment_history_with_active_skills(
+                history = self._context.get_full_history()
+                full_history = await self._augment_history_with_active_skills(
                     history,
                     turn_id=turn_id,
                     round_index=0,
                 )
                 self._logger.info("Entering Thinking Loop...")
 
-                response = await run_thinking_loop(
-                    context_history=history,
-                    provider=self._provider,
-                    bus=self._bus,
-                    registry=self._registry,
-                    settings=self._settings,
+                response = await self._run_model_pass(
+                    base_history=history,
+                    full_history=full_history,
                     turn_id=turn_id,
                     round_index=0,
+                    persist_pruned_history=True,
                 )
                 await self._persist_assistant_response(
                     response,
@@ -533,20 +712,18 @@ class AgentService:
                         turn_id=turn_id,
                         round_index=rounds,
                     )
-                    history = self._context._store.get_full_history()
-                    history = await self._augment_history_with_active_skills(
+                    history = self._context.get_full_history()
+                    full_history = await self._augment_history_with_active_skills(
                         history,
                         turn_id=turn_id,
                         round_index=rounds,
                     )
-                    response = await run_thinking_loop(
-                        context_history=history,
-                        provider=self._provider,
-                        bus=self._bus,
-                        registry=self._registry,
-                        settings=self._settings,
+                    response = await self._run_model_pass(
+                        base_history=history,
+                        full_history=full_history,
                         turn_id=turn_id,
                         round_index=rounds,
+                        persist_pruned_history=True,
                     )
                     await self._persist_assistant_response(
                         response,
@@ -610,6 +787,7 @@ class AgentService:
             "message": "Context updated",
             "data": {
                 "total_tokens": stats.total_tokens,
+                "stored_history_tokens": stats.total_tokens,
                 "message_count": stats.message_count,
                 "loaded_files_count": stats.loaded_files_count,
                 "context_limit": context_limit,
@@ -634,7 +812,15 @@ class AgentService:
                 return maybe_stats
 
         history = self._context._store.get_full_history()
-        total_tokens = sum(len((message.content or "")) // 4 for message in history)
+        total_tokens = 0
+        for message in history:
+            total_tokens += len((message.content or "")) // 4
+            if getattr(message, "tool_call_id", None):
+                total_tokens += len(str(message.tool_call_id)) // 4
+            if getattr(message, "name", None):
+                total_tokens += len(str(message.name)) // 4
+            if getattr(message, "tool_calls", None):
+                total_tokens += len(str(message.tool_calls)) // 4
         return ContextStats(
             total_tokens=total_tokens,
             message_count=len(history),
@@ -656,28 +842,42 @@ class AgentService:
         }
         await self._bus.emit(EventTypes.COMMAND_RESULT, payload)
 
-    async def _emit_status_snapshot(self) -> Dict[str, Any]:
-        stats = await self._resolve_context_stats()
-        state = getattr(self._state.current, "value", str(self._state.current))
+    def _resolve_working_directory(self) -> str:
         workspace_root = getattr(self._settings, "workspace_root", None)
         if workspace_root is None:
             workspace_root = getattr(self._settings, "workspace", None)
-        working_directory = (
-            str(workspace_root) if workspace_root is not None else os.getcwd()
+        return str(workspace_root) if workspace_root is not None else os.getcwd()
+
+    async def _build_runtime_snapshot(self) -> Dict[str, Any]:
+        stats = await self._resolve_context_stats()
+        state = getattr(self._state.current, "value", str(self._state.current))
+        history = self._context.get_full_history()
+        active_skill_injection = await self._build_active_skill_injection(
+            emit_warnings=False
         )
-        return {
-            "provider": str(getattr(self._settings, "llm_provider", "")),
-            "model": str(getattr(self._settings, "active_model_name", "")),
-            "working_directory": working_directory,
-            "state": str(state),
-            "total_tokens": int(getattr(stats, "total_tokens", 0) or 0),
-            "context_limit": int(
-                getattr(self._settings, "context_window_limit", 0) or 0
-            ),
-            "message_count": int(getattr(stats, "message_count", 0) or 0),
-            "loaded_files_count": int(getattr(stats, "loaded_files_count", 0) or 0),
-            "auto_confirm": bool(self._auto_confirm),
-        }
+        full_history = self._compose_history_with_system_injection(
+            history,
+            active_skill_injection,
+        )
+        estimate = await self._estimate_request_metrics(full_history)
+        return self._usage_ledger.build_snapshot(
+            stored_history_tokens=int(getattr(stats, "total_tokens", 0) or 0),
+            message_count=int(getattr(stats, "message_count", 0) or 0),
+            loaded_files_count=int(getattr(stats, "loaded_files_count", 0) or 0),
+            context_limit=int(getattr(self._settings, "context_window_limit", 0) or 0),
+            provider_name=str(getattr(self._settings, "llm_provider", "")),
+            model_name=str(getattr(self._settings, "active_model_name", "")),
+            working_directory=self._resolve_working_directory(),
+            state=str(state),
+            auto_confirm=bool(self._auto_confirm),
+            request_estimate=estimate,
+        )
+
+    async def _emit_status_snapshot(self) -> Dict[str, Any]:
+        return await self._build_runtime_snapshot()
+
+    async def _emit_metrics_snapshot(self) -> Dict[str, Any]:
+        return await self._build_runtime_snapshot()
 
     def _build_compact_history(
         self,
@@ -926,6 +1126,24 @@ class AgentService:
                 )
             return
 
+        if command_name == "metrics":
+            try:
+                snapshot = await self._emit_metrics_snapshot()
+                await self._emit_command_result(
+                    "metrics",
+                    True,
+                    "Metrics snapshot",
+                    snapshot,
+                )
+            except Exception as exc:
+                await self._emit_command_result(
+                    "metrics",
+                    False,
+                    "Failed to capture metrics",
+                    {"details": str(exc)},
+                )
+            return
+
         if command_name == "skills":
             ok, payload_skills, warnings, message = await self._resolve_skill_catalog()
             await self._emit_skill_runtime_warnings(warnings)
@@ -1017,14 +1235,12 @@ class AgentService:
                     turn_id=turn_id,
                     round_index=0,
                 )
-                response = await run_thinking_loop(
-                    context_history=compact_history,
-                    provider=self._provider,
-                    bus=self._bus,
-                    registry=self._registry,
-                    settings=self._settings,
+                response = await self._run_model_pass(
+                    base_history=history,
+                    full_history=compact_history,
                     turn_id=turn_id,
                     round_index=0,
+                    persist_pruned_history=False,
                 )
                 summary = str(response.content or "").strip()
                 if not summary:

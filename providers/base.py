@@ -11,6 +11,22 @@ class BaseProvider(ABC):
     """
 
     @abstractmethod
+    def build_request_payload(
+        self,
+        messages: List[Message],
+        model_name: str,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Build the outbound request payload used for chat generation.
+
+        This is used both for the live request and for provider-aware prompt
+        accounting, so implementations must keep it in sync with stream_chat().
+        """
+        pass
+
+    @abstractmethod
     async def stream_chat(
         self,
         messages: List[Message],
