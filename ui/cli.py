@@ -14,6 +14,7 @@ from protocol_monk.protocol.command_dispatcher import build_signoff_prompt, is_s
 from protocol_monk.protocol.events import EventTypes
 from protocol_monk.agent.structs import UserRequest, ConfirmationResponse
 from protocol_monk.config.settings import Settings
+from protocol_monk.ui.tool_output_presenter import build_tool_output_view
 from protocol_monk.ui.rich.styles import ORTHODOX_DIALOG_STYLE
 import time
 import uuid
@@ -380,14 +381,22 @@ class PromptToolkitCLI:
         success = data.get("success", False)
         output = data.get("output")
         error = data.get("error")
+        tool_name = str(data.get("tool_name", "") or "tool")
 
         # Only show truncated summary for large outputs
         if output:
-            output_str = str(output)
-            if len(output_str) > 100:
-                summary = output_str[:100] + f"... ({len(output_str)} chars)"
-            else:
-                summary = output_str
+            view = build_tool_output_view(tool_name, output, success=bool(success))
+            summary = view.preview_text
+            if len(summary) > 100:
+                summary = summary[:100] + f"... ({len(summary)} chars)"
+            elif not summary:
+                summary = tool_name
+            if view.is_structured and view.output_chars > len(summary):
+                summary = f"{summary} ({view.output_chars} chars)"
+            elif not view.is_structured:
+                output_str = str(output)
+                if len(output_str) > 100:
+                    summary = output_str[:100] + f"... ({len(output_str)} chars)"
             status = Colors.SUCCESS if success else Colors.ERROR
             print(f"{status}  → {summary}{Colors.RESET}")
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 import time
 from collections import deque
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from rich import box
 from rich.console import Console, Group, RenderableType
@@ -23,6 +23,7 @@ from rich.status import Status
 from rich.table import Column, Table
 from rich.text import Text
 
+from protocol_monk.ui.tool_output_presenter import ToolOutputView
 from .styles import console as default_console
 from .styles import THINKING_STYLE, create_monk_panel, panel, state_style
 
@@ -565,7 +566,7 @@ class RichRenderer:
         self,
         *,
         success: bool,
-        output: Any = None,
+        preview_text: str = "",
         error: Any = None,
         full_output_available: bool = False,
     ) -> None:
@@ -573,9 +574,12 @@ class RichRenderer:
         style = "success" if success else "error"
         symbol = "✓" if success else "✗"
 
-        if output is not None and output != "":
-            text = str(output)
-            summary = text if len(text) <= 160 else f"{text[:160]}... ({len(text)} chars)"
+        if preview_text:
+            summary = (
+                preview_text
+                if len(preview_text) <= 160
+                else f"{preview_text[:160]}... ({len(preview_text)} chars)"
+            )
             if full_output_available:
                 summary = f"{summary} [preview truncated; full output available]"
             self._emit(f"  [{style}]{symbol}[/] [dim]{summary}[/]")
@@ -585,22 +589,22 @@ class RichRenderer:
     def render_tool_output_full(
         self,
         *,
-        tool_name: str,
-        output_text: str,
+        view: ToolOutputView,
+        duration: float = 0.0,
         truncated: bool = False,
         omitted_chars: int = 0,
     ) -> None:
         """Print the full tool output in a panel."""
-        body = Text(output_text, style="monk.text")
-        if truncated and omitted_chars > 0:
-            body.append(
-                f"\n\n[truncated: omitted {omitted_chars} chars]",
-                style="warning",
-            )
+        body = self._build_tool_output_body(
+            view=view,
+            duration=duration,
+            truncated=truncated,
+            omitted_chars=omitted_chars,
+        )
         self._emit(
             panel(
                 body,
-                title=f"Tool Output: {tool_name}",
+                title=view.viewer_title,
                 border_style="tool",
             )
         )
@@ -631,6 +635,52 @@ class RichRenderer:
     def shutdown(self) -> None:
         """Clean up resources."""
         self._streaming.clear()
+
+    def _build_tool_output_body(
+        self,
+        *,
+        view: ToolOutputView,
+        duration: float,
+        truncated: bool,
+        omitted_chars: int,
+    ) -> RenderableType:
+        renderables: list[RenderableType] = []
+
+        if view.preview_text:
+            renderables.append(Text(view.preview_text, style="monk.text"))
+
+        metadata_lines = list(view.metadata_lines)
+        metadata_lines.append(f"Success: {view.success}")
+        metadata_lines.append(f"Duration: {duration:.2f}s")
+        renderables.append(self._build_tool_section("Common Metadata", metadata_lines))
+
+        for section in view.sections:
+            renderables.append(self._build_tool_section(section.title, section.lines))
+
+        if view.raw_json_text:
+            renderables.append(
+                self._build_tool_section("Raw JSON", view.raw_json_text.splitlines())
+            )
+
+        if truncated and omitted_chars > 0:
+            renderables.append(
+                Text(f"[truncated: omitted {omitted_chars} chars]", style="warning")
+            )
+
+        return Group(*renderables)
+
+    @staticmethod
+    def _build_tool_section(
+        title: str,
+        lines: Iterable[str],
+    ) -> RenderableType:
+        line_list = [str(line) for line in lines if str(line)]
+        heading = Text(title, style="tool")
+        if not line_list:
+            body = Text("(empty)", style="muted")
+        else:
+            body = Text("\n".join(line_list), style="monk.text")
+        return Group(heading, body)
 
     # --- Private Helpers ---
 

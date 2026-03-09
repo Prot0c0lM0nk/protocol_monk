@@ -18,6 +18,11 @@ from protocol_monk.protocol.command_dispatcher import (
 )
 from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
+from protocol_monk.ui.tool_output_presenter import (
+    ToolOutputView,
+    build_tool_output_view,
+    cap_tool_output_view,
+)
 from protocol_monk.ui.rich.input_handler import RichInputHandler
 from protocol_monk.ui.rich.renderer import RichRenderer
 from protocol_monk.ui.rich.typewriter import TYPEWRITER_PRESETS, typewriter_print
@@ -29,7 +34,8 @@ logger = logging.getLogger("RichPromptToolkitUI")
 class ToolOutputRecord:
     tool_name: str
     success: bool
-    output_text: str
+    view: ToolOutputView
+    viewer_text: str
     output_lines: int
     output_chars: int
     duration: float = 0.0
@@ -377,31 +383,42 @@ class RichPromptToolkitUI:
         output = data.get("output")
         error = data.get("error")
         tool_name = str(data.get("tool_name", "") or "tool")
-        output_text = "" if output is None else str(output)
-        has_large_output = bool(output is not None and self._is_large_output(output_text))
+        view = (
+            build_tool_output_view(tool_name, output, success=success)
+            if output is not None
+            else None
+        )
+        has_large_output = bool(
+            view is not None
+            and self._is_large_output(
+                output_chars=view.output_chars,
+                output_lines=view.output_lines,
+            )
+        )
 
         self._renderer.render_tool_output_preview(
             success=success,
-            output=output,
+            preview_text="" if view is None else view.preview_text,
             error=error,
             full_output_available=has_large_output,
         )
 
         # Store ALL results for Ctrl+O viewer
-        if output is not None:
+        if view is not None:
             record = ToolOutputRecord(
                 tool_name=tool_name,
                 success=success,
-                output_text=output_text,
-                output_lines=len(output_text.splitlines()),
-                output_chars=len(output_text),
+                view=view,
+                viewer_text=view.flattened_text,
+                output_lines=view.output_lines,
+                output_chars=view.output_chars,
                 duration=0.0,  # Updated in _handle_tool_complete
                 timestamp=time.time(),
             )
             self._tool_results.append(record)
 
         # Keep legacy large output handling for deferred viewing
-        if output is None:
+        if view is None:
             return
         if not has_large_output:
             return
@@ -409,9 +426,10 @@ class RichPromptToolkitUI:
         record = ToolOutputRecord(
             tool_name=tool_name,
             success=success,
-            output_text=output_text,
-            output_lines=len(output_text.splitlines()),
-            output_chars=len(output_text),
+            view=view,
+            viewer_text=view.flattened_text,
+            output_lines=view.output_lines,
+            output_chars=view.output_chars,
         )
         self._pending_tool_outputs.append(record)
         while len(self._pending_tool_outputs) > self.TOOL_OUTPUT_QUEUE_MAX:
@@ -523,7 +541,7 @@ class RichPromptToolkitUI:
         while self._pending_tool_outputs and self._current_state == "idle":
             record = self._pending_tool_outputs.popleft()
             self._renderer.render_info(
-                f"Large tool output available: {record.tool_name} ({record.output_chars} chars)"
+                f"Large tool output available: {record.view.viewer_label} ({record.output_chars} chars)"
             )
             self._renderer.lock_for_input()
             try:
@@ -535,10 +553,13 @@ class RichPromptToolkitUI:
                 self._renderer.unlock_for_input()
             if not show_full:
                 continue
-            shown, truncated, omitted = self._apply_output_cap(record.output_text)
+            shown_view, truncated, omitted = cap_tool_output_view(
+                record.view,
+                self.FULL_OUTPUT_SOFT_CAP,
+            )
             self._renderer.render_tool_output_full(
-                tool_name=record.tool_name,
-                output_text=shown,
+                view=shown_view,
+                duration=record.duration,
                 truncated=truncated,
                 omitted_chars=omitted,
             )
@@ -571,7 +592,10 @@ class RichPromptToolkitUI:
         for record in reversed(list(self._tool_results)):
             status = "✓" if record.success else "✗"
             duration = f"{record.duration:.2f}s" if record.duration > 0 else "..."
-            label = f"{status} {record.tool_name} [{duration}] ({record.output_chars} chars)"
+            label = (
+                f"{status} {record.view.viewer_label} [{duration}] "
+                f"({record.output_chars} chars)"
+            )
             options.append(label)
 
         # Show panel and get selection
@@ -587,10 +611,13 @@ class RichPromptToolkitUI:
 
         # Show full output for selection
         record = list(self._tool_results)[-(selected_index + 1)]
-        shown, truncated, omitted = self._apply_output_cap(record.output_text)
+        shown_view, truncated, omitted = cap_tool_output_view(
+            record.view,
+            self.FULL_OUTPUT_SOFT_CAP,
+        )
         self._renderer.render_tool_output_full(
-            tool_name=record.tool_name,
-            output_text=shown,
+            view=shown_view,
+            duration=record.duration,
             truncated=truncated,
             omitted_chars=omitted,
         )
@@ -609,15 +636,7 @@ class RichPromptToolkitUI:
         self._pending_signoff_done.set()
 
     @classmethod
-    def _is_large_output(cls, output_text: str) -> bool:
-        if len(output_text) > cls.LARGE_OUTPUT_CHAR_THRESHOLD:
+    def _is_large_output(cls, *, output_chars: int, output_lines: int) -> bool:
+        if output_chars > cls.LARGE_OUTPUT_CHAR_THRESHOLD:
             return True
-        return len(output_text.splitlines()) > cls.LARGE_OUTPUT_LINE_THRESHOLD
-
-    @classmethod
-    def _apply_output_cap(cls, output_text: str) -> tuple[str, bool, int]:
-        if len(output_text) <= cls.FULL_OUTPUT_SOFT_CAP:
-            return output_text, False, 0
-        shown = output_text[: cls.FULL_OUTPUT_SOFT_CAP]
-        omitted = len(output_text) - cls.FULL_OUTPUT_SOFT_CAP
-        return shown, True, omitted
+        return output_lines > cls.LARGE_OUTPUT_LINE_THRESHOLD
