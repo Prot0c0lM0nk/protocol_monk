@@ -4,6 +4,7 @@ from typing import Dict, Any
 
 from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
+from protocol_monk.tools.output_contract import build_tool_output, count_lines
 
 
 class ReplaceLinesTool(BaseTool):
@@ -75,4 +76,20 @@ class ReplaceLinesTool(BaseTool):
             os.fsync(f.fileno())
         os.replace(temp_path, cleaned_path)
 
-        return f"✅ Replaced lines {start}-{end} in {cleaned_path.name}"
+        return build_tool_output(
+            result_type="file_replace_lines",
+            summary=f"Replaced lines {start}-{end} in {cleaned_path.name}.",
+            data={
+                "operation": "replace_lines",
+                "path": str(cleaned_path),
+                "line_start": start,
+                "line_end": end,
+                "replaced_line_count": end - start + 1,
+                "inserted_line_count": len(new_lines_list),
+                "new_content_char_count": len(new_content),
+                "new_content_line_count": count_lines(new_content),
+                "previous_total_lines": len(lines),
+                "new_total_lines": len(updated_lines),
+            },
+            pagination=None,
+        )

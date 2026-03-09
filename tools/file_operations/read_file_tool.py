@@ -4,12 +4,18 @@ from typing import List, Optional, Tuple, Dict, Any
 
 from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
+from protocol_monk.tools.output_contract import (
+    build_line_pagination,
+    build_tool_output,
+    summarize_line_range,
+)
 
 
 class ReadFileTool(BaseTool):
     """Tool for reading specific lines from a file."""
 
     MAX_FILE_SIZE_BYTES: int = 1 * 1024 * 1024  # 1 MB limit
+    DEFAULT_PAGE_LINES: int = 200
 
     @property
     def name(self) -> str:
@@ -17,7 +23,10 @@ class ReadFileTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Read and display file contents, with optional line range."
+        return (
+            "Read file contents as structured line records. "
+            "Defaults to the first 200 lines unless a line range is provided."
+        )
 
     @property
     def parameter_schema(self) -> Dict[str, Any]:
@@ -30,11 +39,14 @@ class ReadFileTool(BaseTool):
                 },
                 "line_start": {
                     "type": "integer",
-                    "description": "Starting line number (1-based, optional).",
+                    "description": (
+                        "Starting line number (1-based, optional). "
+                        "If provided without line_end, returns up to 200 lines."
+                    ),
                 },
                 "line_end": {
                     "type": "integer",
-                    "description": "Ending line number (1-based, optional).",
+                    "description": "Ending line number (1-based, optional, inclusive).",
                 },
             },
             "required": ["filepath"],
@@ -46,7 +58,7 @@ class ReadFileTool(BaseTool):
         # But for this phase, direct execution is acceptable as per prototype
         return self._execute_sync(**kwargs)
 
-    def _execute_sync(self, **kwargs) -> str:
+    def _execute_sync(self, **kwargs) -> Dict[str, Any]:
         filepath = kwargs.get("filepath")
         if not filepath:
             raise ToolError(
@@ -68,8 +80,14 @@ class ReadFileTool(BaseTool):
         )
 
         # 3. Format Output
-        return self._format_output(
-            str(cleaned_path), selected_lines, actual_start, actual_end
+        return self._build_output(
+            str(cleaned_path),
+            total_lines=len(lines),
+            lines=selected_lines,
+            requested_start=start,
+            requested_end=end,
+            actual_start=actual_start,
+            actual_end=actual_end,
         )
 
     def _validate_and_read(self, full_path: Path) -> List[str]:
@@ -113,8 +131,16 @@ class ReadFileTool(BaseTool):
         self, lines: List[str], start: Optional[int], end: Optional[int]
     ) -> Tuple[List[str], int, int]:
         total_lines = len(lines)
+        if total_lines == 0:
+            return [], 1, 0
+
         start_idx = (start - 1) if start else 0
-        end_idx = end if end else total_lines
+        if end:
+            end_idx = end
+        elif start:
+            end_idx = min(total_lines, start_idx + self.DEFAULT_PAGE_LINES)
+        else:
+            end_idx = min(total_lines, self.DEFAULT_PAGE_LINES)
 
         start_idx = max(0, start_idx)
         end_idx = min(total_lines, end_idx)
@@ -130,13 +156,51 @@ class ReadFileTool(BaseTool):
 
         return lines[start_idx:end_idx], start_idx + 1, end_idx
 
-    def _format_output(
-        self, filepath: str, lines: List[str], start: int, end: int
-    ) -> str:
-        numbered_content = "\n".join(
-            f"{i+start:3}│ {line}" for i, line in enumerate(lines)
+    def _build_output(
+        self,
+        filepath: str,
+        *,
+        total_lines: int,
+        lines: List[str],
+        requested_start: Optional[int],
+        requested_end: Optional[int],
+        actual_start: int,
+        actual_end: int,
+    ) -> Dict[str, Any]:
+        line_records = [
+            {"line_number": actual_start + index, "text": line}
+            for index, line in enumerate(lines)
+        ]
+        returned_count = len(line_records)
+        page_size = returned_count or self.DEFAULT_PAGE_LINES
+        pagination = build_line_pagination(
+            total_lines=total_lines,
+            returned_start=actual_start,
+            returned_end=actual_end,
+            page_size=page_size,
         )
-        return (
-            f"📄 File {filepath} (lines {start}-{end}):\n"
-            f"{'─' * 60}\n{numbered_content}\n{'─' * 60}"
+        range_summary = (
+            summarize_line_range(actual_start, actual_end)
+            if actual_end >= actual_start
+            else "no lines"
+        )
+
+        return build_tool_output(
+            result_type="file_read",
+            summary=f"Read {range_summary} from {filepath}.",
+            data={
+                "path": filepath,
+                "requested_range": {
+                    "line_start": requested_start,
+                    "line_end": requested_end,
+                },
+                "actual_range": {
+                    "line_start": actual_start,
+                    "line_end": actual_end,
+                },
+                "total_lines": total_lines,
+                "returned_line_count": returned_count,
+                "lines": line_records,
+            },
+            pagination=pagination,
         )

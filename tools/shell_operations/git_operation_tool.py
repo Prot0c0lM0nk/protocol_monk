@@ -4,6 +4,7 @@ from typing import Dict, Any, List
 from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
 from protocol_monk.config.settings import Settings
+from protocol_monk.tools.output_contract import build_process_output
 
 
 class GitOperationTool(BaseTool):
@@ -87,12 +88,22 @@ class GitOperationTool(BaseTool):
                     },
                 )
 
-            output = f"Exit Code: {result.returncode}\n"
-            if result.stdout:
-                output += f"{result.stdout}\n"
-            if result.stderr:
-                output += f"{result.stderr}\n"
-            return output
+            return build_process_output(
+                result_type="git_operation",
+                summary=(
+                    f"Completed git {operation} with exit code {result.returncode}."
+                ),
+                command=command,
+                cwd=str(self.working_dir),
+                exit_code=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                extra_data={
+                    "operation": operation,
+                    "commit_message": commit_msg if operation == "commit" else None,
+                    "shell": False,
+                },
+            )
 
         except Exception as e:
             if isinstance(e, ToolError):

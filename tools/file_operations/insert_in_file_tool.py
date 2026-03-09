@@ -4,6 +4,7 @@ from typing import Dict, Any
 
 from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
+from protocol_monk.tools.output_contract import build_tool_output, count_lines
 
 
 class InsertInFileTool(BaseTool):
@@ -77,4 +78,22 @@ class InsertInFileTool(BaseTool):
             os.fsync(f.fileno())
         os.replace(temp_path, cleaned_path)
 
-        return f"✅ Inserted {len(new_lines)} lines after line {insert_idx} in {cleaned_path.name}"
+        return build_tool_output(
+            result_type="file_insert",
+            summary=(
+                f"Inserted {len(new_lines)} line(s) into {cleaned_path.name} "
+                f"after line {insert_idx}."
+            ),
+            data={
+                "operation": "insert_in_file",
+                "path": str(cleaned_path),
+                "anchor_text": target_line,
+                "inserted_after_line": insert_idx,
+                "inserted_line_count": len(new_lines),
+                "inserted_char_count": len(content),
+                "inserted_content_line_count": count_lines(content),
+                "previous_total_lines": len(lines),
+                "new_total_lines": len(updated_lines),
+            },
+            pagination=None,
+        )

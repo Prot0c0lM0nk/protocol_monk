@@ -98,7 +98,7 @@ class ToolResult:
     tool_name: str
     call_id: str
     success: bool
-    output: Any
+    output: Optional[Dict[str, Any]]
     duration: float
     error: Optional[str] = None
     error_code: Optional[str] = None

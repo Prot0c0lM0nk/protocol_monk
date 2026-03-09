@@ -5,6 +5,11 @@ from typing import Dict, Any
 
 from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
+from protocol_monk.tools.output_contract import (
+    build_tool_output,
+    count_lines,
+    utf8_byte_count,
+)
 from protocol_monk.tools.file_operations.scratch_coordination import (
     try_scratch_manager_read,
 )
@@ -40,7 +45,7 @@ class AppendToFileTool(BaseTool):
     async def run(self, **kwargs) -> Any:
         return self._execute_sync(**kwargs)
 
-    def _execute_sync(self, **kwargs) -> str:
+    def _execute_sync(self, **kwargs) -> Dict[str, Any]:
         filepath = kwargs.get("filepath")
         if not filepath:
             raise ToolError(
@@ -72,6 +77,10 @@ class AppendToFileTool(BaseTool):
             separator = ""
 
         new_content = existing + separator + content
+        previous_line_count = count_lines(existing)
+        previous_char_count = len(existing)
+        new_line_count = count_lines(new_content)
+        new_char_count = len(new_content)
 
         # Atomic Write
         temp_path = cleaned_path.with_suffix(f"{cleaned_path.suffix}.tmp")
@@ -81,7 +90,23 @@ class AppendToFileTool(BaseTool):
             os.fsync(f.fileno())
         os.replace(temp_path, cleaned_path)
 
-        return f"✅ Appended to {cleaned_path.name}"
+        return build_tool_output(
+            result_type="file_append",
+            summary=f"Appended content to {cleaned_path.name}.",
+            data={
+                "operation": "append_to_file",
+                "path": str(cleaned_path),
+                "appended_char_count": len(content),
+                "appended_line_count": count_lines(content),
+                "appended_byte_count": utf8_byte_count(content),
+                "separator_added": bool(separator),
+                "previous_char_count": previous_char_count,
+                "previous_line_count": previous_line_count,
+                "new_char_count": new_char_count,
+                "new_line_count": new_line_count,
+            },
+            pagination=None,
+        )
 
     def _read_scratch_file(self, scratch_id: str) -> str:
         content = try_scratch_manager_read(scratch_id, self.settings.workspace_root)

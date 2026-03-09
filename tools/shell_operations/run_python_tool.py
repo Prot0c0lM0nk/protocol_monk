@@ -6,6 +6,7 @@ from typing import Dict, Any
 from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
 from protocol_monk.config.settings import Settings
+from protocol_monk.tools.output_contract import build_tool_output
 
 # We delegate the actual shell execution to our existing robust tool
 from protocol_monk.tools.shell_operations.execute_command_tool import ExecuteCommandTool
@@ -58,7 +59,7 @@ class RunPythonTool(BaseTool):
         # Wrapper for async execution
         return self._execute_sync(**kwargs)
 
-    def _execute_sync(self, **kwargs) -> str:
+    def _execute_sync(self, **kwargs) -> Dict[str, Any]:
         content = kwargs.get("script_content")
         name = kwargs.get("script_name", "temp_python_script.py")
 
@@ -82,7 +83,17 @@ class RunPythonTool(BaseTool):
             result_output = self.command_executor._execute_sync(
                 command=command, description="Executing temporary Python script."
             )
-            return result_output
+            return build_tool_output(
+                result_type="python_execution",
+                summary=f"Executed Python script {file_path.name}.",
+                data={
+                    "script_name": file_path.name,
+                    "script_path": str(file_path),
+                    "python_executable": sys.executable,
+                    **result_output["data"],
+                },
+                pagination=None,
+            )
 
         finally:
             # 3. Cleanup

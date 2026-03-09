@@ -4,6 +4,7 @@ from typing import Dict, Any
 
 from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
+from protocol_monk.tools.output_contract import build_tool_output
 
 
 class DeleteLinesTool(BaseTool):
@@ -70,4 +71,17 @@ class DeleteLinesTool(BaseTool):
             os.fsync(f.fileno())
         os.replace(temp_path, cleaned_path)
 
-        return f"✅ Deleted lines {start}-{end} from {cleaned_path.name}"
+        return build_tool_output(
+            result_type="file_delete_lines",
+            summary=f"Deleted lines {start}-{end} from {cleaned_path.name}.",
+            data={
+                "operation": "delete_lines",
+                "path": str(cleaned_path),
+                "line_start": start,
+                "line_end": end,
+                "deleted_line_count": end - start + 1,
+                "previous_total_lines": len(lines),
+                "new_total_lines": len(updated_lines),
+            },
+            pagination=None,
+        )

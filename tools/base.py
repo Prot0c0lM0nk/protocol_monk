@@ -45,7 +45,7 @@ class BaseTool(ABC):
         return True
 
     @abstractmethod
-    async def run(self, **kwargs) -> Any:
+    async def run(self, **kwargs) -> Dict[str, Any]:
         """The execution logic."""
         pass
 

@@ -1,6 +1,7 @@
 import asyncio
 import time
 import logging
+from collections.abc import Mapping
 
 from protocol_monk.agent.structs import ToolRequest, ToolResult
 from protocol_monk.tools.registry import ToolRegistry
@@ -48,15 +49,27 @@ class ToolExecutor:
                 tool.run(**request.parameters), timeout=self._timeout
             )
 
+            if not isinstance(result, Mapping):
+                raise ToolError(
+                    f"Tool {request.name} returned non-structured output.",
+                    user_hint=(
+                        f"Tool {request.name} returned invalid output format."
+                    ),
+                    details={
+                        "tool_name": request.name,
+                        "returned_type": type(result).__name__,
+                    },
+                )
+
             duration = time.time() - start_time
             return ToolResult(
                 tool_name=request.name,
                 call_id=request.call_id,
                 success=True,
-                output=result,
+                output=dict(result),
                 duration=duration,
                 error=None,
-                output_kind=type(result).__name__,
+                output_kind="structured_json",
                 request_parameters=request.parameters,
             )
 

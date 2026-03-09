@@ -4,6 +4,7 @@ from typing import Dict, Any, Tuple
 from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
 from protocol_monk.config.settings import Settings
+from protocol_monk.tools.output_contract import build_process_output
 
 
 class ExecuteCommandTool(BaseTool):
@@ -53,8 +54,9 @@ class ExecuteCommandTool(BaseTool):
         # But to keep logic consistent with your existing code, we wrap the sync call.
         return self._execute_sync(**kwargs)
 
-    def _execute_sync(self, **kwargs) -> str:
+    def _execute_sync(self, **kwargs) -> Dict[str, Any]:
         command = kwargs.get("command", "").strip()
+        description = kwargs.get("description", "").strip()
         timeout = kwargs.get("timeout", 30)
 
         if not command:
@@ -96,13 +98,22 @@ class ExecuteCommandTool(BaseTool):
                     },
                 )
 
-            output = f"Exit Code: {result.returncode}\n"
-            if result.stdout:
-                output += f"STDOUT:\n{result.stdout}\n"
-            if result.stderr:
-                output += f"STDERR:\n{result.stderr}\n"
-
-            return output
+            return build_process_output(
+                result_type="command_execution",
+                summary=(
+                    f"Executed shell command successfully with exit code {result.returncode}."
+                ),
+                command=command,
+                cwd=str(self.working_dir),
+                exit_code=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                extra_data={
+                    "description": description,
+                    "timeout_seconds": timeout,
+                    "shell": True,
+                },
+            )
 
         except subprocess.TimeoutExpired:
             raise ToolError(

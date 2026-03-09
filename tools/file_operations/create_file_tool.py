@@ -5,6 +5,11 @@ from typing import Dict, Any, Optional
 
 from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
+from protocol_monk.tools.output_contract import (
+    build_tool_output,
+    count_lines,
+    utf8_byte_count,
+)
 from protocol_monk.tools.file_operations.scratch_coordination import (
     try_scratch_manager_read,
 )
@@ -49,7 +54,7 @@ class CreateFileTool(BaseTool):
     async def run(self, **kwargs) -> Any:
         return self._execute_sync(**kwargs)
 
-    def _execute_sync(self, **kwargs) -> str:
+    def _execute_sync(self, **kwargs) -> Dict[str, Any]:
         filepath = kwargs.get("filepath")
         if not filepath:
             raise ToolError(
@@ -77,7 +82,11 @@ class CreateFileTool(BaseTool):
         if content is None:
             content = ""
 
-        return self._perform_atomic_write(cleaned_path, content)
+        return self._perform_atomic_write(
+            cleaned_path,
+            content,
+            used_scratch=bool(scratch_id and not self._looks_like_inline_content(scratch_id)),
+        )
 
     def _read_scratch_file(self, scratch_id: str) -> str:
         content = try_scratch_manager_read(scratch_id, self.settings.workspace_root)
@@ -112,7 +121,9 @@ class CreateFileTool(BaseTool):
             or " " in text
         )
 
-    def _perform_atomic_write(self, full_path: Path, content: str) -> str:
+    def _perform_atomic_write(
+        self, full_path: Path, content: str, *, used_scratch: bool
+    ) -> Dict[str, Any]:
         if full_path.exists():
             raise ToolError(
                 f"File already exists: {full_path.name}",
@@ -127,7 +138,20 @@ class CreateFileTool(BaseTool):
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(temp_path, full_path)
-            return f"✅ Created {full_path.name}"
+            return build_tool_output(
+                result_type="file_create",
+                summary=f"Created {full_path.name}.",
+                data={
+                    "operation": "create_file",
+                    "path": str(full_path),
+                    "created": True,
+                    "content_char_count": len(content),
+                    "content_line_count": count_lines(content),
+                    "content_byte_count": utf8_byte_count(content),
+                    "used_scratch_content": used_scratch,
+                },
+                pagination=None,
+            )
         except FileExistsError:
             if temp_path.exists():
                 os.remove(temp_path)
