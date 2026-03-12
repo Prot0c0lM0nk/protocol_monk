@@ -294,7 +294,7 @@ class Settings(BaseSettings):
         params = self._active_model_config.get("parameters", {}).copy()
 
         # Only Ollama uses num_ctx-style options.
-        if self.llm_provider == "ollama" and "num_ctx" not in params:
+        if self.llm_provider == "ollama":
             params["num_ctx"] = self.context_window_limit
 
         return params

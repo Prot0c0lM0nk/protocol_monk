@@ -127,6 +127,26 @@ class ModelDiscovery:
         return None
 
     @staticmethod
+    def _coerce_override_int(value: Any) -> int | None:
+        """Convert persisted user override values to positive integers."""
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value if value > 0 else None
+        if isinstance(value, float):
+            if not value.is_integer():
+                return None
+            coerced = int(value)
+            return coerced if coerced > 0 else None
+        if isinstance(value, str):
+            cleaned = value.replace(",", "").strip()
+            if not cleaned or not cleaned.isdigit():
+                return None
+            coerced = int(cleaned)
+            return coerced if coerced > 0 else None
+        return None
+
+    @staticmethod
     def _normalize_capabilities(raw: Any) -> List[str]:
         """Normalize capabilities into lowercase unique labels."""
         if raw is None:
@@ -170,10 +190,10 @@ class ModelDiscovery:
 
         return []
 
-    def _extract_context_length(
+    def _extract_discovered_context_length(
         self, details: Dict[str, Any], existing_model: Dict[str, Any]
     ) -> int:
-        """Extract context window from known show() payload variants."""
+        """Extract discovered context window from known show() payload variants."""
         nested_details = details.get("details") or {}
         model_info = self._model_info(details)
 
@@ -193,12 +213,51 @@ class ModelDiscovery:
             if coerced is not None:
                 return coerced
 
+        existing_ctx = self._coerce_positive_int(
+            existing_model.get("discovered_context_window")
+        )
+        if existing_ctx is not None:
+            return existing_ctx
+
         existing_ctx = self._coerce_positive_int(existing_model.get("context_window"))
         if existing_ctx is not None:
             return existing_ctx
 
         # Conservative fallback when model metadata is incomplete.
         return 8192
+
+    def _extract_context_override(self, existing_model: Dict[str, Any]) -> int | None:
+        """Load explicit or legacy persisted context override values."""
+        explicit_override = self._coerce_override_int(
+            existing_model.get("context_window_override")
+        )
+        if explicit_override is not None:
+            return explicit_override
+
+        user_overrides = existing_model.get("user_overrides", {})
+        if isinstance(user_overrides, dict):
+            migrated = self._coerce_override_int(user_overrides.get("num_ctx"))
+            if migrated is not None:
+                return migrated
+
+        parameters = existing_model.get("parameters", {})
+        if isinstance(parameters, dict):
+            migrated = self._coerce_override_int(parameters.get("num_ctx"))
+            if migrated is not None:
+                return migrated
+
+        return None
+
+    @staticmethod
+    def _sanitize_user_overrides(existing_model: Dict[str, Any]) -> Dict[str, Any]:
+        """Drop legacy request-only context keys in favor of explicit overrides."""
+        user_overrides = existing_model.get("user_overrides", {})
+        if not isinstance(user_overrides, dict):
+            return {}
+
+        sanitized = user_overrides.copy()
+        sanitized.pop("num_ctx", None)
+        return sanitized
 
     @staticmethod
     def _extract_family(model_name: str, details: Dict[str, Any]) -> str:
@@ -276,14 +335,20 @@ class ModelDiscovery:
                     or "thinking" in name.lower()
                 )
             )
-            context_len = self._extract_context_length(details, existing_model)
+            discovered_context_len = self._extract_discovered_context_length(
+                details, existing_model
+            )
+            context_override = self._extract_context_override(existing_model)
+            context_len = (
+                context_override
+                if context_override is not None
+                else discovered_context_len
+            )
             family = self._extract_family(name, details)
             is_cloud = self._infer_is_cloud(name, details)
 
             # Pull any existing user overrides
-            user_overrides = existing_model.get("user_overrides", {})
-            if not isinstance(user_overrides, dict):
-                user_overrides = {}
+            user_overrides = self._sanitize_user_overrides(existing_model)
 
             # Assemble final model entry
             model_entry = {
@@ -291,6 +356,7 @@ class ModelDiscovery:
                 "family": family,
                 "is_cloud": is_cloud,
                 "context_window": context_len,
+                "discovered_context_window": discovered_context_len,
                 "supports_thinking": supports_thinking,
                 "supports_tools": supports_tools,
                 "capabilities": capabilities,
@@ -298,6 +364,8 @@ class ModelDiscovery:
                 "user_overrides": user_overrides,
                 "discovered_at": datetime.now().isoformat(),
             }
+            if context_override is not None:
+                model_entry["context_window_override"] = context_override
 
             config["models"][name] = model_entry
 
