@@ -100,9 +100,7 @@ class ExecuteCommandTool(BaseTool):
 
             return build_process_output(
                 result_type="command_execution",
-                summary=(
-                    f"Executed shell command successfully with exit code {result.returncode}."
-                ),
+                summary=self._build_summary(result.stdout, result.stderr, result.returncode),
                 command=command,
                 cwd=str(self.working_dir),
                 exit_code=result.returncode,
@@ -113,6 +111,7 @@ class ExecuteCommandTool(BaseTool):
                     "timeout_seconds": timeout,
                     "shell": True,
                 },
+                parse_json_streams=True,
             )
 
         except subprocess.TimeoutExpired:
@@ -142,3 +141,20 @@ class ExecuteCommandTool(BaseTool):
             if re.search(pattern, command, re.IGNORECASE):
                 return False, desc
         return True, "Safe"
+
+    def _build_summary(self, stdout: str, stderr: str, exit_code: int) -> str:
+        stripped_stdout = str(stdout or "").strip()
+        stripped_stderr = str(stderr or "").strip()
+
+        import json
+
+        for text in (stripped_stdout, stripped_stderr):
+            if not text:
+                continue
+            try:
+                json.loads(text)
+                return "Executed shell command successfully with JSON output."
+            except json.JSONDecodeError:
+                continue
+
+        return f"Executed shell command successfully with exit code {exit_code}."
