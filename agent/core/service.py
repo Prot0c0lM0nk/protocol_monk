@@ -4,7 +4,7 @@ import json
 import os
 import time
 import uuid
-from typing import Any, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 from protocol_monk.agent.context import logic as context_logic
 from protocol_monk.protocol.bus import EventBus
@@ -38,6 +38,11 @@ from protocol_monk.skill_runtime import SkillRuntime
 from protocol_monk.agent.core.execution import ToolExecutor
 from protocol_monk.agent.loops import run_thinking_loop, run_action_loop
 
+if TYPE_CHECKING:
+    from protocol_monk.plugins.neuralsym.adapter_protocol_monk import (
+        ProtocolMonkNeuralSymAdapter,
+    )
+
 
 class AgentService:
     """
@@ -59,6 +64,7 @@ class AgentService:
         provider: Any,
         settings: Settings,
         skill_runtime: SkillRuntime | None = None,
+        neuralsym_adapter: "ProtocolMonkNeuralSymAdapter | None" = None,
     ):
         self._bus = bus
         self._context = coordinator
@@ -76,6 +82,7 @@ class AgentService:
         self._auto_confirm = bool(getattr(settings, "auto_confirm", False))
         self._request_lock = asyncio.Lock()
         self._skill_runtime = skill_runtime
+        self._neuralsym_adapter = neuralsym_adapter
         self._usage_ledger = UsageLedger(
             model_name=str(getattr(settings, "active_model_name", "") or "")
         )
@@ -124,15 +131,16 @@ class AgentService:
             await self._bus.emit(EventTypes.WARNING, payload)
 
     @staticmethod
-    def _compose_history_with_system_injection(
+    def _compose_history_with_system_injections(
         history: List[Message],
-        injected: Message | None,
+        injected: List[Message | None],
     ) -> List[Message]:
-        if injected is None:
+        injections = [message for message in injected if message is not None]
+        if not injections:
             return list(history)
         if history and history[0].role == "system":
-            return [history[0], injected, *history[1:]]
-        return [injected, *history]
+            return [history[0], *injections, *history[1:]]
+        return [*injections, *history]
 
     async def _build_active_skill_injection(
         self,
@@ -181,7 +189,46 @@ class AgentService:
             round_index=round_index,
             emit_warnings=True,
         )
-        return self._compose_history_with_system_injection(history, injected)
+        return self._compose_history_with_system_injections(history, [injected])
+
+    async def _build_neuralsym_injection(
+        self,
+        *,
+        turn_id: str | None = None,
+        round_index: int | None = None,
+    ) -> Message | None:
+        if self._neuralsym_adapter is None:
+            return None
+        try:
+            return await self._neuralsym_adapter.build_system_message(
+                turn_id=turn_id,
+                round_index=round_index,
+            )
+        except Exception:
+            self._logger.warning("NeuralSym advice injection failed.", exc_info=True)
+            return None
+
+    async def _augment_history_with_runtime_injections(
+        self,
+        history: List[Message],
+        *,
+        turn_id: str | None = None,
+        round_index: int | None = None,
+        emit_skill_warnings: bool = True,
+    ) -> List[Message]:
+        active_skill_injection = await self._build_active_skill_injection(
+            turn_id=turn_id,
+            round_index=round_index,
+            emit_warnings=emit_skill_warnings,
+        )
+        neuralsym_injection = await self._build_neuralsym_injection(
+            turn_id=turn_id,
+            round_index=round_index,
+        )
+        return self._compose_history_with_system_injections(
+            history,
+            [active_skill_injection, neuralsym_injection],
+        )
 
     async def _resolve_skill_catalog(
         self,
@@ -247,6 +294,12 @@ class AgentService:
             turn_id=turn_id,
             pass_id=response.pass_id,
             round_index=round_index,
+        )
+        await self._observe_neuralsym_assistant_pass(
+            response,
+            turn_id=turn_id,
+            round_index=round_index,
+            valid_tool_calls=valid_tool_calls,
         )
         return stats
 
@@ -372,10 +425,18 @@ class AgentService:
         turn_id: str,
         round_index: int,
         persist_pruned_history: bool,
+        include_runtime_injections: bool = True,
     ) -> AgentResponse:
+        runtime_history = list(full_history)
+        if include_runtime_injections:
+            runtime_history = await self._augment_history_with_runtime_injections(
+                full_history,
+                turn_id=turn_id,
+                round_index=round_index,
+            )
         prepared_history, request_estimate = await self._prepare_history_for_model_call(
             base_history=base_history,
-            full_history=full_history,
+            full_history=runtime_history,
             turn_id=turn_id,
             round_index=round_index,
             persist_pruned_history=persist_pruned_history,
@@ -529,19 +590,15 @@ class AgentService:
 
                 # 3. Emit Verification
                 await self._emit_context_update(stats, turn_id=turn_id, round_index=0)
+                await self._observe_neuralsym_user_input(payload)
 
                 # 4. Trigger LLM Thinking Loop (THE BRAIN)
                 history = self._context.get_full_history()
-                full_history = await self._augment_history_with_active_skills(
-                    history,
-                    turn_id=turn_id,
-                    round_index=0,
-                )
                 self._logger.info("Entering Thinking Loop...")
 
                 response = await self._run_model_pass(
                     base_history=history,
-                    full_history=full_history,
+                    full_history=history,
                     turn_id=turn_id,
                     round_index=0,
                     persist_pruned_history=True,
@@ -653,6 +710,13 @@ class AgentService:
                             tool_call_id=result.call_id,
                             tool_index=tool_index,
                         )
+                        await self._observe_neuralsym_tool_result(
+                            result,
+                            turn_id=turn_id,
+                            pass_id=response.pass_id,
+                            round_index=rounds,
+                            tool_index=tool_index,
+                        )
 
                         if result.error_code == "user_rejected":
                             # Close the current tool-call batch in-order. The provider expects
@@ -713,14 +777,9 @@ class AgentService:
                         round_index=rounds,
                     )
                     history = self._context.get_full_history()
-                    full_history = await self._augment_history_with_active_skills(
-                        history,
-                        turn_id=turn_id,
-                        round_index=rounds,
-                    )
                     response = await self._run_model_pass(
                         base_history=history,
-                        full_history=full_history,
+                        full_history=history,
                         turn_id=turn_id,
                         round_index=rounds,
                         persist_pruned_history=True,
@@ -848,16 +907,65 @@ class AgentService:
             workspace_root = getattr(self._settings, "workspace", None)
         return str(workspace_root) if workspace_root is not None else os.getcwd()
 
+    async def _observe_neuralsym_user_input(self, payload: UserRequest) -> None:
+        if self._neuralsym_adapter is None:
+            return
+        try:
+            await self._neuralsym_adapter.on_user_input(payload)
+        except Exception:
+            self._logger.warning("NeuralSym user-input observation failed.", exc_info=True)
+
+    async def _observe_neuralsym_assistant_pass(
+        self,
+        response: AgentResponse,
+        *,
+        turn_id: str,
+        round_index: int,
+        valid_tool_calls: List[ToolRequest],
+    ) -> None:
+        if self._neuralsym_adapter is None:
+            return
+        try:
+            await self._neuralsym_adapter.on_assistant_pass(
+                response,
+                turn_id=turn_id,
+                round_index=round_index,
+                valid_tool_calls=valid_tool_calls,
+            )
+        except Exception:
+            self._logger.warning("NeuralSym assistant-pass observation failed.", exc_info=True)
+
+    async def _observe_neuralsym_tool_result(
+        self,
+        result: ToolResult,
+        *,
+        turn_id: str,
+        pass_id: str,
+        round_index: int,
+        tool_index: int,
+    ) -> None:
+        if self._neuralsym_adapter is None:
+            return
+        try:
+            await self._neuralsym_adapter.on_tool_result(
+                result,
+                turn_id=turn_id,
+                pass_id=pass_id,
+                round_index=round_index,
+                tool_index=tool_index,
+            )
+        except Exception:
+            self._logger.warning("NeuralSym tool-result observation failed.", exc_info=True)
+
     async def _build_runtime_snapshot(self) -> Dict[str, Any]:
         stats = await self._resolve_context_stats()
         state = getattr(self._state.current, "value", str(self._state.current))
         history = self._context.get_full_history()
-        active_skill_injection = await self._build_active_skill_injection(
-            emit_warnings=False
-        )
-        full_history = self._compose_history_with_system_injection(
+        full_history = await self._augment_history_with_runtime_injections(
             history,
-            active_skill_injection,
+            turn_id=None,
+            round_index=None,
+            emit_skill_warnings=False,
         )
         estimate = await self._estimate_request_metrics(full_history)
         return self._usage_ledger.build_snapshot(
@@ -1241,6 +1349,7 @@ class AgentService:
                     turn_id=turn_id,
                     round_index=0,
                     persist_pruned_history=False,
+                    include_runtime_injections=False,
                 )
                 summary = str(response.content or "").strip()
                 if not summary:

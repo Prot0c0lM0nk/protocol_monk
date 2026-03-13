@@ -26,6 +26,7 @@ from protocol_monk.utils.logger import EventLogger
 from protocol_monk.utils.session_transcript import SessionTranscriptSink
 from protocol_monk.providers.factory import create_provider
 from protocol_monk.skill_runtime import SkillRuntime
+from protocol_monk.plugins.neuralsym import build_protocol_monk_neuralsym_adapter
 
 # 6. Import UI Components
 from protocol_monk.ui.rich.boot import BootAnimation, BootPhase
@@ -228,6 +229,7 @@ async def main():
         with ScratchManager(Path(os.getcwd())) as _:
             repo_root = app_root.parent
             skill_runtime = SkillRuntime(repo_root / "skills")
+            neuralsym_adapter = await build_protocol_monk_neuralsym_adapter(settings)
 
             # E. Memory Systems (The Brain)
             context_store = ContextStore()
@@ -245,28 +247,33 @@ async def main():
                 provider=provider,
                 settings=settings,
                 skill_runtime=skill_runtime,
+                neuralsym_adapter=neuralsym_adapter,
             )
 
-            await agent_service.start()
+            try:
+                await agent_service.start()
 
-            # Phase 4: Starting UI
-            if boot is not None:
-                boot.update_phase(BootPhase.UI, "Ready")
+                # Phase 4: Starting UI
+                if boot is not None:
+                    boot.update_phase(BootPhase.UI, "Ready")
 
-            if ui_backend == "cli":
-                from protocol_monk.ui.cli import PromptToolkitCLI
+                if ui_backend == "cli":
+                    from protocol_monk.ui.cli import PromptToolkitCLI
 
-                cli = PromptToolkitCLI(bus, settings)
-                await cli.start()
-                await cli.run()
-            else:
-                from protocol_monk.ui.rich.app import RichPromptToolkitUI
+                    cli = PromptToolkitCLI(bus, settings)
+                    await cli.start()
+                    await cli.run()
+                else:
+                    from protocol_monk.ui.rich.app import RichPromptToolkitUI
 
-                rich_ui = RichPromptToolkitUI(bus=bus, settings=settings)
-                await rich_ui.start()
-                await rich_ui.run()
+                    rich_ui = RichPromptToolkitUI(bus=bus, settings=settings)
+                    await rich_ui.start()
+                    await rich_ui.run()
 
-            return 0
+                return 0
+            finally:
+                if neuralsym_adapter is not None:
+                    await neuralsym_adapter.stop()
 
     except Exception as e:
         logger.critical("Startup Failed: %s", e, exc_info=True)
