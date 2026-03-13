@@ -165,25 +165,29 @@ def _build_structured_view(
     raw_json_text: Optional[str] = None
 
     if isinstance(data, dict):
-        generic_lines = []
-        for key, value in data.items():
-            if key in {"lines", "stdout", "stderr"}:
-                continue
-            generic_lines.append(f"{key}: {_format_value(value)}")
-        if generic_lines:
-            sections.append(ToolOutputSection(title="Metadata", lines=tuple(generic_lines)))
+        structured_sections = _build_result_sections(result_type, data)
+        if structured_sections:
+            sections.extend(structured_sections)
+        else:
+            generic_lines = []
+            for key, value in data.items():
+                if key in {"lines", "stdout", "stderr"}:
+                    continue
+                generic_lines.append(f"{key}: {_format_value(value)}")
+            if generic_lines:
+                sections.append(ToolOutputSection(title="Metadata", lines=tuple(generic_lines)))
 
-        file_lines = _format_line_records(data.get("lines"))
-        if file_lines:
-            sections.append(ToolOutputSection(title="File Lines", lines=tuple(file_lines)))
+            file_lines = _format_line_records(data.get("lines"))
+            if file_lines:
+                sections.append(ToolOutputSection(title="File Lines", lines=tuple(file_lines)))
 
-        stdout_lines = _format_stream_section("stdout", data.get("stdout"))
-        if stdout_lines:
-            sections.append(ToolOutputSection(title="stdout", lines=tuple(stdout_lines)))
+            stdout_lines = _format_stream_section("stdout", data.get("stdout"))
+            if stdout_lines:
+                sections.append(ToolOutputSection(title="stdout", lines=tuple(stdout_lines)))
 
-        stderr_lines = _format_stream_section("stderr", data.get("stderr"))
-        if stderr_lines:
-            sections.append(ToolOutputSection(title="stderr", lines=tuple(stderr_lines)))
+            stderr_lines = _format_stream_section("stderr", data.get("stderr"))
+            if stderr_lines:
+                sections.append(ToolOutputSection(title="stderr", lines=tuple(stderr_lines)))
     else:
         raw_json_text = _pretty_json(output)
 
@@ -329,12 +333,11 @@ def _format_pagination_section(pagination: Any) -> list[str]:
         lines.append(f"Mode: {mode}")
 
     returned_range = pagination.get("returned_range")
-    total_lines = pagination.get("total_lines")
+    total_value = _extract_total_value(pagination)
     if isinstance(returned_range, dict):
-        start = returned_range.get("line_start")
-        end = returned_range.get("line_end")
-        if start is not None and end is not None and total_lines is not None:
-            lines.append(f"Current Range: {start}-{end} of {total_lines}")
+        start, end = _extract_range_bounds(returned_range)
+        if start is not None and end is not None and total_value is not None:
+            lines.append(f"Current Range: {start}-{end} of {total_value}")
 
     if pagination.get("previous_page") is not None:
         lines.append(
@@ -368,9 +371,225 @@ def _measure_view(
                 char_candidates.append(int(stream.get("char_count", 0) or 0))
                 line_candidates.append(int(stream.get("line_count", 0) or 0))
 
+        row_records = data.get("rows")
+        if isinstance(row_records, list):
+            char_candidates.append(
+                sum(
+                    len(_format_value(item.get("values")))
+                    for item in row_records
+                    if isinstance(item, dict)
+                )
+            )
+            line_candidates.append(len(row_records))
+
+        pages = data.get("pages")
+        if isinstance(pages, list):
+            page_line_count = 0
+            page_char_count = 0
+            for page in pages:
+                if not isinstance(page, dict):
+                    continue
+                blocks = page.get("text_blocks")
+                if isinstance(blocks, list):
+                    page_line_count += len(blocks)
+                    page_char_count += sum(
+                        len(str(block.get("text", "")))
+                        for block in blocks
+                        if isinstance(block, dict)
+                    )
+            char_candidates.append(page_char_count)
+            line_candidates.append(page_line_count)
+
     if raw_json_text:
         char_candidates.append(len(raw_json_text))
     return max(char_candidates), max(line_candidates)
+
+
+def _build_result_sections(
+    result_type: Optional[str],
+    data: dict[str, Any],
+) -> list[ToolOutputSection]:
+    if result_type == "spreadsheet_read":
+        return _build_spreadsheet_sections(data)
+    if result_type == "pdf_read":
+        return _build_pdf_sections(data)
+    if result_type == "image_read":
+        return _build_image_sections(data)
+    return []
+
+
+def _build_spreadsheet_sections(data: dict[str, Any]) -> list[ToolOutputSection]:
+    sections: list[ToolOutputSection] = []
+    metadata_lines = [
+        f"{key}: {_format_value(value)}"
+        for key, value in data.items()
+        if key not in {"columns", "rows"}
+    ]
+    if metadata_lines:
+        sections.append(ToolOutputSection(title="Metadata", lines=tuple(metadata_lines)))
+
+    column_lines = _format_columns_section(data.get("columns"))
+    if column_lines:
+        sections.append(ToolOutputSection(title="Columns", lines=tuple(column_lines)))
+
+    row_lines = _format_rows_section(data.get("rows"))
+    if row_lines:
+        sections.append(ToolOutputSection(title="Rows", lines=tuple(row_lines)))
+
+    return sections
+
+
+def _build_pdf_sections(data: dict[str, Any]) -> list[ToolOutputSection]:
+    sections: list[ToolOutputSection] = []
+    metadata_lines = [
+        f"{key}: {_format_value(value)}"
+        for key, value in data.items()
+        if key not in {"pages", "document_metadata"}
+    ]
+    document_metadata = data.get("document_metadata")
+    if isinstance(document_metadata, dict) and document_metadata:
+        metadata_lines.extend(
+            f"document_metadata.{key}: {_format_value(value)}"
+            for key, value in document_metadata.items()
+        )
+    if metadata_lines:
+        sections.append(ToolOutputSection(title="Metadata", lines=tuple(metadata_lines)))
+
+    pages = data.get("pages")
+    if isinstance(pages, list):
+        for page in pages:
+            if not isinstance(page, dict):
+                continue
+            page_number = page.get("page_number")
+            extraction_method = page.get("extraction_method")
+            lines = []
+            if extraction_method:
+                lines.append(f"Method: {extraction_method}")
+            warnings = page.get("warnings")
+            if isinstance(warnings, list):
+                lines.extend(f"Warning: {str(item)}" for item in warnings if str(item).strip())
+            lines.extend(_format_pdf_text_blocks(page.get("text_blocks")))
+            title = f"Page {page_number}" if page_number is not None else "Page"
+            if lines:
+                sections.append(ToolOutputSection(title=title, lines=tuple(lines)))
+
+    return sections
+
+
+def _build_image_sections(data: dict[str, Any]) -> list[ToolOutputSection]:
+    sections: list[ToolOutputSection] = []
+    metadata_lines = [
+        f"{key}: {_format_value(value)}"
+        for key, value in data.items()
+        if key not in {"description", "detected_text_blocks", "observations", "warnings"}
+    ]
+    if metadata_lines:
+        sections.append(ToolOutputSection(title="Metadata", lines=tuple(metadata_lines)))
+
+    description = str(data.get("description") or "").strip()
+    if description:
+        sections.append(ToolOutputSection(title="Description", lines=(description,)))
+
+    text_lines = _format_detected_text_section(data.get("detected_text_blocks"))
+    if text_lines:
+        sections.append(ToolOutputSection(title="Detected Text", lines=tuple(text_lines)))
+
+    observation_lines = _format_string_list_section(data.get("observations"))
+    if observation_lines:
+        sections.append(ToolOutputSection(title="Observations", lines=tuple(observation_lines)))
+
+    warning_lines = _format_string_list_section(data.get("warnings"))
+    if warning_lines:
+        sections.append(ToolOutputSection(title="Warnings", lines=tuple(warning_lines)))
+
+    return sections
+
+
+def _format_columns_section(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    lines: list[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        index = item.get("index")
+        label = str(item.get("label", ""))
+        if index is None:
+            lines.append(label)
+        else:
+            lines.append(f"{int(index):>4}│ {label}")
+    return lines
+
+
+def _format_rows_section(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    lines: list[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        row_number = item.get("row_number")
+        values = _format_value(item.get("values"))
+        if row_number is None:
+            lines.append(values)
+        else:
+            lines.append(f"{int(row_number):>4}│ {values}")
+    return lines
+
+
+def _format_pdf_text_blocks(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    lines: list[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        block_number = item.get("block_number")
+        text = str(item.get("text", ""))
+        if block_number is None:
+            lines.append(text)
+        else:
+            lines.append(f"{int(block_number):>4}│ {text}")
+    return lines
+
+
+def _format_detected_text_section(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    lines: list[str] = []
+    for index, item in enumerate(value, start=1):
+        if isinstance(item, dict):
+            text = str(item.get("text", "")).strip()
+        else:
+            text = str(item).strip()
+        if text:
+            lines.append(f"{index:>4}│ {text}")
+    return lines
+
+
+def _format_string_list_section(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
+
+
+def _extract_range_bounds(range_data: dict[str, Any]) -> tuple[Optional[Any], Optional[Any]]:
+    start = next(
+        (value for key, value in range_data.items() if str(key).endswith("_start")),
+        None,
+    )
+    end = next(
+        (value for key, value in range_data.items() if str(key).endswith("_end")),
+        None,
+    )
+    return start, end
+
+
+def _extract_total_value(pagination: dict[str, Any]) -> Optional[Any]:
+    for key, value in pagination.items():
+        if str(key).startswith("total_"):
+            return value
+    return None
 
 
 def _count_lines(text: str) -> int:

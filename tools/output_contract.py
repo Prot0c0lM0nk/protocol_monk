@@ -71,38 +71,61 @@ def build_line_pagination(
     returned_end: int,
     page_size: int,
 ) -> Optional[Dict[str, Any]]:
-    if total_lines <= 0 or returned_start <= 0 or returned_end <= 0 or page_size <= 0:
+    return build_range_pagination(
+        mode="line_range",
+        total_items=total_lines,
+        returned_start=returned_start,
+        returned_end=returned_end,
+        page_size=page_size,
+        start_key="line_start",
+        end_key="line_end",
+        total_key="total_lines",
+    )
+
+
+def build_range_pagination(
+    *,
+    mode: str,
+    total_items: int,
+    returned_start: int,
+    returned_end: int,
+    page_size: int,
+    start_key: str,
+    end_key: str,
+    total_key: str,
+) -> Optional[Dict[str, Any]]:
+    if total_items <= 0 or returned_start <= 0 or returned_end <= 0 or page_size <= 0:
         return None
 
     has_previous = returned_start > 1
-    has_next = returned_end < total_lines
+    has_next = returned_end < total_items
 
     previous_page = None
     if has_previous:
         previous_end = returned_start - 1
         previous_start = max(1, previous_end - page_size + 1)
         previous_page = {
-            "line_start": previous_start,
-            "line_end": previous_end,
+            start_key: previous_start,
+            end_key: previous_end,
         }
 
     next_page = None
     if has_next:
         next_start = returned_end + 1
-        next_end = min(total_lines, next_start + page_size - 1)
+        next_end = min(total_items, next_start + page_size - 1)
         next_page = {
-            "line_start": next_start,
-            "line_end": next_end,
+            start_key: next_start,
+            end_key: next_end,
         }
 
     return {
-        "mode": "line_range",
+        "mode": mode,
         "page_size": page_size,
         "returned_range": {
-            "line_start": returned_start,
-            "line_end": returned_end,
+            start_key: returned_start,
+            end_key: returned_end,
         },
-        "total_lines": total_lines,
+        total_key: total_items,
         "has_previous_page": has_previous,
         "has_next_page": has_next,
         "previous_page": previous_page,

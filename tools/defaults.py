@@ -4,6 +4,11 @@ from typing import Iterable
 
 from protocol_monk.config.settings import Settings
 from protocol_monk.tools.base import BaseTool
+from protocol_monk.tools.document_operations.read_image_tool import ReadImageTool
+from protocol_monk.tools.document_operations.read_pdf_tool import ReadPdfTool
+from protocol_monk.tools.document_operations.read_spreadsheet_tool import (
+    ReadSpreadsheetTool,
+)
 from protocol_monk.tools.file_operations.append_to_file_tool import AppendToFileTool
 from protocol_monk.tools.file_operations.create_file_tool import CreateFileTool
 from protocol_monk.tools.file_operations.delete_lines_tool import DeleteLinesTool
@@ -22,6 +27,9 @@ def iter_default_tools(settings: Settings) -> Iterable[BaseTool]:
     """Build the default runtime tool set."""
     return (
         ReadFileTool(settings),
+        ReadSpreadsheetTool(settings),
+        ReadPdfTool(settings),
+        ReadImageTool(settings),
         CreateFileTool(settings),
         AppendToFileTool(settings),
         InsertInFileTool(settings),

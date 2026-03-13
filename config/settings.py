@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     openrouter_api_key: Optional[str] = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     tool_timeout: int = 60
+    document_vision_enabled: bool = Field(
+        default=True, validation_alias="DOCUMENT_VISION_ENABLED"
+    )
+    document_vision_model: str = Field(
+        default="", validation_alias="DOCUMENT_VISION_MODEL"
+    )
     pruning_threshold: float = 0.8
     trace_max_sessions: int = 200
     trace_max_total_mb: int = 250
