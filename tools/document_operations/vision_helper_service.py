@@ -37,14 +37,7 @@ class VisionHelperService:
                 user_hint="Set DOCUMENT_VISION_ENABLED=1 to analyze images.",
             )
 
-        model_name = str(
-            getattr(self._settings, "document_vision_model", "") or ""
-        ).strip()
-        if not model_name:
-            raise ToolError(
-                "Document vision helper model is not configured.",
-                user_hint="Set DOCUMENT_VISION_MODEL to a local vision-capable Ollama model.",
-            )
+        model_name = self._resolve_model_name()
 
         encoded_image = base64.b64encode(image_path.read_bytes()).decode("ascii")
         prompt = self._build_analysis_prompt(purpose)
@@ -70,6 +63,38 @@ class VisionHelperService:
                 )
 
         return self._normalize_payload(parsed)
+
+    def _resolve_model_name(self) -> str:
+        explicit_model = str(
+            getattr(self._settings, "document_vision_model", "") or ""
+        ).strip()
+        if explicit_model:
+            return explicit_model
+
+        provider = str(getattr(self._settings, "llm_provider", "") or "").strip().lower()
+        active_model_name = str(
+            getattr(self._settings, "active_model_name", "") or ""
+        ).strip()
+        active_model_config = self._get_active_model_config()
+        if (
+            provider == "ollama"
+            and active_model_name
+            and self._model_supports_vision(active_model_config)
+        ):
+            logger.info(
+                "Using active Ollama vision model '%s' for document analysis.",
+                active_model_name,
+            )
+            return active_model_name
+
+        raise ToolError(
+            "Document vision helper model is not configured.",
+            user_hint=self._build_missing_model_hint(
+                provider=provider,
+                active_model_name=active_model_name,
+                active_model_config=active_model_config,
+            ),
+        )
 
     async def _request_json_with_image(
         self,
@@ -144,6 +169,65 @@ class VisionHelperService:
             "Do not invent unreadable text. "
             f"Context: {purpose}"
         )
+
+    def _get_active_model_config(self) -> Dict[str, Any]:
+        config = getattr(self._settings, "active_model_config", None)
+        if isinstance(config, dict):
+            return config
+
+        private_config = getattr(self._settings, "_active_model_config", None)
+        if isinstance(private_config, dict):
+            return private_config
+
+        return {}
+
+    def _model_supports_vision(self, config: Dict[str, Any]) -> bool:
+        raw_capabilities = config.get("capabilities")
+        capabilities: list[str] = []
+        if isinstance(raw_capabilities, str):
+            capabilities = [
+                part.strip().lower()
+                for part in raw_capabilities.split(",")
+                if part.strip()
+            ]
+        elif isinstance(raw_capabilities, list):
+            capabilities = [
+                str(part).strip().lower()
+                for part in raw_capabilities
+                if str(part).strip()
+            ]
+
+        return "vision" in capabilities
+
+    def _build_missing_model_hint(
+        self,
+        *,
+        provider: str,
+        active_model_name: str,
+        active_model_config: Dict[str, Any],
+    ) -> str:
+        base_hint = (
+            "Set DOCUMENT_VISION_MODEL to an Ollama vision-capable model, "
+            "including cloud-served models such as qwen3.5:397b-cloud."
+        )
+        if provider and provider != "ollama":
+            return (
+                f"{base_hint} The document vision helper only uses Ollama models, "
+                f"but LLM_PROVIDER is '{provider}'."
+            )
+
+        if active_model_name:
+            if not active_model_config:
+                return (
+                    f"{base_hint} Active Ollama model '{active_model_name}' does not "
+                    "have capability metadata, so Monk will not assume it supports vision."
+                )
+            return (
+                f"{base_hint} Active Ollama model '{active_model_name}' does not "
+                "advertise vision."
+            )
+
+        return base_hint
 
     def _parse_json_payload(self, raw_response: str) -> Optional[Dict[str, Any]]:
         text = str(raw_response or "").strip()

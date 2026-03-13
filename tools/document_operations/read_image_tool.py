@@ -10,7 +10,7 @@ from protocol_monk.tools.output_contract import build_tool_output
 
 
 class ReadImageTool(BaseTool):
-    """Analyze image files with a local vision helper model."""
+    """Analyze image files with an Ollama-backed vision helper model."""
 
     MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024
 

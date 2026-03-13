@@ -17,6 +17,7 @@ from protocol_monk.agent.core.execution import ToolExecutor
 from protocol_monk.agent.core.state_machine import AgentState
 from protocol_monk.tools.registry import ToolRegistry
 from protocol_monk.config.settings import Settings
+from protocol_monk.exceptions.provider import ProviderError
 
 # Note: BaseProvider import assumed from providers.base (interface)
 # from protocol_monk.providers.base import BaseProvider
@@ -83,6 +84,7 @@ async def run_thinking_loop(
     chunk_sequence = 0
     content_chunk_count = 0
     thinking_chunk_count = 0
+    loop_error: Exception | None = None
 
     # Get tool definitions to send to provider
     tool_definitions = registry.get_openai_tools()
@@ -273,7 +275,7 @@ async def run_thinking_loop(
         raise
     except Exception as e:
         logger.error(f"Loop Crash: {e}", exc_info=True)
-        # Don't crash the agent, just return what we have
+        loop_error = e
 
     await bus.emit(
         EventTypes.THINKING_STOPPED,
@@ -325,6 +327,11 @@ async def run_thinking_loop(
             ),
         },
     )
+
+    if loop_error is not None and not full_text and not tool_requests:
+        if isinstance(loop_error, ProviderError):
+            raise loop_error
+        raise ProviderError(f"Model pass failed before producing output: {loop_error}")
 
     if not full_text and not tool_requests:
         await bus.emit(
