@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -107,6 +108,22 @@ def parse_slash_command(text: str) -> SlashCommandParseResult:
             result.error = "Usage: /compact"
             return result
         result.command = "compact"
+        return result
+
+    if command_text == "/orthocal":
+        if not args:
+            result.command = "orthocal"
+            return result
+        if len(args) != 1:
+            result.error = "Usage: /orthocal [YYYY-MM-DD]"
+            return result
+        try:
+            requested_date = date.fromisoformat(args[0]).isoformat()
+        except ValueError:
+            result.error = "Usage: /orthocal [YYYY-MM-DD]"
+            return result
+        result.command = "orthocal"
+        result.arguments = {"date": requested_date}
         return result
 
     result.error = f"Unknown slash command: {command_text}"

@@ -124,7 +124,7 @@ class PromptToolkitCLI:
         print("Protocol Monk CLI")
         print("Press Enter to submit")
         print(
-            "Slash commands: /aa /reset /status /metrics /compact /skills "
+            "Slash commands: /aa /reset /status /metrics /compact /orthocal /skills "
             "/activate-skill /deactivate-skill"
         )
         print("Type 'quit', 'exit', or 'bye' to sign off")

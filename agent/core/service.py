@@ -4,6 +4,7 @@ import json
 import os
 import time
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 from protocol_monk.agent.context import logic as context_logic
@@ -31,6 +32,10 @@ from protocol_monk.config.settings import Settings
 from protocol_monk.agent.usage_ledger import (
     UsageLedger,
     build_request_payload_for_provider,
+)
+from protocol_monk.orthocal.service import (
+    OrthocalRefreshError,
+    OrthocalWorkspaceService,
 )
 from protocol_monk.skill_runtime import SkillRuntime
 
@@ -86,6 +91,10 @@ class AgentService:
         self._usage_ledger = UsageLedger(
             model_name=str(getattr(settings, "active_model_name", "") or "")
         )
+        self._orthocal_service: OrthocalWorkspaceService | None = None
+        self._pending_orthocal_turn_context: Dict[str, Any] | None = None
+        self._active_orthocal_turn_context: Dict[str, Any] | None = None
+        self._active_orthocal_turn_id: str | None = None
 
     async def start(self) -> None:
         """
@@ -208,6 +217,34 @@ class AgentService:
             self._logger.warning("NeuralSym advice injection failed.", exc_info=True)
             return None
 
+    async def _build_orthocal_injection(
+        self,
+        *,
+        turn_id: str | None = None,
+        round_index: int | None = None,
+    ) -> Message | None:
+        context = self._resolve_orthocal_context_for_injection(turn_id=turn_id)
+        if not context:
+            return None
+        content = str(context.get("content", "") or "").strip()
+        if not content:
+            return None
+        return Message(
+            role="system",
+            content=content,
+            timestamp=time.time(),
+            metadata={
+                "id": str(uuid.uuid4()),
+                "source": "orthocal",
+                "ephemeral": True,
+                "turn_id": turn_id,
+                "round_index": round_index,
+                "summary_md_path": context.get("summary_md_path", ""),
+                "requested_date": context.get("requested_date", ""),
+                "calendar": context.get("calendar", ""),
+            },
+        )
+
     async def _augment_history_with_runtime_injections(
         self,
         history: List[Message],
@@ -221,14 +258,96 @@ class AgentService:
             round_index=round_index,
             emit_warnings=emit_skill_warnings,
         )
+        orthocal_injection = await self._build_orthocal_injection(
+            turn_id=turn_id,
+            round_index=round_index,
+        )
         neuralsym_injection = await self._build_neuralsym_injection(
             turn_id=turn_id,
             round_index=round_index,
         )
         return self._compose_history_with_system_injections(
             history,
-            [active_skill_injection, neuralsym_injection],
+            [active_skill_injection, orthocal_injection, neuralsym_injection],
         )
+
+    def _resolve_orthocal_context_for_injection(
+        self,
+        *,
+        turn_id: str | None = None,
+    ) -> Dict[str, Any] | None:
+        if (
+            turn_id is not None
+            and self._active_orthocal_turn_id == turn_id
+            and self._active_orthocal_turn_context is not None
+        ):
+            return self._active_orthocal_turn_context
+        if turn_id is None and self._pending_orthocal_turn_context is not None:
+            return self._pending_orthocal_turn_context
+        return None
+
+    def _stage_orthocal_summary_for_next_turn(self, result: Any) -> None:
+        summary_md_path = Path(str(getattr(result, "summary_md_path", "") or "")).resolve(
+            strict=False
+        )
+        requested_date = str(getattr(result, "requested_date", "") or "").strip()
+        calendar = str(getattr(result, "calendar", "") or "").strip()
+        source_url = str(getattr(result, "source_url", "") or "").strip()
+
+        try:
+            summary_text = summary_md_path.read_text(encoding="utf-8").strip()
+        except Exception as exc:
+            self._logger.warning(
+                "Failed to read Orthocal summary for next-turn injection.",
+                exc_info=True,
+            )
+            summary_text = (
+                f"# {str(getattr(result, 'summary_title', '') or 'Orthocal Day')}\n\n"
+                f"- Requested date: {requested_date or 'unknown'}\n"
+                f"- Calendar: {calendar or 'unknown'}\n"
+                f"- Source URL: `{source_url or 'unknown'}`\n"
+                f"\n_Fallback summary generated because `{summary_md_path}` "
+                f"could not be read: {exc}_"
+            )
+
+        content = (
+            "Orthocal context for this turn only.\n"
+            "The user refreshed the local Orthocal bundle immediately before this message. "
+            "Use the following summary as ambient local context for the conversation.\n\n"
+            f"Summary file: {summary_md_path}\n"
+            f"Requested date: {requested_date or 'unknown'}\n"
+            f"Calendar: {calendar or 'unknown'}\n"
+            f"Source URL: {source_url or 'unknown'}\n\n"
+            f"{summary_text}"
+        )
+        self._pending_orthocal_turn_context = {
+            "content": content,
+            "summary_md_path": str(summary_md_path),
+            "requested_date": requested_date,
+            "calendar": calendar,
+            "source_url": source_url,
+        }
+
+    def _activate_pending_orthocal_for_turn(self, turn_id: str) -> None:
+        if self._pending_orthocal_turn_context is None:
+            self._active_orthocal_turn_context = None
+            self._active_orthocal_turn_id = None
+            return
+        self._active_orthocal_turn_context = self._pending_orthocal_turn_context
+        self._active_orthocal_turn_id = turn_id
+
+    def _finalize_orthocal_turn_context(
+        self,
+        *,
+        turn_id: str | None,
+        consume_pending: bool,
+    ) -> None:
+        if turn_id is None or self._active_orthocal_turn_id != turn_id:
+            return
+        if consume_pending and self._pending_orthocal_turn_context is self._active_orthocal_turn_context:
+            self._pending_orthocal_turn_context = None
+        self._active_orthocal_turn_context = None
+        self._active_orthocal_turn_id = None
 
     async def _resolve_skill_catalog(
         self,
@@ -574,8 +693,10 @@ class AgentService:
         Main Handler: User speaks -> Agent processes.
         """
         async with self._request_lock:
+            turn_id: str | None = None
             try:
                 turn_id = str(getattr(payload, "request_id", "") or uuid.uuid4())
+                self._activate_pending_orthocal_for_turn(turn_id)
 
                 # 1. State: IDLE -> THINKING
                 await self._set_status(
@@ -814,8 +935,16 @@ class AgentService:
                     turn_id=turn_id,
                     round_index=rounds,
                 )
+                self._finalize_orthocal_turn_context(
+                    turn_id=turn_id,
+                    consume_pending=True,
+                )
 
             except Exception as e:
+                self._finalize_orthocal_turn_context(
+                    turn_id=turn_id,
+                    consume_pending=False,
+                )
                 self._logger.error(f"Error in main loop: {e}", exc_info=True)
                 await self._set_status(AgentState.ERROR, f"System Error: {str(e)}")
 
@@ -906,6 +1035,16 @@ class AgentService:
         if workspace_root is None:
             workspace_root = getattr(self._settings, "workspace", None)
         return str(workspace_root) if workspace_root is not None else os.getcwd()
+
+    def _get_orthocal_service(self) -> OrthocalWorkspaceService:
+        if self._orthocal_service is None:
+            workspace_root = getattr(
+                self._settings,
+                "workspace_root",
+                getattr(self._settings, "workspace", os.getcwd()),
+            )
+            self._orthocal_service = OrthocalWorkspaceService(workspace_root)
+        return self._orthocal_service
 
     async def _observe_neuralsym_user_input(self, payload: UserRequest) -> None:
         if self._neuralsym_adapter is None:
@@ -1252,6 +1391,12 @@ class AgentService:
                 )
             return
 
+        if command_name == "orthocal":
+            await self._handle_orthocal_command(
+                requested_date=str(parsed.arguments.get("date", "") or "") or None
+            )
+            return
+
         if command_name == "skills":
             ok, payload_skills, warnings, message = await self._resolve_skill_catalog()
             await self._emit_skill_runtime_warnings(warnings)
@@ -1320,6 +1465,67 @@ class AgentService:
             False,
             f"Unsupported slash command: {command_name}",
         )
+
+    async def _handle_orthocal_command(self, requested_date: str | None = None) -> None:
+        async with self._request_lock:
+            turn_id = f"orthocal-{uuid.uuid4()}"
+            await self._set_status(
+                AgentState.THINKING,
+                "Refreshing Orthocal bundle...",
+                turn_id=turn_id,
+                round_index=0,
+            )
+            try:
+                result = await asyncio.to_thread(
+                    self._get_orthocal_service().refresh_bundle,
+                    requested_date,
+                )
+            except OrthocalRefreshError as exc:
+                await self._set_status(
+                    AgentState.IDLE,
+                    "Ready",
+                    turn_id=turn_id,
+                    round_index=0,
+                )
+                await self._emit_command_result(
+                    "orthocal",
+                    False,
+                    str(exc),
+                    {"requested_date": requested_date or "today"},
+                )
+                return
+            except Exception as exc:
+                self._logger.error("Orthocal refresh failed.", exc_info=True)
+                await self._set_status(
+                    AgentState.IDLE,
+                    "Ready",
+                    turn_id=turn_id,
+                    round_index=0,
+                )
+                await self._emit_command_result(
+                    "orthocal",
+                    False,
+                    "Orthocal refresh failed.",
+                    {
+                        "requested_date": requested_date or "today",
+                        "details": str(exc),
+                    },
+                )
+                return
+
+            await self._set_status(
+                AgentState.IDLE,
+                "Ready",
+                turn_id=turn_id,
+                round_index=0,
+            )
+            self._stage_orthocal_summary_for_next_turn(result)
+            await self._emit_command_result(
+                "orthocal",
+                True,
+                result.summary_message(),
+                result.to_command_data(),
+            )
 
     async def _handle_compact_command(self) -> None:
         async with self._request_lock:

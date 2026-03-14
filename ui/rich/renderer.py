@@ -257,7 +257,7 @@ class RichRenderer:
         self._console.print("═" * 50, style="monk.border")
         self._console.print("  Protocol Monk", style="monk.text")
         self._console.print(
-            "  Enter submits | /aa /reset /status /compact | quit|exit|bye sign off",
+            "  Enter submits | /aa /reset /status /compact /orthocal | quit|exit|bye sign off",
             style="muted",
         )
         self._console.print("═" * 50, style="monk.border")
