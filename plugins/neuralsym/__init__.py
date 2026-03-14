@@ -11,6 +11,11 @@ from .bootstrap import (
     load_admissible_session_records,
 )
 from .config import NeuralSymSettings, load_neuralsym_settings
+from .importer import (
+    SessionImportResult,
+    import_session_to_workspace_state,
+    import_session_to_workspace_state_async,
+)
 from .mission_control import (
     MissionControlInput,
     MissionControlOutput,
@@ -26,11 +31,14 @@ __all__ = [
     "NeuralSymRuntime",
     "NeuralSymSettings",
     "ProtocolMonkNeuralSymAdapter",
+    "SessionImportResult",
     "bootstrap_observations_from_session_path",
     "build_protocol_monk_neuralsym_adapter",
     "build_mission_control_input",
     "convert_session_records_to_observations",
     "empty_mission_control_output",
+    "import_session_to_workspace_state",
+    "import_session_to_workspace_state_async",
     "load_admissible_session_records",
     "load_neuralsym_settings",
 ]

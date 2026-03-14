@@ -264,4 +264,7 @@ class RuntimeState(NeuralSymBaseModel):
     queue_depth: int = 0
     last_batch_processed_at: float | None = None
     last_advice_refresh_at: float | None = None
+    imported_session_ids: list[str] = Field(default_factory=list)
+    imported_observation_count: int = 0
+    last_imported_at: float | None = None
     resolution: ProviderResolutionInfo = Field(default_factory=ProviderResolutionInfo)

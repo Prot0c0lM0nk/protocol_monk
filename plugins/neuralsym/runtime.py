@@ -8,7 +8,7 @@ import time
 from types import SimpleNamespace
 from typing import Any
 
-from .advisor import NoOpAdvisor
+from .advisor import MissionControlAdvisor, NoOpAdvisor
 from .config import NeuralSymSettings
 from .models import (
     AdviceSnapshot,
@@ -102,12 +102,14 @@ class NeuralSymRuntime:
         settings: NeuralSymSettings,
         *,
         storage: NeuralSymStorage | None = None,
-        advisor: NoOpAdvisor | None = None,
+        advisor: MissionControlAdvisor | NoOpAdvisor | None = None,
         renderer: AdviceRenderer | None = None,
     ):
         self.settings = settings
         self.storage = storage or NeuralSymStorage(settings.state_dir)
-        self.advisor = advisor or NoOpAdvisor()
+        self.advisor = advisor or MissionControlAdvisor(
+            advice_token_budget=settings.advice_token_budget
+        )
         self.renderer = renderer or AdviceRenderer()
         self._queue: asyncio.Queue[Observation | object] = asyncio.Queue(
             maxsize=settings.max_pending_observations
@@ -216,10 +218,11 @@ class NeuralSymRuntime:
             return
         for observation in batch:
             self.storage.append_observation(observation)
+        all_observations = self.storage.load_observations()
         correlation = batch[-1].correlation
         self._profile, self._snapshot = await self.advisor.build_snapshot(
             profile=self._profile,
-            observations=batch,
+            observations=all_observations,
             turn_id=correlation.turn_id,
             round_index=correlation.round_index,
         )

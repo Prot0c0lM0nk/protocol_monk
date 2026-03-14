@@ -45,6 +45,14 @@ class NeuralSymStorage:
             handle.write(observation.model_dump_json())
             handle.write("\n")
 
+    def save_observations(self, observations: list[Observation]) -> None:
+        self.ensure_state_dir()
+        lines = [observation.model_dump_json() for observation in observations]
+        content = "\n".join(lines)
+        if content:
+            content += "\n"
+        self._atomic_write(self.observations_path, content)
+
     def load_observations(self) -> list[Observation]:
         if not self.observations_path.exists():
             return []

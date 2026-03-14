@@ -57,6 +57,9 @@ class SessionToolCall(NeuralSymBaseModel):
     name: str | None = None
     id: str | None = None
     call_id: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    requires_confirmation: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class UserInputSubmittedPayload(NeuralSymBaseModel):
