@@ -1,6 +1,6 @@
 # Protocol Monk
 
-Protocol Monk is a local-first terminal assistant with a real `protocol_monk` CLI entrypoint, interactive Rich or prompt-toolkit UIs, tool execution, and provider support for Ollama or OpenRouter.
+Protocol Monk is a local-first terminal assistant with a `protocol_monk` CLI entrypoint, interactive Rich or prompt-toolkit UIs, tool execution, and provider support for Ollama or OpenRouter.
 
 ## Quick Install And Run
 
@@ -64,7 +64,7 @@ python -m pip install -e .[dev]
 Build and verify release artifacts:
 
 ```bash
-python -m build --no-isolation
+python -m build
 python -m twine check dist/*
 ```
 
