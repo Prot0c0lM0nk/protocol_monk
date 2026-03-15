@@ -1,50 +1,46 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="/Users/nicholaspitzarella/Desktop/protocol_event_build"
-CONDA_SH="/opt/miniconda3/etc/profile.d/conda.sh"
-ENV_NAME="monk_env"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 TARGET_DIR="${HOME}/.local/bin"
-TARGET_CMD="${TARGET_DIR}/protocol_monk"
-
-if [ ! -d "${REPO_ROOT}" ]; then
-  echo "Repository root not found: ${REPO_ROOT}" >&2
-  exit 1
-fi
-
-if [ ! -f "${CONDA_SH}" ]; then
-  echo "Conda activation script not found: ${CONDA_SH}" >&2
-  exit 1
-fi
+TARGET_CMD="${TARGET_DIR}/protocol_monk_checkout"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python || true)}"
 
 mkdir -p "${TARGET_DIR}"
+
+if [ -z "${PYTHON_BIN}" ]; then
+  echo "Python interpreter not found on PATH." >&2
+  exit 1
+fi
 
 cat > "${TARGET_CMD}" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="/Users/nicholaspitzarella/Desktop/protocol_event_build"
-CONDA_SH="/opt/miniconda3/etc/profile.d/conda.sh"
-ENV_NAME="monk_env"
-
-if [ ! -f "${CONDA_SH}" ]; then
-  echo "Conda activation script not found: ${CONDA_SH}" >&2
-  exit 1
-fi
-
-# shellcheck disable=SC1090
-source "${CONDA_SH}"
-conda activate "${ENV_NAME}"
+REPO_ROOT="__REPO_ROOT__"
+PYTHON_BIN="__PYTHON_BIN__"
 
 cd "${REPO_ROOT}"
-exec python -m protocol_monk.main "$@"
+exec "${PYTHON_BIN}" -m protocol_monk.main "$@"
 EOF
+
+python - <<PY
+from pathlib import Path
+
+path = Path("${TARGET_CMD}")
+text = path.read_text(encoding="utf-8")
+text = text.replace("__REPO_ROOT__", "${REPO_ROOT}")
+text = text.replace("__PYTHON_BIN__", "${PYTHON_BIN}")
+path.write_text(text, encoding="utf-8")
+PY
 
 chmod 755 "${TARGET_CMD}"
 
-echo "Installed global command: ${TARGET_CMD}"
-if command -v protocol_monk >/dev/null 2>&1; then
-  echo "Resolved command path: $(command -v protocol_monk)"
+echo "Installed checkout-local helper: ${TARGET_CMD}"
+echo "Preferred public install path: python -m pip install ."
+if command -v protocol_monk_checkout >/dev/null 2>&1; then
+  echo "Resolved helper path: $(command -v protocol_monk_checkout)"
 else
-  echo "protocol_monk is not on PATH yet. Ensure ${TARGET_DIR} is in your PATH."
+  echo "protocol_monk_checkout is not on PATH yet. Ensure ${TARGET_DIR} is in your PATH."
 fi

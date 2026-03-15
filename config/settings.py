@@ -12,13 +12,37 @@ from protocol_monk.utils.openrouter_model_map import (
 )
 
 logger = logging.getLogger("Settings")
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _default_workspace() -> Path:
+    return Path.cwd().resolve(strict=False)
+
+
+def _default_system_prompt_path() -> Path:
+    return PACKAGE_ROOT / "system_prompt.txt"
+
+
+def _default_models_json_path() -> Path:
+    return Path(".protocol_monk") / "models.json"
+
+
+def _default_openrouter_model_map_path() -> Path:
+    return PACKAGE_ROOT / "config" / "openrouter_models.example.json"
+
+
+def _resolve_path(path_value: Path, *, base: Path) -> Path:
+    candidate = Path(path_value).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve(strict=False)
+    return (base / candidate).resolve(strict=False)
 
 
 class Settings(BaseSettings):
     # === Environment Variables (CLEAN NAMES) ===
-    workspace: Path
-    system_prompt_path: Path
-    log_level: str
+    workspace: Path = Field(default_factory=_default_workspace)
+    system_prompt_path: Path = Field(default_factory=_default_system_prompt_path)
+    log_level: str = "INFO"
     llm_provider: str = "ollama"
     ollama_host: str = "http://localhost:11434"
     ollama_api_key: Optional[str] = None
@@ -51,9 +75,9 @@ class Settings(BaseSettings):
     )
 
     # Model discovery fields
-    models_json_path: Path = Field(default=Path("protocol_monk/config/models.json"))
+    models_json_path: Path = Field(default_factory=_default_models_json_path)
     openrouter_models_json_path: Path = Field(
-        default=Path("protocol_monk/config/openrouter_models.json"),
+        default_factory=_default_openrouter_model_map_path,
         validation_alias="OPENROUTER_MODELS_JSON_PATH",
     )
     force_model_discovery: bool = Field(
@@ -68,6 +92,14 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_and_compute(self) -> "Settings":
         """Validate and compute derived fields."""
+
+        self.workspace = _resolve_path(self.workspace, base=Path.cwd())
+        self.system_prompt_path = _resolve_path(self.system_prompt_path, base=Path.cwd())
+        self.models_json_path = _resolve_path(self.models_json_path, base=self.workspace)
+        self.openrouter_models_json_path = _resolve_path(
+            self.openrouter_models_json_path,
+            base=self.workspace,
+        )
 
         # 1. Validate workspace exists
         if not self.workspace.exists():
@@ -317,17 +349,20 @@ def load_settings(base_path: Optional[Path] = None) -> Settings:
     from pathlib import Path
 
     if base_path is not None:
-        project_root = base_path.parent
+        project_root = Path(base_path).resolve(strict=False).parent
 
-        workspace = os.getenv("WORKSPACE")
-        if workspace and not Path(workspace).is_absolute():
-            resolved_workspace = (project_root / workspace).resolve()
-            os.environ["WORKSPACE"] = str(resolved_workspace)
-
-        # Handle relative paths
-        prompt_path = os.getenv("SYSTEM_PROMPT_PATH")
-        if prompt_path and not Path(prompt_path).is_absolute():
-            resolved = (project_root / prompt_path).resolve()
-            os.environ["SYSTEM_PROMPT_PATH"] = str(resolved)
+        for env_name in (
+            "WORKSPACE",
+            "SYSTEM_PROMPT_PATH",
+            "MODELS_JSON_PATH",
+            "OPENROUTER_MODELS_JSON_PATH",
+        ):
+            raw_value = os.getenv(env_name)
+            if not raw_value:
+                continue
+            candidate = Path(raw_value).expanduser()
+            if candidate.is_absolute():
+                continue
+            os.environ[env_name] = str((project_root / candidate).resolve(strict=False))
 
     return Settings()

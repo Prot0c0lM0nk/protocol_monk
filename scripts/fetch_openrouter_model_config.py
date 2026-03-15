@@ -45,7 +45,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output",
-        default="protocol_monk/config/openrouter_models.json",
+        default=".protocol_monk/openrouter_models.json",
         help="Output map path.",
     )
     parser.add_argument(

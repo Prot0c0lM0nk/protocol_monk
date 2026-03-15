@@ -1,0 +1,10 @@
+name: monk_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
+  - pip
+  - setuptools
+  - wheel
+  - pip:
+      - -e .[dev]

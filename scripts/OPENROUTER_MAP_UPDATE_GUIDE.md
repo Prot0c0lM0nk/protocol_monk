@@ -1,6 +1,6 @@
 # OpenRouter Map Update Guide
 
-This guide shows how to update `protocol_monk/config/openrouter_models.json` using only the specific OpenRouter models you want.
+This guide shows how to update `.protocol_monk/openrouter_models.json` using only the specific OpenRouter models you want.
 
 The updater script:
 - Fetches OpenRouter catalog data from `https://openrouter.ai/api/v1/models`
@@ -11,8 +11,8 @@ The updater script:
 ## File Paths
 
 - Script: `protocol_monk/scripts/fetch_openrouter_model_config.py`
-- Runtime map: `protocol_monk/config/openrouter_models.json`
-- Example map: `protocol_monk/config/openrouter_models.example.json`
+- Runtime map: `.protocol_monk/openrouter_models.json`
+- Packaged example map: `protocol_monk/config/openrouter_models.example.json`
 
 ## Prerequisites
 

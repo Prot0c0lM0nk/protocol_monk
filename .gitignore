@@ -1,8 +1,14 @@
-# Runtime-generated model maps (local only)
+# Runtime-generated state (local only)
+.protocol_monk/
+.env
 config/models.json
 config/openrouter_models.json
 
 # Generated artifacts
+build/
+dist/
+*.egg-info/
+.pytest_cache/
 __pycache__/
 *.pyc
 .DS_Store

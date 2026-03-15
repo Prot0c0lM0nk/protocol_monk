@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-from pathlib import Path
 
 # 1. Import Config
 from protocol_monk.config.settings import load_settings
@@ -79,8 +78,7 @@ async def main():
     """Main entry point for Protocol Monk."""
     try:
         # Phase 1: Loading Configuration
-        app_root = Path(os.getcwd()) / "protocol_monk"
-        settings = load_settings(app_root)
+        settings = load_settings()
 
         root_level = getattr(logging, settings.log_level.upper(), logging.INFO)
         logging.getLogger().setLevel(root_level)
@@ -226,9 +224,8 @@ async def main():
         )
 
         # D. Scratch Manager (Cleanup)
-        with ScratchManager(Path(os.getcwd())) as _:
-            repo_root = app_root.parent
-            skill_runtime = SkillRuntime(repo_root / "skills")
+        with ScratchManager(settings.workspace_root) as _:
+            skill_runtime = SkillRuntime(settings.workspace_root / "skills")
             neuralsym_adapter = await build_protocol_monk_neuralsym_adapter(settings)
 
             # E. Memory Systems (The Brain)

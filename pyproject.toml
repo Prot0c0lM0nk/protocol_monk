@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "protocol-monk"
+version = "0.1.0"
+description = "Installable CLI for the Protocol Monk local assistant runtime."
+readme = "README.md"
+license = "LicenseRef-Protocol-Monk-Demo"
+license-files = ["LICENSE"]
+requires-python = ">=3.14"
+dependencies = [
+  "pydantic>=2.0.0",
+  "pydantic-settings>=2.0.0",
+  "python-dotenv>=1.0.0",
+  "ollama>=0.6.1",
+  "prompt_toolkit>=3.0.40",
+  "openai>=1.0.0",
+  "rich>=13.7.1",
+  "openpyxl>=3.1.0",
+  "xlrd>=2.0.1",
+  "PyMuPDF>=1.24.0",
+  "Pillow>=10.0.0",
+]
+keywords = ["cli", "ollama", "openrouter", "assistant"]
+classifiers = [
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Utilities",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2.2",
+  "twine>=6.1.0",
+]
+
+[project.scripts]
+protocol_monk = "protocol_monk.main:run"
+
+[project.urls]
+Homepage = "https://github.com/Prot0c0lM0nk/protocol_monk"
+Repository = "https://github.com/Prot0c0lM0nk/protocol_monk"
+Issues = "https://github.com/Prot0c0lM0nk/protocol_monk/issues"
+
+[tool.setuptools]
+packages = [
+  "protocol_monk",
+  "protocol_monk.agent",
+  "protocol_monk.agent.context",
+  "protocol_monk.agent.core",
+  "protocol_monk.config",
+  "protocol_monk.exceptions",
+  "protocol_monk.orthocal",
+  "protocol_monk.plugins",
+  "protocol_monk.plugins.neuralsym",
+  "protocol_monk.prompts",
+  "protocol_monk.protocol",
+  "protocol_monk.providers",
+  "protocol_monk.scripts",
+  "protocol_monk.tools",
+  "protocol_monk.tools.document_operations",
+  "protocol_monk.tools.file_operations",
+  "protocol_monk.tools.shell_operations",
+  "protocol_monk.ui",
+  "protocol_monk.ui.rich",
+  "protocol_monk.utils",
+]
+include-package-data = true
+
+[tool.setuptools.package-dir]
+protocol_monk = "."
+
+[tool.setuptools.package-data]
+protocol_monk = [
+  "*.txt",
+  "prompts/*.txt",
+  "config/openrouter_models.example.json",
+]
