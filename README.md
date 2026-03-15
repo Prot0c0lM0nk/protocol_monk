@@ -4,7 +4,19 @@ Protocol Monk is a local-first terminal assistant with a `protocol_monk` CLI ent
 
 ## Quick Install And Run
 
-Install from a clone of this repo:
+Install from PyPI:
+
+```bash
+pipx install protocol-monk
+```
+
+Then run:
+
+```bash
+protocol_monk
+```
+
+If you want to install from a clone of this repo instead:
 
 ```bash
 python -m pip install .
@@ -30,7 +42,7 @@ For an isolated CLI install:
 pipx install .
 ```
 
-After the first PyPI release, the intended end-user command is:
+Published PyPI install path:
 
 ```bash
 pipx install protocol-monk
@@ -48,8 +60,16 @@ pipx install protocol-monk
 ### OpenRouter
 
 - Requires `OPENROUTER_API_KEY`.
+- The simplest current global setup is to export the key in your shell profile, for example `~/.zshrc`.
 - Uses the packaged example model map by default.
 - Set `OPENROUTER_MODELS_JSON_PATH` if you want to manage your own model map file.
+
+Example shell setup:
+
+```bash
+export OPENROUTER_API_KEY="your_key_here"
+export LLM_PROVIDER="openrouter"
+```
 
 ## Dev Setup
 
@@ -72,15 +92,13 @@ python -m twine check dist/*
 
 This repo includes `.github/workflows/package-release.yml`.
 
-Before the first PyPI release:
+The `protocol-monk` package is now published on PyPI.
 
-1. Create the `protocol-monk` project on PyPI.
-2. Configure PyPI trusted publishing for this repository and workflow.
-3. Push a version tag such as `v0.1.0`, or trigger the workflow manually.
+Future releases can continue to use the GitHub Actions publish workflow through trusted publishing.
 
 ## Current Status And Limits
 
 - Source install and `pipx` install are verified.
-- A PyPI publish workflow is prepared, but no release has been published yet.
+- PyPI install is now available with `pipx install protocol-monk`.
 - `LICENSE` is included, but it is a demo/evaluation license rather than an open-source redistribution/modification grant.
 - Runtime behavior still depends on local provider configuration and available models.
