@@ -48,6 +48,10 @@ RICH_UI_NOISY_LOGGERS = (
 )
 
 
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes"}
+
+
 def _resolve_ui_backend(requested: str) -> tuple[str, str]:
     requested_ui = (requested or "rich").strip().lower() or "rich"
     if requested_ui in {"rich", "cli"}:
@@ -76,12 +80,15 @@ def _validate_context_tracking_tools(registry: ToolRegistry) -> tuple[list[str],
     return expected, missing
 
 
-async def main():
-    """Main entry point for Protocol Monk."""
+async def run_session_app(
+    settings,
+    *,
+    skip_wizard: bool = False,
+    requested_ui_backend: str = "rich",
+) -> int:
+    """Run the terminal session against an already-loaded settings object."""
     try:
-        # Phase 1: Loading Configuration
         app_root = Path(os.getcwd()) / "protocol_monk"
-        settings = load_settings(app_root)
 
         root_level = getattr(logging, settings.log_level.upper(), logging.INFO)
         logging.getLogger().setLevel(root_level)
@@ -98,8 +105,6 @@ async def main():
         # Initialize model discovery (async)
         await settings.initialize()
 
-        # Run Setup Wizard (skip in non-interactive mode)
-        skip_wizard = os.getenv("PROTOCOL_MONK_SKIP_WIZARD", "").lower() in ("1", "true", "yes")
         if not skip_wizard:
             from protocol_monk.ui.rich.wizard import SetupWizard
 
@@ -110,8 +115,6 @@ async def main():
             except (EOFError, KeyboardInterrupt):
                 pass  # User cancelled, use defaults
 
-        # Determine UI backend
-        requested_ui_backend = os.getenv("PROTOCOL_MONK_UI", "rich")
         ui_backend, ui_note = _resolve_ui_backend(requested_ui_backend)
         _apply_rich_log_suppression(ui_backend, root_level)
 
@@ -279,6 +282,17 @@ async def main():
     except Exception as exc:
         log_exception(logger, logging.CRITICAL, "Startup failed", exc)
         return 1
+
+
+async def main():
+    """Main entry point for Protocol Monk."""
+    app_root = Path(os.getcwd()) / "protocol_monk"
+    settings = load_settings(app_root)
+    return await run_session_app(
+        settings,
+        skip_wizard=_env_flag("PROTOCOL_MONK_SKIP_WIZARD"),
+        requested_ui_backend=os.getenv("PROTOCOL_MONK_UI", "rich"),
+    )
 
 
 def run() -> int:
