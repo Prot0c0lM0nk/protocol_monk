@@ -248,6 +248,25 @@ class ModelDiscovery:
 
         return None
 
+    def _infer_manual_context_override(
+        self, existing_model: Dict[str, Any], *, is_cloud: bool
+    ) -> int | None:
+        """Promote a manual local context_window edit into an explicit override."""
+        if is_cloud:
+            return None
+
+        existing_context = self._coerce_override_int(existing_model.get("context_window"))
+        existing_discovered = self._coerce_override_int(
+            existing_model.get("discovered_context_window")
+        )
+        if existing_context is None or existing_discovered is None:
+            return None
+
+        if existing_context == existing_discovered:
+            return None
+
+        return existing_context
+
     @staticmethod
     def _sanitize_user_overrides(existing_model: Dict[str, Any]) -> Dict[str, Any]:
         """Drop legacy request-only context keys in favor of explicit overrides."""
@@ -338,14 +357,18 @@ class ModelDiscovery:
             discovered_context_len = self._extract_discovered_context_length(
                 details, existing_model
             )
+            is_cloud = self._infer_is_cloud(name, details)
             context_override = self._extract_context_override(existing_model)
+            if context_override is None:
+                context_override = self._infer_manual_context_override(
+                    existing_model, is_cloud=is_cloud
+                )
             context_len = (
                 context_override
                 if context_override is not None
                 else discovered_context_len
             )
             family = self._extract_family(name, details)
-            is_cloud = self._infer_is_cloud(name, details)
 
             # Pull any existing user overrides
             user_overrides = self._sanitize_user_overrides(existing_model)
