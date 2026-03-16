@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from protocol_monk.exceptions.base import log_exception
 from protocol_monk.tools.file_operations.scratch_coordination import (
     try_scratch_manager_stage,
 )
@@ -43,5 +44,5 @@ def auto_stage_large_content(
         )
         return scratch_id
     except OSError as e:
-        logger.error("Auto-staging failed: %s", e, exc_info=True)
+        log_exception(logger, logging.ERROR, "Auto-staging failed", e)
         return None

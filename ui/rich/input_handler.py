@@ -16,6 +16,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
+from protocol_monk.exceptions.base import log_exception
+
 from .styles import console as default_console
 
 logger = logging.getLogger("RichInputHandler")
@@ -97,7 +99,7 @@ class RichInputHandler:
         except (EOFError, KeyboardInterrupt):
             return "reject"
         except Exception as exc:
-            logger.error("Confirmation error: %s", exc, exc_info=True)
+            log_exception(logger, logging.ERROR, "Confirmation error", exc)
             return "reject"
 
     async def confirm_yes_no(self, prompt_text: str, *, default: bool = False) -> bool:

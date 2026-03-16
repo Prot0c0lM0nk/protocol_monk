@@ -5,6 +5,7 @@ from pathlib import Path
 
 # 1. Import Config
 from protocol_monk.config.settings import load_settings
+from protocol_monk.exceptions.base import log_exception
 
 # 2. Import Protocol Layer
 from protocol_monk.protocol.bus import EventBus
@@ -275,8 +276,8 @@ async def main():
                 if neuralsym_adapter is not None:
                     await neuralsym_adapter.stop()
 
-    except Exception as e:
-        logger.critical("Startup Failed: %s", e, exc_info=True)
+    except Exception as exc:
+        log_exception(logger, logging.CRITICAL, "Startup failed", exc)
         return 1
 
 

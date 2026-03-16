@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
+from protocol_monk.exceptions.base import log_exception
 from .exceptions import ContextError
 
 # FIXED: Pre-compile regex patterns at module level to avoid per-word compilation
@@ -160,18 +161,22 @@ class SmartTokenEstimator:
             return base_tokens
         except ZeroDivisionError as e:
             # HEALTHCHECK FIX: Catches missing error handling
-            self.logger.error(
-                "Token estimation failed due to ZeroDivisionError. "
-                "Model rules may be misconfigured.",
-                exc_info=True,
+            log_exception(
+                self.logger,
+                logging.ERROR,
+                "Token estimation failed due to ZeroDivisionError. Model rules may be misconfigured",
+                e,
             )
             raise ContextError(
                 message="Token estimation failed due to invalid configuration.",
                 root_cause=e,
             )
         except Exception as e:
-            self.logger.error(
-                f"Unhandled error in token character estimation: {e}", exc_info=True
+            log_exception(
+                self.logger,
+                logging.ERROR,
+                "Unhandled error in token character estimation",
+                e,
             )
             return len(text) / 4.0  # Fallback to simple char count
 
@@ -416,10 +421,14 @@ class BetterTokenizerManager:
                 self.logger.info(f"Loaded precise tokenizer for {model_name}")
                 return
             except Exception as e:
-                self.logger.warning(
-                    f"Failed to load precise tokenizer for {model_name}: {e}. "
-                    "Falling back to smart estimation.",
-                    exc_info=True,
+                log_exception(
+                    self.logger,
+                    logging.WARNING,
+                    (
+                        f"Failed to load precise tokenizer for {model_name}. "
+                        "Falling back to smart estimation"
+                    ),
+                    e,
                 )
 
         # Fallback to smart estimation

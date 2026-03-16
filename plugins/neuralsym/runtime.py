@@ -8,6 +8,8 @@ import time
 from types import SimpleNamespace
 from typing import Any
 
+from protocol_monk.exceptions.base import log_exception
+
 from .advisor import MissionControlAdvisor, NoOpAdvisor
 from .config import NeuralSymSettings
 from .models import (
@@ -52,8 +54,13 @@ async def resolve_provider_info(settings: NeuralSymSettings) -> tuple[ProviderRe
             continue
         try:
             available = await provider.validate_connection()
-        except Exception:
-            logger.warning("NeuralSym provider validation failed for %s.", provider_name, exc_info=True)
+        except Exception as exc:
+            log_exception(
+                logger,
+                logging.WARNING,
+                f"NeuralSym provider validation failed for {provider_name}",
+                exc,
+            )
             available = False
         if available:
             return (

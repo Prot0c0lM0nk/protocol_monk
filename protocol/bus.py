@@ -2,6 +2,7 @@ import logging
 import asyncio
 from typing import Dict, List, Callable, Any, Awaitable
 
+from protocol_monk.exceptions.base import log_exception
 from protocol_monk.exceptions.bus import EventBusError
 from .events import EventTypes
 
@@ -66,6 +67,9 @@ class EventBus:
                 await handler(data)
             except Exception as e:
                 # Log error but keep the bus alive (Fail-soft)
-                self._logger.error(
-                    f"Error in handler for {event_type.value}: {e}", exc_info=True
+                log_exception(
+                    self._logger,
+                    logging.ERROR,
+                    f"Error in handler for {event_type.value}",
+                    e,
                 )

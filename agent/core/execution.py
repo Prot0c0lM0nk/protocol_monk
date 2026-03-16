@@ -4,6 +4,7 @@ import logging
 from collections.abc import Mapping
 
 from protocol_monk.agent.structs import ToolRequest, ToolResult
+from protocol_monk.exceptions.base import log_exception
 from protocol_monk.tools.registry import ToolRegistry
 from protocol_monk.exceptions.tools import ToolError
 
@@ -108,7 +109,12 @@ class ToolExecutor:
         except Exception as e:
             # Unexpected crashes (catch-all barrier)
             duration = time.time() - start_time
-            self._logger.exception(f"Unexpected error in tool {request.name}")
+            log_exception(
+                self._logger,
+                logging.ERROR,
+                f"Unexpected error in tool {request.name}",
+                e,
+            )
             return ToolResult(
                 tool_name=request.name,
                 call_id=request.call_id,

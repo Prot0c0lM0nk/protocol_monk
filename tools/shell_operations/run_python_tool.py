@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
+from protocol_monk.exceptions.base import log_exception
 from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
 from protocol_monk.config.settings import Settings
@@ -110,7 +111,7 @@ class RunPythonTool(BaseTool):
             self.logger.info("Created temporary Python script: %s", file_path)
             return file_path
         except Exception as e:
-            self.logger.error("Failed to write temp script: %s", e, exc_info=True)
+            log_exception(self.logger, logging.ERROR, "Failed to write temp script", e)
             raise ToolError(
                 f"Failed to write script '{name}'",
                 user_hint=f"Could not write temporary script '{name}' in workspace.",

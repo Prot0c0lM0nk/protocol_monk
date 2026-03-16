@@ -14,6 +14,7 @@ from protocol_monk.protocol.command_dispatcher import build_signoff_prompt, is_s
 from protocol_monk.protocol.events import EventTypes
 from protocol_monk.agent.structs import UserRequest, ConfirmationResponse
 from protocol_monk.config.settings import Settings
+from protocol_monk.exceptions.base import log_exception
 from protocol_monk.ui.tool_output_presenter import build_tool_output_view
 from protocol_monk.ui.rich.styles import ORTHODOX_DIALOG_STYLE
 import time
@@ -328,7 +329,7 @@ class PromptToolkitCLI:
                 )
                 result = await self._prompt_confirmation_text(tool_name)
         except Exception as exc:
-            logger.error("Confirmation dialog error: %s", exc, exc_info=True)
+            log_exception(logger, logging.ERROR, "Confirmation dialog error", exc)
             result = "reject"
 
         if result == "approve":

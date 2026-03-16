@@ -17,6 +17,7 @@ from protocol_monk.agent.core.execution import ToolExecutor
 from protocol_monk.agent.core.state_machine import AgentState
 from protocol_monk.tools.registry import ToolRegistry
 from protocol_monk.config.settings import Settings
+from protocol_monk.exceptions.base import log_exception
 from protocol_monk.exceptions.provider import ProviderError
 
 # Note: BaseProvider import assumed from providers.base (interface)
@@ -274,7 +275,7 @@ async def run_thinking_loop(
             logger.info("Thinking loop cancelled by caller.")
         raise
     except Exception as e:
-        logger.error(f"Loop Crash: {e}", exc_info=True)
+        log_exception(logger, logging.ERROR, "Thinking loop crashed", e)
         loop_error = e
 
     await bus.emit(
@@ -331,7 +332,14 @@ async def run_thinking_loop(
     if loop_error is not None and not full_text and not tool_requests:
         if isinstance(loop_error, ProviderError):
             raise loop_error
-        raise ProviderError(f"Model pass failed before producing output: {loop_error}")
+        raise ProviderError(
+            f"Model pass failed before producing output: {loop_error}",
+            user_hint=(
+                "The model request failed before producing output. Check the provider "
+                "and try again."
+            ),
+            details={"cause": str(loop_error)},
+        )
 
     if not full_text and not tool_requests:
         await bus.emit(

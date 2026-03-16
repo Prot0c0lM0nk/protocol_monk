@@ -5,6 +5,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Set
 
 from protocol_monk.agent.structs import Message, ProviderSignal, ToolRequest
 from protocol_monk.config.settings import Settings
+from protocol_monk.exceptions.base import log_exception
 from protocol_monk.exceptions.provider import ProviderError
 from protocol_monk.providers.base import BaseProvider
 
@@ -27,11 +28,19 @@ class OpenRouterProvider(BaseProvider):
 
         if not self.api_key:
             raise ProviderError(
-                "OPENROUTER_API_KEY is required when using OpenRouterProvider."
+                "OPENROUTER_API_KEY is required when using OpenRouterProvider.",
+                user_hint=(
+                    "OpenRouter requires an API key before requests can be sent."
+                ),
+                details={"provider": "openrouter"},
             )
         if AsyncOpenAI is None:
             raise ProviderError(
-                "openai dependency is missing. Install requirements to use OpenRouter."
+                "openai dependency is missing. Install requirements to use OpenRouter.",
+                user_hint=(
+                    "OpenRouter support is unavailable because the OpenAI client dependency is missing."
+                ),
+                details={"provider": "openrouter"},
             )
 
         self.client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
@@ -196,9 +205,20 @@ class OpenRouterProvider(BaseProvider):
             raise
         except Exception as exc:
             msg = self._format_provider_error(exc)
-            logger.error("OpenRouter stream failed: %s", msg, exc_info=True)
+            log_exception(logger, logging.ERROR, "OpenRouter stream failed", exc)
             yield ProviderSignal(type="error", data=msg)
-            raise ProviderError(msg)
+            raise ProviderError(
+                msg,
+                user_hint=(
+                    "The OpenRouter request failed. Check your API key, rate limits, "
+                    "or provider availability and try again."
+                ),
+                details={
+                    "provider": "openrouter",
+                    "base_url": self.base_url,
+                    "provider_message": msg,
+                },
+            )
 
     @staticmethod
     def _to_dict(value: Any) -> Dict[str, Any]:

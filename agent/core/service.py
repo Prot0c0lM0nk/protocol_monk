@@ -33,6 +33,12 @@ from protocol_monk.agent.usage_ledger import (
     UsageLedger,
     build_request_payload_for_provider,
 )
+from protocol_monk.exceptions.base import (
+    exception_details,
+    exception_user_hint,
+    log_exception,
+)
+from protocol_monk.exceptions.provider import ProviderError
 from protocol_monk.orthocal.service import (
     OrthocalRefreshError,
     OrthocalWorkspaceService,
@@ -213,8 +219,13 @@ class AgentService:
                 turn_id=turn_id,
                 round_index=round_index,
             )
-        except Exception:
-            self._logger.warning("NeuralSym advice injection failed.", exc_info=True)
+        except Exception as exc:
+            log_exception(
+                self._logger,
+                logging.WARNING,
+                "NeuralSym advice injection failed",
+                exc,
+            )
             return None
 
     async def _build_orthocal_injection(
@@ -297,9 +308,11 @@ class AgentService:
         try:
             summary_text = summary_md_path.read_text(encoding="utf-8").strip()
         except Exception as exc:
-            self._logger.warning(
-                "Failed to read Orthocal summary for next-turn injection.",
-                exc_info=True,
+            log_exception(
+                self._logger,
+                logging.WARNING,
+                "Failed to read Orthocal summary for next-turn injection",
+                exc,
             )
             summary_text = (
                 f"# {str(getattr(result, 'summary_title', '') or 'Orthocal Day')}\n\n"
@@ -694,6 +707,7 @@ class AgentService:
         """
         async with self._request_lock:
             turn_id: str | None = None
+            rounds = 0
             try:
                 turn_id = str(getattr(payload, "request_id", "") or uuid.uuid4())
                 self._activate_pending_orthocal_for_turn(turn_id)
@@ -734,7 +748,6 @@ class AgentService:
                 # then the model gets another pass to produce a final answer.
                 # We cap rounds to prevent runaway loops.
                 max_tool_rounds = 400
-                rounds = 0
                 stopped_by_rejection = False
                 stopped_by_malformed = False
                 tool_repair_attempted = False
@@ -940,13 +953,31 @@ class AgentService:
                     consume_pending=True,
                 )
 
+            except asyncio.CancelledError:
+                self._finalize_orthocal_turn_context(
+                    turn_id=turn_id,
+                    consume_pending=False,
+                )
+                self._logger.info("Current turn cancelled.")
+                if self._state.current != AgentState.IDLE:
+                    await self._set_status(
+                        AgentState.IDLE,
+                        "Ready",
+                        turn_id=turn_id,
+                        round_index=rounds,
+                    )
+                raise
             except Exception as e:
                 self._finalize_orthocal_turn_context(
                     turn_id=turn_id,
                     consume_pending=False,
                 )
-                self._logger.error(f"Error in main loop: {e}", exc_info=True)
-                await self._set_status(AgentState.ERROR, f"System Error: {str(e)}")
+                log_exception(self._logger, logging.ERROR, "Error in main loop", e)
+                await self._recover_from_turn_error(
+                    e,
+                    turn_id=turn_id,
+                    round_index=rounds,
+                )
 
     async def _emit_context_update(
         self,
@@ -1030,6 +1061,75 @@ class AgentService:
         }
         await self._bus.emit(EventTypes.COMMAND_RESULT, payload)
 
+    def _build_recoverable_error_payload(
+        self,
+        exc: Exception,
+        *,
+        turn_id: str | None = None,
+        round_index: int | None = None,
+    ) -> Dict[str, Any]:
+        details = exception_details(exc)
+        correlation: Dict[str, Any] = {}
+        if turn_id:
+            correlation["turn_id"] = turn_id
+        if round_index is not None:
+            correlation["round_index"] = round_index
+
+        if isinstance(exc, ProviderError):
+            message = (
+                f"{exception_user_hint(exc, fallback='The provider request failed.')} "
+                "The session recovered and is ready for another input."
+            )
+            error_code = "provider_error"
+        else:
+            message = (
+                f"{exception_user_hint(exc, fallback='The current turn failed.')} "
+                "The session recovered and is ready for another input."
+            )
+            error_code = exc.__class__.__name__
+
+        payload: Dict[str, Any] = {
+            "message": message,
+            "recovered": True,
+            "error_code": error_code,
+        }
+        if details:
+            payload["data"] = details
+        raw_details = str(exc).strip()
+        if raw_details and raw_details != message:
+            payload["details"] = raw_details
+        if correlation:
+            payload.update(correlation)
+            payload.setdefault("data", {})["correlation"] = correlation
+        return payload
+
+    async def _recover_from_turn_error(
+        self,
+        exc: Exception,
+        *,
+        turn_id: str | None = None,
+        round_index: int | None = None,
+    ) -> None:
+        payload = self._build_recoverable_error_payload(
+            exc,
+            turn_id=turn_id,
+            round_index=round_index,
+        )
+        await self._bus.emit(EventTypes.ERROR, payload)
+        if self._state.current != AgentState.ERROR:
+            await self._set_status(
+                AgentState.ERROR,
+                payload["message"],
+                turn_id=turn_id,
+                round_index=round_index,
+            )
+        await self._set_status(
+            AgentState.IDLE,
+            "Ready",
+            turn_id=turn_id,
+            round_index=round_index,
+        )
+
     def _resolve_working_directory(self) -> str:
         workspace_root = getattr(self._settings, "workspace_root", None)
         if workspace_root is None:
@@ -1051,8 +1151,13 @@ class AgentService:
             return
         try:
             await self._neuralsym_adapter.on_user_input(payload)
-        except Exception:
-            self._logger.warning("NeuralSym user-input observation failed.", exc_info=True)
+        except Exception as exc:
+            log_exception(
+                self._logger,
+                logging.WARNING,
+                "NeuralSym user-input observation failed",
+                exc,
+            )
 
     async def _observe_neuralsym_assistant_pass(
         self,
@@ -1071,8 +1176,13 @@ class AgentService:
                 round_index=round_index,
                 valid_tool_calls=valid_tool_calls,
             )
-        except Exception:
-            self._logger.warning("NeuralSym assistant-pass observation failed.", exc_info=True)
+        except Exception as exc:
+            log_exception(
+                self._logger,
+                logging.WARNING,
+                "NeuralSym assistant-pass observation failed",
+                exc,
+            )
 
     async def _observe_neuralsym_tool_result(
         self,
@@ -1093,8 +1203,13 @@ class AgentService:
                 round_index=round_index,
                 tool_index=tool_index,
             )
-        except Exception:
-            self._logger.warning("NeuralSym tool-result observation failed.", exc_info=True)
+        except Exception as exc:
+            log_exception(
+                self._logger,
+                logging.WARNING,
+                "NeuralSym tool-result observation failed",
+                exc,
+            )
 
     async def _build_runtime_snapshot(self) -> Dict[str, Any]:
         stats = await self._resolve_context_stats()
@@ -1235,7 +1350,12 @@ class AgentService:
                 )
 
         except Exception as e:
-            self._logger.error(f"Error handling tool confirmation: {e}", exc_info=True)
+            log_exception(
+                self._logger,
+                logging.ERROR,
+                "Error handling tool confirmation",
+                e,
+            )
             await self._bus.emit(
                 EventTypes.ERROR,
                 {"message": "Error processing tool confirmation", "details": str(e)},
@@ -1303,7 +1423,12 @@ class AgentService:
                 )
 
         except Exception as e:
-            self._logger.error(f"Error handling system command: {e}", exc_info=True)
+            log_exception(
+                self._logger,
+                logging.ERROR,
+                "Error handling system command",
+                e,
+            )
             await self._bus.emit(
                 EventTypes.ERROR,
                 {"message": "Error processing system command", "details": str(e)},
@@ -1495,7 +1620,12 @@ class AgentService:
                 )
                 return
             except Exception as exc:
-                self._logger.error("Orthocal refresh failed.", exc_info=True)
+                log_exception(
+                    self._logger,
+                    logging.ERROR,
+                    "Orthocal refresh failed",
+                    exc,
+                )
                 await self._set_status(
                     AgentState.IDLE,
                     "Ready",
@@ -1616,7 +1746,12 @@ class AgentService:
                         turn_id=turn_id,
                         round_index=0,
                     )
-                self._logger.error("Error compacting context: %s", exc, exc_info=True)
+                log_exception(
+                    self._logger,
+                    logging.ERROR,
+                    "Error compacting context",
+                    exc,
+                )
                 await self._emit_command_result(
                     "compact",
                     False,
@@ -1651,7 +1786,12 @@ class AgentService:
                     EventTypes.INFO, {"message": "No active task to cancel"}
                 )
         except Exception as e:
-            self._logger.error(f"Error cancelling task: {e}", exc_info=True)
+            log_exception(
+                self._logger,
+                logging.ERROR,
+                "Error cancelling task",
+                e,
+            )
             await self._bus.emit(
                 EventTypes.ERROR,
                 {"message": "Error cancelling task", "details": str(e)},
@@ -1684,7 +1824,12 @@ class AgentService:
             return True
 
         except Exception as e:
-            self._logger.error(f"Error resetting context: {e}", exc_info=True)
+            log_exception(
+                self._logger,
+                logging.ERROR,
+                "Error resetting context",
+                e,
+            )
             await self._bus.emit(
                 EventTypes.ERROR,
                 {"message": "Error resetting context", "details": str(e)},
@@ -1700,7 +1845,12 @@ class AgentService:
             await self._emit_context_update(stats)
             return True
         except Exception as e:
-            self._logger.error(f"Error refreshing status: {e}", exc_info=True)
+            log_exception(
+                self._logger,
+                logging.ERROR,
+                "Error refreshing status",
+                e,
+            )
             await self._bus.emit(
                 EventTypes.ERROR,
                 {"message": "Error refreshing status", "details": str(e)},
@@ -1726,7 +1876,12 @@ class AgentService:
             )
             return True
         except Exception as e:
-            self._logger.error(f"Error toggling auto-confirm: {e}", exc_info=True)
+            log_exception(
+                self._logger,
+                logging.ERROR,
+                "Error toggling auto-confirm",
+                e,
+            )
             await self._bus.emit(
                 EventTypes.ERROR,
                 {"message": "Error toggling auto-confirm", "details": str(e)},

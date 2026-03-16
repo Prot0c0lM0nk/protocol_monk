@@ -8,6 +8,7 @@ from ollama import AsyncClient
 from protocol_monk.agent.structs import Message, ProviderSignal, ToolRequest
 from protocol_monk.providers.base import BaseProvider
 from protocol_monk.config.settings import Settings
+from protocol_monk.exceptions.base import log_exception
 from protocol_monk.exceptions.provider import ProviderError
 
 logger = logging.getLogger("OllamaProvider")
@@ -198,9 +199,19 @@ class OllamaProvider(BaseProvider):
                 logger.info("Ollama stream cancelled by caller.")
             raise
         except Exception as e:
-            logger.error(f"Stream Error: {e}", exc_info=True)
+            log_exception(logger, logging.ERROR, "Ollama stream failed", e)
             yield ProviderSignal(type="error", data=str(e))
-            raise ProviderError(f"Ollama stream failed: {str(e)}")
+            raise ProviderError(
+                f"Ollama stream failed: {str(e)}",
+                user_hint=(
+                    "The Ollama request failed. Check that Ollama is reachable and try again."
+                ),
+                details={
+                    "provider": "ollama",
+                    "ollama_host": self.host,
+                    "cause": str(e),
+                },
+            )
 
     def _serialize_messages(self, messages: List[Message]) -> List[Dict[str, Any]]:
         """
