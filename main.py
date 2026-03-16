@@ -38,6 +38,7 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("Bootstrap")
+APP_ROOT = Path(__file__).resolve().parent
 RICH_UI_NOISY_LOGGERS = (
     "AgentService",
     "ToolExecutor",
@@ -88,8 +89,6 @@ async def run_session_app(
 ) -> int:
     """Run the terminal session against an already-loaded settings object."""
     try:
-        app_root = Path(os.getcwd()) / "protocol_monk"
-
         root_level = getattr(logging, settings.log_level.upper(), logging.INFO)
         logging.getLogger().setLevel(root_level)
 
@@ -102,9 +101,6 @@ async def run_session_app(
             logging.getLogger("Settings").setLevel(logging.WARNING)
             logging.getLogger("ToolRegistry").setLevel(logging.WARNING)
 
-        # Initialize model discovery (async)
-        await settings.initialize()
-
         if not skip_wizard:
             from protocol_monk.ui.rich.wizard import SetupWizard
 
@@ -114,6 +110,9 @@ async def run_session_app(
                 wizard.apply_choices(settings, choices)
             except (EOFError, KeyboardInterrupt):
                 pass  # User cancelled, use defaults
+
+        # Initialize provider/model state only after setup choices are applied.
+        await settings.initialize()
 
         ui_backend, ui_note = _resolve_ui_backend(requested_ui_backend)
         _apply_rich_log_suppression(ui_backend, root_level)
@@ -230,9 +229,8 @@ async def run_session_app(
         )
 
         # D. Scratch Manager (Cleanup)
-        with ScratchManager(Path(os.getcwd())) as _:
-            repo_root = app_root.parent
-            skill_runtime = SkillRuntime(repo_root / "skills")
+        with ScratchManager(settings.resolved_paths.scratch_root) as _:
+            skill_runtime = SkillRuntime(settings.resolved_paths.skills_root)
             neuralsym_adapter = await build_protocol_monk_neuralsym_adapter(settings)
 
             # E. Memory Systems (The Brain)
@@ -286,8 +284,7 @@ async def run_session_app(
 
 async def main():
     """Main entry point for Protocol Monk."""
-    app_root = Path(os.getcwd()) / "protocol_monk"
-    settings = load_settings(app_root)
+    settings = load_settings(APP_ROOT)
     return await run_session_app(
         settings,
         skip_wizard=_env_flag("PROTOCOL_MONK_SKIP_WIZARD"),

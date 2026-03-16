@@ -40,6 +40,7 @@ class OpenRouterModelDiscovery:
         *,
         write_mode: str = "merge",
         default_model: str | None = None,
+        force_supports_tools: bool = False,
     ) -> Dict[str, Any]:
         """Build an updated OpenRouter model map for requested model IDs."""
         selected_ids = self._normalize_model_ids(model_ids)
@@ -80,6 +81,7 @@ class OpenRouterModelDiscovery:
                 catalog_map[model_id],
                 existing_entry=existing_entry,
                 discovered_at=timestamp,
+                force_supports_tools=force_supports_tools,
             )
 
         if not updated_models:
@@ -106,12 +108,14 @@ class OpenRouterModelDiscovery:
         *,
         write_mode: str = "merge",
         default_model: str | None = None,
+        force_supports_tools: bool = False,
     ) -> Dict[str, Any]:
         """Build and save an updated OpenRouter model map."""
         config = self.build_updated_config(
             model_ids,
             write_mode=write_mode,
             default_model=default_model,
+            force_supports_tools=force_supports_tools,
         )
         self._save_config(config)
         return config
@@ -287,7 +291,11 @@ class OpenRouterModelDiscovery:
 
     @classmethod
     def _infer_support_flags(
-        cls, catalog_entry: Dict[str, Any], existing_entry: Dict[str, Any]
+        cls,
+        catalog_entry: Dict[str, Any],
+        existing_entry: Dict[str, Any],
+        *,
+        force_supports_tools: bool = False,
     ) -> tuple[bool, bool]:
         supported_parameters = cls._normalize_labels(
             catalog_entry.get("supported_parameters")
@@ -308,7 +316,11 @@ class OpenRouterModelDiscovery:
             params_set & {"reasoning", "include_reasoning", "reasoning_effort"}
         ) or ("thinking" in text_blob or "reasoning" in text_blob)
 
-        supports_tools = tools_signal or bool(existing_entry.get("supports_tools", False))
+        supports_tools = (
+            force_supports_tools
+            or tools_signal
+            or bool(existing_entry.get("supports_tools", False))
+        )
         supports_thinking = thinking_signal or bool(
             existing_entry.get("supports_thinking", False)
         )
@@ -386,12 +398,15 @@ class OpenRouterModelDiscovery:
         *,
         existing_entry: Dict[str, Any],
         discovered_at: str,
+        force_supports_tools: bool = False,
     ) -> Dict[str, Any]:
         model_id = str(catalog_entry.get("id", "") or "").strip()
         context_window = cls._extract_context_window(catalog_entry, existing_entry)
         family = cls._infer_family(catalog_entry, existing_entry)
         supports_tools, supports_thinking = cls._infer_support_flags(
-            catalog_entry, existing_entry
+            catalog_entry,
+            existing_entry,
+            force_supports_tools=force_supports_tools,
         )
         capabilities = cls._infer_capabilities(
             catalog_entry, supports_tools, supports_thinking

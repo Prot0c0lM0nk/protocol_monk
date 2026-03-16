@@ -1,10 +1,17 @@
 # protocol_monk/config/settings.py
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, model_validator
-from pathlib import Path
+from __future__ import annotations
+
 import logging
-from typing import Optional, Dict, Any
+import os
+import shutil
+from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+from pydantic import Field, PrivateAttr, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from protocol_monk.exceptions.config import ConfigError
 from protocol_monk.utils.model_discovery import discover_models
 from protocol_monk.utils.openrouter_model_map import (
@@ -14,11 +21,51 @@ from protocol_monk.utils.openrouter_model_map import (
 logger = logging.getLogger("Settings")
 
 
+@dataclass
+class ResolvedPaths:
+    project_root: Path
+    env_file: Path
+    workspace_root: Path
+    system_prompt_path: Path
+    state_home: Path
+    ollama_models_json: Path
+    openrouter_models_json: Path
+    openrouter_example_json: Path
+    skills_root: Path
+    scratch_root: Path
+
+
+def _resolve_path(value: Path | str, project_root: Path) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = project_root / path
+    return path.resolve(strict=False)
+
+
+def _parse_env_file_keys(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+
+    keys: set[str] = set()
+    try:
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _value = line.split("=", 1)
+            key = key.strip()
+            if key:
+                keys.add(key)
+    except OSError:
+        return set()
+    return keys
+
+
 class Settings(BaseSettings):
     # === Environment Variables (CLEAN NAMES) ===
-    workspace: Path
-    system_prompt_path: Path
-    log_level: str
+    workspace: Path = Field(default=Path("."))
+    system_prompt_path: Path = Field(default=Path("protocol_monk/system_prompt.txt"))
+    log_level: str = "INFO"
     llm_provider: str = "ollama"
     ollama_host: str = "http://localhost:11434"
     ollama_api_key: Optional[str] = None
@@ -35,23 +82,27 @@ class Settings(BaseSettings):
     trace_max_sessions: int = 200
     trace_max_total_mb: int = 250
 
-    # Note: model_family, context_window_limit, and active_model_config
-    # are now computed from model discovery, not hardcoded
     # === Computed Fields ===
     system_prompt: Optional[str] = None
     active_model_config: Optional[Dict[str, Any]] = None
+    project_root: Path = Field(default_factory=Path.cwd, exclude=True)
+    env_file_path: Path = Field(default=Path(".env"), exclude=True)
+    resolved_paths: Optional[ResolvedPaths] = Field(default=None, exclude=True)
+    last_model_load_error: Optional[str] = Field(default=None, exclude=True)
 
     # === Pydantic V2 Configuration ===
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=None,
         env_file_encoding="utf-8",
-        # NO prefix - clean names match exactly
         extra="ignore",
         case_sensitive=False,
     )
 
     # Model discovery fields
-    models_json_path: Path = Field(default=Path("protocol_monk/config/models.json"))
+    models_json_path: Path = Field(
+        default=Path("~/.protocol_monk/providers/ollama/models.json"),
+        validation_alias="MODELS_JSON_PATH",
+    )
     openrouter_models_json_path: Path = Field(
         default=Path("protocol_monk/config/openrouter_models.json"),
         validation_alias="OPENROUTER_MODELS_JSON_PATH",
@@ -62,18 +113,97 @@ class Settings(BaseSettings):
     active_model_alias: str = Field(default="", validation_alias="ACTIVE_MODEL_ALIAS")
 
     # Computed fields
-    models_config: Optional[Dict[str, Any]] = None  # Will be loaded from models.json
-    # === Model Validator ===
+    models_config: Optional[Dict[str, Any]] = None
+
+    _models_json_path_overridden: bool = PrivateAttr(default=False)
+    _openrouter_models_json_path_overridden: bool = PrivateAttr(default=False)
 
     @model_validator(mode="after")
     def validate_and_compute(self) -> "Settings":
-        """Validate and compute derived fields."""
+        """Normalize bootstrap values and resolve deterministic paths."""
+        self.project_root = Path(self.project_root).expanduser().resolve(strict=False)
+        self.env_file_path = _resolve_path(self.env_file_path, self.project_root)
 
-        # 1. Validate workspace exists
+        self.workspace = _resolve_path(self.workspace, self.project_root)
+        self.system_prompt_path = _resolve_path(
+            self.system_prompt_path, self.project_root
+        )
+        self.models_json_path = _resolve_path(self.models_json_path, self.project_root)
+        self.openrouter_models_json_path = _resolve_path(
+            self.openrouter_models_json_path, self.project_root
+        )
+
+        if self.log_level.upper() not in logging._nameToLevel:
+            raise ConfigError(f"Invalid log level: {self.log_level}")
+        self.log_level = self.log_level.upper()
+
+        normalized_provider = (self.llm_provider or "ollama").strip().lower()
+        if normalized_provider not in {"ollama", "openrouter"}:
+            raise ConfigError(
+                "Invalid llm_provider value. Expected 'ollama' or 'openrouter'. "
+                f"Got: {self.llm_provider}"
+            )
+        self.llm_provider = normalized_provider
+
+        if self.trace_max_sessions < 1:
+            raise ConfigError("TRACE_MAX_SESSIONS must be >= 1.")
+        if self.trace_max_total_mb < 1:
+            raise ConfigError("TRACE_MAX_TOTAL_MB must be >= 1.")
+
+        state_home = Path.home().expanduser().resolve(strict=False) / ".protocol_monk"
+        self.resolved_paths = ResolvedPaths(
+            project_root=self.project_root,
+            env_file=self.env_file_path,
+            workspace_root=self.workspace,
+            system_prompt_path=self.system_prompt_path,
+            state_home=state_home,
+            ollama_models_json=self.models_json_path,
+            openrouter_models_json=self.openrouter_models_json_path,
+            openrouter_example_json=(
+                self.project_root / "protocol_monk" / "config" / "openrouter_models.example.json"
+            ).resolve(strict=False),
+            skills_root=(self.project_root / "skills").resolve(strict=False),
+            scratch_root=self.workspace,
+        )
+
+        if self.llm_provider == "openrouter":
+            self._active_model_name = "mistralai/ministral-14b-2512"
+        else:
+            self._active_model_name = "llama2"
+        self._active_model_config_dict = {}
+
+        return self
+
+    def mark_path_overrides(self, env_keys: set[str]) -> None:
+        self._models_json_path_overridden = "MODELS_JSON_PATH" in env_keys
+        self._openrouter_models_json_path_overridden = (
+            "OPENROUTER_MODELS_JSON_PATH" in env_keys
+        )
+
+    def apply_session_choices(
+        self,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        workspace: str | Path | None = None,
+    ) -> None:
+        """Apply session-scoped overrides after setup choices are made."""
+        if provider is not None:
+            self.llm_provider = provider.strip().lower()
+        if workspace is not None:
+            self.workspace = _resolve_path(workspace, self.project_root)
+        if model is not None:
+            self.active_model_alias = model
+
+        if self.resolved_paths is not None:
+            self.resolved_paths.workspace_root = self.workspace
+            self.resolved_paths.scratch_root = self.workspace
+
+    def validate_runtime_ready(self) -> None:
+        """Validate runtime-only requirements after setup choices are applied."""
         if not self.workspace.exists():
             raise ConfigError(f"Workspace directory does not exist: {self.workspace}")
 
-        # 2. Load system prompt
         if not self.system_prompt_path.exists():
             raise ConfigError(
                 f"System prompt file not found: {self.system_prompt_path}"
@@ -83,56 +213,90 @@ class Settings(BaseSettings):
             self.system_prompt = self.system_prompt_path.read_text(
                 encoding="utf-8"
             ).strip()
-            if not self.system_prompt:
-                raise ConfigError(
-                    f"System prompt file is empty: {self.system_prompt_path}"
-                )
-        except Exception as e:
-            raise ConfigError(f"Failed to read system prompt: {e}")
+        except OSError as exc:
+            raise ConfigError(f"Failed to read system prompt: {exc}") from exc
 
-        # 3. Validate log level
-        if self.log_level.upper() not in logging._nameToLevel:
-            raise ConfigError(f"Invalid log level: {self.log_level}")
-        self.log_level = self.log_level.upper()
+        if not self.system_prompt:
+            raise ConfigError(f"System prompt file is empty: {self.system_prompt_path}")
 
-        # 4. Validate provider selection
-        normalized_provider = (self.llm_provider or "ollama").strip().lower()
-        if normalized_provider not in {"ollama", "openrouter"}:
-            raise ConfigError(
-                "Invalid llm_provider value. Expected 'ollama' or 'openrouter'. "
-                f"Got: {self.llm_provider}"
-            )
-        self.llm_provider = normalized_provider
-
-        if self.llm_provider == "openrouter" and not self.openrouter_api_key:
-            raise ConfigError(
-                "OPENROUTER_API_KEY is required when LLM_PROVIDER=openrouter."
-            )
-
-        if self.trace_max_sessions < 1:
-            raise ConfigError("TRACE_MAX_SESSIONS must be >= 1.")
-        if self.trace_max_total_mb < 1:
-            raise ConfigError("TRACE_MAX_TOTAL_MB must be >= 1.")
-
-        # Note: Model discovery is now async and called separately via initialize()
-        # We set minimal defaults here that will be overridden by discovery
         if self.llm_provider == "openrouter":
-            self._active_model_name = "mistralai/ministral-14b-2512"
+            if not self.openrouter_api_key:
+                raise ConfigError(
+                    "OPENROUTER_API_KEY is required when LLM_PROVIDER=openrouter."
+                )
+            self._prepare_openrouter_models_path()
         else:
-            self._active_model_name = "llama2"
-        self._active_model_config_dict = {}
+            self._prepare_ollama_models_path()
 
-        return self
+    def _legacy_ollama_models_path(self) -> Path:
+        return (
+            self.project_root / "protocol_monk" / "config" / "models.json"
+        ).resolve(strict=False)
+
+    def _copy_legacy_map(self, source: Path, target: Path, *, provider_name: str) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        logger.info(
+            "Migrated legacy %s model map from %s to %s",
+            provider_name,
+            source,
+            target,
+        )
+
+    def _prepare_ollama_models_path(self) -> None:
+        target = self.models_json_path
+        legacy = self._legacy_ollama_models_path()
+
+        if self._models_json_path_overridden:
+            return
+
+        if target.exists():
+            if legacy.exists() and legacy != target:
+                logger.info(
+                    "Ignoring legacy Ollama model map at %s; authoritative path is %s",
+                    legacy,
+                    target,
+                )
+            return
+
+        if legacy.exists() and legacy != target:
+            self._copy_legacy_map(legacy, target, provider_name="Ollama")
+
+    def _prepare_openrouter_models_path(self) -> None:
+        target = self.openrouter_models_json_path
+
+        if self._openrouter_models_json_path_overridden:
+            if not target.exists():
+                raise ConfigError(
+                    f"OpenRouter model map not found: {target}. "
+                    "Create the file or remove OPENROUTER_MODELS_JSON_PATH to use the "
+                    "default repo-local curated map."
+                )
+            return
+
+        if target.exists():
+            return
+
+        example = self.resolved_paths.openrouter_example_json
+        if not example.exists():
+            raise ConfigError(
+                f"OpenRouter example model map not found: {example}"
+            )
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(example, target)
+        logger.info("Seeded OpenRouter model map from %s to %s", example, target)
 
     async def initialize(self) -> None:
         """
-        Async initialization for model discovery.
-        Call this after creating Settings instance.
+        Post-choice runtime initialization for provider/model state.
         """
+        self.validate_runtime_ready()
         await self._discover_models()
 
     async def _discover_models(self) -> None:
         """Load model config for the selected provider."""
+        self.last_model_load_error = None
         try:
             if self.llm_provider == "openrouter":
                 logger.info("Loading OpenRouter model map...")
@@ -149,7 +313,6 @@ class Settings(BaseSettings):
 
             self.models_config = model_config
 
-            # Set active model from alias
             if self.active_model_alias:
                 self._set_active_model(self.active_model_alias)
             elif model_config.get("default_model"):
@@ -161,33 +324,34 @@ class Settings(BaseSettings):
                 self.active_model_name,
             )
 
-        except ConfigError:
+        except ConfigError as exc:
+            self.last_model_load_error = str(exc)
+            self.models_config = None
             raise
-        except Exception as e:
-            logger.error(f"Model configuration loading failed: {e}")
+        except Exception as exc:
+            self.last_model_load_error = str(exc)
+            logger.error("Model configuration loading failed: %s", exc)
             if self.llm_provider == "openrouter":
-                raise ConfigError(f"Failed to load OpenRouter model map: {e}") from e
+                self.models_config = None
+                raise ConfigError(f"Failed to load OpenRouter model map: {exc}") from exc
             self.models_config = self._create_fallback_model_config()
             self._set_active_model(self.models_config.get("default_model", ""))
 
     async def reload_models_for_provider(self, provider: str) -> None:
-        """Reload model config for a specific provider.
-
-        Used by the setup wizard when switching providers.
-
-        Args:
-            provider: The provider to load models for ('ollama' or 'openrouter')
-
-        """
+        """Reload model config for a specific provider."""
         original_provider = self.llm_provider
+        original_models = self.models_config
+        original_active_model = self.active_model_name
+        original_active_config = self._active_model_config
         self.llm_provider = provider.lower()
 
         try:
-            await self._discover_models()
-        except Exception as e:
-            # Restore original provider on failure
+            await self.initialize()
+        except Exception:
             self.llm_provider = original_provider
-            logger.error(f"Failed to load models for provider '{provider}': {e}")
+            self.models_config = original_models
+            self.active_model_name = original_active_model
+            self._active_model_config = original_active_config
             raise
 
     def _set_active_model(self, model_alias: str) -> None:
@@ -197,20 +361,18 @@ class Settings(BaseSettings):
 
         models = self.models_config.get("models", {})
 
-        # Direct match
         if model_alias in models:
             self._active_model_config = models[model_alias]
             self.active_model_name = model_alias
             return
 
-        # Try to find by partial match
         for name, config in models.items():
             if model_alias in name:
                 self._active_model_config = config
                 self.active_model_name = name
                 return
 
-        logger.warning(f"Model '{model_alias}' not found. Using default.")
+        logger.warning("Model '%s' not found. Using default.", model_alias)
         default = self.models_config.get("default_model")
         if default and default in models:
             self._active_model_config = models[default]
@@ -252,8 +414,6 @@ class Settings(BaseSettings):
             },
         }
 
-    # === Convenience Properties (for code that expects specific names) ===
-
     @property
     def workspace_root(self) -> Path:
         """Alias for workspace - matches existing code."""
@@ -294,12 +454,9 @@ class Settings(BaseSettings):
 
     @property
     def model_parameters(self) -> Dict[str, Any]:
-        """
-        Get the active model's parameters, forcing context limit.
-        """
+        """Get the active model's parameters, forcing context limit."""
         params = self._active_model_config.get("parameters", {}).copy()
 
-        # Only Ollama uses num_ctx-style options.
         if self.llm_provider == "ollama":
             params["num_ctx"] = self.context_window_limit
 
@@ -310,24 +467,28 @@ class Settings(BaseSettings):
         return int(self.trace_max_total_mb) * 1024 * 1024
 
 
-# === Backward compatibility ===
 def load_settings(base_path: Optional[Path] = None) -> Settings:
-    """Legacy function - just creates Settings."""
-    import os
-    from pathlib import Path
+    """Deterministic bootstrap entrypoint for settings loading."""
+    app_root = (
+        Path(base_path).expanduser().resolve(strict=False)
+        if base_path is not None
+        else Path(__file__).resolve().parent
+    )
+    project_root = app_root.parent
+    env_file = (project_root / ".env").resolve(strict=False)
+    env_keys = _parse_env_file_keys(env_file) | {
+        key
+        for key in (
+            "MODELS_JSON_PATH",
+            "OPENROUTER_MODELS_JSON_PATH",
+        )
+        if key in os.environ
+    }
 
-    if base_path is not None:
-        project_root = base_path.parent
-
-        workspace = os.getenv("WORKSPACE")
-        if workspace and not Path(workspace).is_absolute():
-            resolved_workspace = (project_root / workspace).resolve()
-            os.environ["WORKSPACE"] = str(resolved_workspace)
-
-        # Handle relative paths
-        prompt_path = os.getenv("SYSTEM_PROMPT_PATH")
-        if prompt_path and not Path(prompt_path).is_absolute():
-            resolved = (project_root / prompt_path).resolve()
-            os.environ["SYSTEM_PROMPT_PATH"] = str(resolved)
-
-    return Settings()
+    settings = Settings(
+        _env_file=str(env_file) if env_file.exists() else None,
+        project_root=project_root,
+        env_file_path=env_file,
+    )
+    settings.mark_path_overrides(env_keys)
+    return settings

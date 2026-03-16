@@ -1,6 +1,6 @@
 # OpenRouter Map Update Guide
 
-This guide shows how to update `protocol_monk/config/openrouter_models.json` using only the specific OpenRouter models you want.
+This guide shows how to update Protocol Monk's curated OpenRouter map using only the specific OpenRouter models you want.
 
 The updater script:
 - Fetches OpenRouter catalog data from `https://openrouter.ai/api/v1/models`
@@ -11,7 +11,7 @@ The updater script:
 ## File Paths
 
 - Script: `protocol_monk/scripts/fetch_openrouter_model_config.py`
-- Runtime map: `protocol_monk/config/openrouter_models.json`
+- Default runtime map: `protocol_monk/config/openrouter_models.json`
 - Example map: `protocol_monk/config/openrouter_models.example.json`
 
 ## Prerequisites
@@ -57,7 +57,8 @@ python -m protocol_monk.scripts.fetch_openrouter_model_config \
 ```bash
 python -m protocol_monk.scripts.fetch_openrouter_model_config \
   --model z-ai/glm-5 \
-  --model mistralai/ministral-14b-2512
+  --model mistralai/ministral-14b-2512 \
+  --sync-example
 ```
 
 3. Validate map loads cleanly in app startup:
@@ -101,10 +102,13 @@ python -m protocol_monk.scripts.fetch_openrouter_model_config \
 
 - `--model <id>`: Repeatable. Required.
 - `--default-model <id>`: Force default model after update.
-- `--output <path>`: Write map to a different file.
+- `--output <path>`: Write the runtime map to a different file.
+- `--sync-example`: Also update `protocol_monk/config/openrouter_models.example.json`.
+- `--example-output <path>`: Override the example map path used by `--sync-example`.
 - `--base-url <url>`: Override API base URL.
 - `--api-key <key>`: Override env API key.
 - `--timeout <seconds>`: HTTP timeout.
+- `--respect-catalog-tool-support`: Trust OpenRouter's raw tool metadata instead of forcing `supports_tools=true` for curated entries.
 - `--dry-run`: Build and validate output without writing.
 
 ## What Gets Updated Per Model

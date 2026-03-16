@@ -70,6 +70,7 @@ class SetupWizard:
         self._input_handler = input_handler or RichInputHandler()
         self._typewriter_config = typewriter_config or TYPEWRITER_PRESETS["dramatic"]
         self._choices: Dict[str, Any] = {}
+        self._project_root = Path.cwd()
 
     def _get_provider_choices(self) -> List[WizardChoice]:
         """Get available provider choices."""
@@ -164,11 +165,14 @@ class SetupWizard:
             # Fallback choices
             return [
                 WizardChoice(
-                    label="Default Model",
+                    label="Model Unavailable",
                     value="default",
-                    description="Use default model configuration",
+                    description=(
+                        settings.last_model_load_error
+                        or "Provider model configuration is unavailable."
+                    ),
                     display={
-                        "Model": "Default Model",
+                        "Model": "Model Unavailable",
                         "Family": "unknown",
                         "Context": "?",
                         "Capabilities": "-",
@@ -411,7 +415,7 @@ class SetupWizard:
                     # Validate path
                     path = Path(answer)
                     if not path.is_absolute():
-                        path = Path.cwd() / path
+                        path = self._project_root / path
 
                     if path.exists() and path.is_dir():
                         return str(path)
@@ -440,6 +444,7 @@ class SetupWizard:
 
         """
         self._choices = {}
+        self._project_root = settings.resolved_paths.project_root
 
         # Print wizard header
         self._console.print()
@@ -469,33 +474,12 @@ class SetupWizard:
         )
         self._choices["provider"] = selected_provider
 
-        # Reload models if provider changed
-        if selected_provider != settings.llm_provider:
-            self._console.print(f"[dim]Loading {selected_provider} models...[/]")
-            # Clear alias so it doesn't override wizard selection during reload
-            settings.active_model_alias = ""
-            try:
-                await settings.reload_models_for_provider(selected_provider)
-            except Exception as e:
-                self._console.print(f"[warning]Failed to load models: {e}[/]")
-
-        # Question 2: Model selection
-        model_question = WizardQuestion(
-            question="The Mind of?",
-            choices=self._get_model_choices(settings),
-            default=settings.active_model_name,
-            panel_title="Select Model",
-            table_columns=("Model", "Family", "Context", "Capabilities"),
-            page_size=10,
+        # Question 2: Workspace selection (Desktop directories)
+        workspace_default = (
+            str(settings.workspace)
+            if settings.workspace
+            else str(settings.resolved_paths.project_root)
         )
-        self._choices["model"] = await self._ask_question(
-            model_question,
-            question_number=2,
-            total_questions=3,
-        )
-
-        # Question 3: Workspace selection (Desktop directories)
-        workspace_default = str(settings.workspace) if settings.workspace else str(Path.cwd())
         workspace_choices = self._get_workspace_choices(current_workspace=workspace_default)
 
         # Find default index in choices
@@ -517,7 +501,7 @@ class SetupWizard:
         )
         workspace_result = await self._ask_question(
             workspace_question,
-            question_number=3,
+            question_number=2,
             total_questions=3,
         )
 
@@ -531,11 +515,37 @@ class SetupWizard:
             )
             self._choices["workspace"] = await self._ask_question(
                 custom_question,
-                question_number=3,
+                question_number=2,
                 total_questions=3,
             )
         else:
             self._choices["workspace"] = workspace_result
+
+        self._console.print(f"[dim]Loading {selected_provider} models...[/]")
+        settings.apply_session_choices(
+            provider=selected_provider,
+            workspace=self._choices["workspace"],
+        )
+        settings.active_model_alias = ""
+        try:
+            await settings.initialize()
+        except Exception as e:
+            self._console.print(f"[warning]Failed to load models: {e}[/]")
+
+        # Question 3: Model selection
+        model_question = WizardQuestion(
+            question="The Mind of?",
+            choices=self._get_model_choices(settings),
+            default=settings.active_model_name,
+            panel_title="Select Model",
+            table_columns=("Model", "Family", "Context", "Capabilities"),
+            page_size=10,
+        )
+        self._choices["model"] = await self._ask_question(
+            model_question,
+            question_number=3,
+            total_questions=3,
+        )
 
         # Print confirmation
         self._console.print()
@@ -578,11 +588,19 @@ class SetupWizard:
             choices: Dictionary from run() method
 
         """
+        apply_session_choices = getattr(type(settings), "apply_session_choices", None)
+        if callable(apply_session_choices):
+            settings.apply_session_choices(
+                provider=choices.get("provider"),
+                model=choices.get("model"),
+                workspace=choices.get("workspace"),
+            )
+            return
+
         if "provider" in choices:
             settings.llm_provider = choices["provider"]
 
         if "model" in choices:
-            # Clear the alias so it doesn't override our selection
             settings.active_model_alias = ""
             settings._set_active_model(choices["model"])
 
