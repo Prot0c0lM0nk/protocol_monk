@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2026-03-16T19:18:41.115604",
+  "last_updated": "2026-03-17T18:12:33.145868",
   "default_model": "openai/gpt-5.4",
   "models": {
     "openai/gpt-5.4": {
@@ -48,54 +48,6 @@
           "completion": 15.0,
           "web_search": 10000.0,
           "input_cache_read": 0.25
-        }
-      }
-    },
-    "openai/gpt-5-nano": {
-      "name": "openai/gpt-5-nano",
-      "family": "gpt",
-      "is_cloud": true,
-      "context_window": 400000,
-      "supports_thinking": true,
-      "supports_tools": true,
-      "capabilities": [
-        "completion",
-        "tools",
-        "thinking",
-        "vision"
-      ],
-      "parameters": {},
-      "user_overrides": {},
-      "discovered_at": "2026-03-16T19:18:41.115604",
-      "openrouter_name": "OpenAI: GPT-5 Nano",
-      "supported_parameters": [
-        "include_reasoning",
-        "max_tokens",
-        "reasoning",
-        "response_format",
-        "seed",
-        "structured_outputs",
-        "tool_choice",
-        "tools"
-      ],
-      "pricing": {
-        "raw": {
-          "prompt": "0.00000005",
-          "completion": "0.0000004",
-          "web_search": "0.01",
-          "input_cache_read": "0.000000005"
-        },
-        "usd_per_token": {
-          "prompt": 5e-08,
-          "completion": 4e-07,
-          "web_search": 0.01,
-          "input_cache_read": 5e-09
-        },
-        "usd_per_million_tokens": {
-          "prompt": 0.05,
-          "completion": 0.4,
-          "web_search": 10000.0,
-          "input_cache_read": 0.005
         }
       }
     },
@@ -773,6 +725,101 @@
           "prompt": 0.45,
           "completion": 2.2,
           "input_cache_read": 0.225
+        }
+      }
+    },
+    "mistralai/mistral-small-2603": {
+      "name": "mistralai/mistral-small-2603",
+      "family": "mistral",
+      "is_cloud": true,
+      "context_window": 262144,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "capabilities": [
+        "completion",
+        "tools",
+        "thinking",
+        "vision"
+      ],
+      "parameters": {},
+      "user_overrides": {},
+      "discovered_at": "2026-03-17T09:30:23.187270",
+      "openrouter_name": "Mistral: Mistral Small 4",
+      "supported_parameters": [
+        "frequency_penalty",
+        "include_reasoning",
+        "max_tokens",
+        "presence_penalty",
+        "reasoning",
+        "response_format",
+        "seed",
+        "stop",
+        "structured_outputs",
+        "temperature",
+        "tool_choice",
+        "tools",
+        "top_p"
+      ],
+      "pricing": {
+        "raw": {
+          "prompt": "0.00000015",
+          "completion": "0.0000006"
+        },
+        "usd_per_token": {
+          "prompt": 1.5e-07,
+          "completion": 6e-07
+        },
+        "usd_per_million_tokens": {
+          "prompt": 0.15,
+          "completion": 0.6
+        }
+      }
+    },
+    "openai/gpt-5.4-nano": {
+      "name": "openai/gpt-5.4-nano",
+      "family": "gpt",
+      "is_cloud": true,
+      "context_window": 400000,
+      "supports_thinking": true,
+      "supports_tools": true,
+      "capabilities": [
+        "completion",
+        "tools",
+        "thinking",
+        "vision"
+      ],
+      "parameters": {},
+      "user_overrides": {},
+      "discovered_at": "2026-03-17T18:12:33.145868",
+      "openrouter_name": "OpenAI: GPT-5.4 Nano",
+      "supported_parameters": [
+        "include_reasoning",
+        "max_tokens",
+        "reasoning",
+        "response_format",
+        "seed",
+        "structured_outputs",
+        "tool_choice",
+        "tools"
+      ],
+      "pricing": {
+        "raw": {
+          "prompt": "0.0000002",
+          "completion": "0.00000125",
+          "web_search": "0.01",
+          "input_cache_read": "0.00000002"
+        },
+        "usd_per_token": {
+          "prompt": 2e-07,
+          "completion": 1.25e-06,
+          "web_search": 0.01,
+          "input_cache_read": 2e-08
+        },
+        "usd_per_million_tokens": {
+          "prompt": 0.2,
+          "completion": 1.25,
+          "web_search": 10000.0,
+          "input_cache_read": 0.02
         }
       }
     }
