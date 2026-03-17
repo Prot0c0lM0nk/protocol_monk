@@ -12,6 +12,7 @@ from protocol_monk.protocol.bus import EventBus
 from protocol_monk.protocol.events import EventTypes
 from protocol_monk.protocol.command_dispatcher import (
     COMPACT_PROMPT_TEMPLATE_FILENAME,
+    ORTHOCAL_BRIEFING_PROMPT_TEMPLATE_FILENAME,
     load_prompt_template,
     parse_slash_command,
 )
@@ -24,6 +25,9 @@ from protocol_monk.agent.structs import (
     ToolRequest,
     Message,
     ContextStats,
+    OrthocalContextCapsule,
+    OrthocalContextFile,
+    SessionMemoryState,
 )
 from protocol_monk.agent.context.coordinator import ContextCoordinator
 from protocol_monk.agent.core.state_machine import StateMachine, AgentState
@@ -98,9 +102,8 @@ class AgentService:
             model_name=str(getattr(settings, "active_model_name", "") or "")
         )
         self._orthocal_service: OrthocalWorkspaceService | None = None
-        self._pending_orthocal_turn_context: Dict[str, Any] | None = None
-        self._active_orthocal_turn_context: Dict[str, Any] | None = None
-        self._active_orthocal_turn_id: str | None = None
+        self._session_memory: SessionMemoryState | None = None
+        self._orthocal_capsule: OrthocalContextCapsule | None = None
 
     async def start(self) -> None:
         """
@@ -192,6 +195,60 @@ class AgentService:
             },
         )
 
+    @staticmethod
+    def _render_bulleted_lines(items: List[str]) -> str:
+        cleaned = [str(item).strip() for item in items if str(item).strip()]
+        if not cleaned:
+            return "- _None._"
+        return "\n".join(f"- {item}" for item in cleaned)
+
+    def _build_session_memory_injection_text(
+        self,
+        memory: SessionMemoryState,
+    ) -> str:
+        return (
+            "Session memory for this conversation.\n"
+            "Treat this as authoritative carry-forward state, not as prior assistant dialogue.\n\n"
+            f"Updated at: {memory.updated_at}\n\n"
+            "## Session Goal\n"
+            f"{str(memory.session_goal).strip() or '_None._'}\n\n"
+            "## Active Work\n"
+            f"{self._render_bulleted_lines(memory.active_work)}\n\n"
+            "## Decisions\n"
+            f"{self._render_bulleted_lines(memory.decisions)}\n\n"
+            "## Constraints\n"
+            f"{self._render_bulleted_lines(memory.constraints)}\n\n"
+            "## Open Loops\n"
+            f"{self._render_bulleted_lines(memory.open_loops)}\n\n"
+            "## Important Paths\n"
+            f"{self._render_bulleted_lines(memory.important_paths)}\n\n"
+            "## Carry Forward Summary\n"
+            f"{str(memory.carry_forward_summary).strip() or '_None._'}"
+        )
+
+    async def _build_session_memory_injection(
+        self,
+        *,
+        turn_id: str | None = None,
+        round_index: int | None = None,
+    ) -> Message | None:
+        memory = self._session_memory
+        if memory is None or memory.is_effectively_empty():
+            return None
+        return Message(
+            role="system",
+            content=self._build_session_memory_injection_text(memory),
+            timestamp=time.time(),
+            metadata={
+                "id": str(uuid.uuid4()),
+                "source": "session_memory",
+                "ephemeral": True,
+                "turn_id": turn_id,
+                "round_index": round_index,
+                "updated_at": memory.updated_at,
+            },
+        )
+
     async def _augment_history_with_active_skills(
         self,
         history: List[Message],
@@ -234,15 +291,12 @@ class AgentService:
         turn_id: str | None = None,
         round_index: int | None = None,
     ) -> Message | None:
-        context = self._resolve_orthocal_context_for_injection(turn_id=turn_id)
-        if not context:
-            return None
-        content = str(context.get("content", "") or "").strip()
-        if not content:
+        capsule = self._orthocal_capsule
+        if capsule is None or not str(capsule.briefing_text or "").strip():
             return None
         return Message(
             role="system",
-            content=content,
+            content=str(capsule.briefing_text).strip(),
             timestamp=time.time(),
             metadata={
                 "id": str(uuid.uuid4()),
@@ -250,9 +304,10 @@ class AgentService:
                 "ephemeral": True,
                 "turn_id": turn_id,
                 "round_index": round_index,
-                "summary_md_path": context.get("summary_md_path", ""),
-                "requested_date": context.get("requested_date", ""),
-                "calendar": context.get("calendar", ""),
+                "summary_md_path": capsule.summary_md_path,
+                "requested_date": capsule.requested_date,
+                "calendar": capsule.calendar,
+                "updated_at": capsule.updated_at,
             },
         )
 
@@ -264,6 +319,10 @@ class AgentService:
         round_index: int | None = None,
         emit_skill_warnings: bool = True,
     ) -> List[Message]:
+        session_memory_injection = await self._build_session_memory_injection(
+            turn_id=turn_id,
+            round_index=round_index,
+        )
         active_skill_injection = await self._build_active_skill_injection(
             turn_id=turn_id,
             round_index=round_index,
@@ -279,88 +338,13 @@ class AgentService:
         )
         return self._compose_history_with_system_injections(
             history,
-            [active_skill_injection, orthocal_injection, neuralsym_injection],
+            [
+                session_memory_injection,
+                orthocal_injection,
+                active_skill_injection,
+                neuralsym_injection,
+            ],
         )
-
-    def _resolve_orthocal_context_for_injection(
-        self,
-        *,
-        turn_id: str | None = None,
-    ) -> Dict[str, Any] | None:
-        if (
-            turn_id is not None
-            and self._active_orthocal_turn_id == turn_id
-            and self._active_orthocal_turn_context is not None
-        ):
-            return self._active_orthocal_turn_context
-        if turn_id is None and self._pending_orthocal_turn_context is not None:
-            return self._pending_orthocal_turn_context
-        return None
-
-    def _stage_orthocal_summary_for_next_turn(self, result: Any) -> None:
-        summary_md_path = Path(str(getattr(result, "summary_md_path", "") or "")).resolve(
-            strict=False
-        )
-        requested_date = str(getattr(result, "requested_date", "") or "").strip()
-        calendar = str(getattr(result, "calendar", "") or "").strip()
-        source_url = str(getattr(result, "source_url", "") or "").strip()
-
-        try:
-            summary_text = summary_md_path.read_text(encoding="utf-8").strip()
-        except Exception as exc:
-            log_exception(
-                self._logger,
-                logging.WARNING,
-                "Failed to read Orthocal summary for next-turn injection",
-                exc,
-            )
-            summary_text = (
-                f"# {str(getattr(result, 'summary_title', '') or 'Orthocal Day')}\n\n"
-                f"- Requested date: {requested_date or 'unknown'}\n"
-                f"- Calendar: {calendar or 'unknown'}\n"
-                f"- Source URL: `{source_url or 'unknown'}`\n"
-                f"\n_Fallback summary generated because `{summary_md_path}` "
-                f"could not be read: {exc}_"
-            )
-
-        content = (
-            "Orthocal context for this turn only.\n"
-            "The user refreshed the local Orthocal bundle immediately before this message. "
-            "Use the following summary as ambient local context for the conversation.\n\n"
-            f"Summary file: {summary_md_path}\n"
-            f"Requested date: {requested_date or 'unknown'}\n"
-            f"Calendar: {calendar or 'unknown'}\n"
-            f"Source URL: {source_url or 'unknown'}\n\n"
-            f"{summary_text}"
-        )
-        self._pending_orthocal_turn_context = {
-            "content": content,
-            "summary_md_path": str(summary_md_path),
-            "requested_date": requested_date,
-            "calendar": calendar,
-            "source_url": source_url,
-        }
-
-    def _activate_pending_orthocal_for_turn(self, turn_id: str) -> None:
-        if self._pending_orthocal_turn_context is None:
-            self._active_orthocal_turn_context = None
-            self._active_orthocal_turn_id = None
-            return
-        self._active_orthocal_turn_context = self._pending_orthocal_turn_context
-        self._active_orthocal_turn_id = turn_id
-
-    def _finalize_orthocal_turn_context(
-        self,
-        *,
-        turn_id: str | None,
-        consume_pending: bool,
-    ) -> None:
-        if turn_id is None or self._active_orthocal_turn_id != turn_id:
-            return
-        if consume_pending and self._pending_orthocal_turn_context is self._active_orthocal_turn_context:
-            self._pending_orthocal_turn_context = None
-        self._active_orthocal_turn_context = None
-        self._active_orthocal_turn_id = None
 
     async def _resolve_skill_catalog(
         self,
@@ -710,7 +694,6 @@ class AgentService:
             rounds = 0
             try:
                 turn_id = str(getattr(payload, "request_id", "") or uuid.uuid4())
-                self._activate_pending_orthocal_for_turn(turn_id)
 
                 # 1. State: IDLE -> THINKING
                 await self._set_status(
@@ -948,16 +931,8 @@ class AgentService:
                     turn_id=turn_id,
                     round_index=rounds,
                 )
-                self._finalize_orthocal_turn_context(
-                    turn_id=turn_id,
-                    consume_pending=True,
-                )
 
             except asyncio.CancelledError:
-                self._finalize_orthocal_turn_context(
-                    turn_id=turn_id,
-                    consume_pending=False,
-                )
                 self._logger.info("Current turn cancelled.")
                 if self._state.current != AgentState.IDLE:
                     await self._set_status(
@@ -968,10 +943,6 @@ class AgentService:
                     )
                 raise
             except Exception as e:
-                self._finalize_orthocal_turn_context(
-                    turn_id=turn_id,
-                    consume_pending=False,
-                )
                 log_exception(self._logger, logging.ERROR, "Error in main loop", e)
                 await self._recover_from_turn_error(
                     e,
@@ -1146,6 +1117,271 @@ class AgentService:
             self._orthocal_service = OrthocalWorkspaceService(workspace_root)
         return self._orthocal_service
 
+    def _clear_session_memory(self) -> None:
+        self._session_memory = None
+
+    def _clear_orthocal_capsule(self) -> None:
+        self._orthocal_capsule = None
+
+    @staticmethod
+    def _truncate_preview(text: str, limit: int = 700) -> str:
+        compact = str(text or "").strip()
+        if len(compact) <= limit:
+            return compact
+        return compact[:limit].rstrip() + "..."
+
+    @staticmethod
+    def _sanitize_string_list(value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        if not isinstance(value, list):
+            return []
+        cleaned: List[str] = []
+        for item in value:
+            text = str(item or "").strip()
+            if text:
+                cleaned.append(text)
+        return cleaned
+
+    @staticmethod
+    def _extract_json_object(text: str) -> Dict[str, Any] | None:
+        raw = str(text or "").strip()
+        if not raw:
+            return None
+        if raw.startswith("```"):
+            lines = raw.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            raw = "\n".join(lines).strip()
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            start = raw.find("{")
+            end = raw.rfind("}")
+            if start == -1 or end == -1 or end <= start:
+                return None
+            try:
+                parsed = json.loads(raw[start : end + 1])
+                return parsed if isinstance(parsed, dict) else None
+            except json.JSONDecodeError:
+                return None
+
+    def _parse_session_memory_state(self, text: str) -> SessionMemoryState | None:
+        payload = self._extract_json_object(text)
+        if payload is None:
+            return None
+
+        memory = SessionMemoryState(
+            session_goal=str(payload.get("session_goal", "") or "").strip(),
+            active_work=self._sanitize_string_list(payload.get("active_work")),
+            decisions=self._sanitize_string_list(payload.get("decisions")),
+            constraints=self._sanitize_string_list(payload.get("constraints")),
+            open_loops=self._sanitize_string_list(payload.get("open_loops")),
+            important_paths=self._sanitize_string_list(payload.get("important_paths")),
+            carry_forward_summary=str(
+                payload.get("carry_forward_summary", "") or ""
+            ).strip(),
+        )
+        if memory.is_effectively_empty():
+            return None
+        return memory
+
+    async def _run_internal_model_pass(
+        self,
+        *,
+        history: List[Message],
+        turn_id: str,
+        round_index: int,
+    ) -> AgentResponse:
+        silent_bus = EventBus()
+        silent_registry = ToolRegistry()
+        silent_registry.seal()
+        return await run_thinking_loop(
+            context_history=history,
+            provider=self._provider,
+            bus=silent_bus,
+            registry=silent_registry,
+            settings=self._settings,
+            turn_id=turn_id,
+            round_index=round_index,
+            preflight_metrics=None,
+        )
+
+    def _build_orthocal_briefing_source(
+        self,
+        result: Any,
+        summary_text: str,
+    ) -> str:
+        requested_date = str(getattr(result, "requested_date", "") or "").strip()
+        calendar = str(getattr(result, "calendar", "") or "").strip()
+        source_url = str(getattr(result, "source_url", "") or "").strip()
+        summary_md_path = str(getattr(result, "summary_md_path", "") or "").strip()
+        reading_files = list(getattr(result, "reading_files", []) or [])
+        story_files = list(getattr(result, "story_files", []) or [])
+
+        lines = [
+            "Orthocal bundle material for a compact session briefing.",
+            f"Requested date: {requested_date or 'unknown'}",
+            f"Calendar: {calendar or 'unknown'}",
+            f"Source URL: {source_url or 'unknown'}",
+            f"Summary file: {summary_md_path or 'unknown'}",
+            "",
+            "Summary markdown:",
+            summary_text.strip() or "_No summary markdown available._",
+            "",
+            "Reading files:",
+        ]
+        if reading_files:
+            for item in reading_files:
+                lines.append(
+                    f"- {getattr(item, 'title', 'Reading')} :: {getattr(item, 'path', '')}"
+                )
+        else:
+            lines.append("- _None._")
+
+        lines.extend(["", "Story files:"])
+        if story_files:
+            for item in story_files:
+                lines.append(
+                    f"- {getattr(item, 'title', 'Story')} :: {getattr(item, 'path', '')}"
+                )
+        else:
+            lines.append("- _None._")
+        return "\n".join(lines).strip()
+
+    def _build_deterministic_orthocal_briefing(
+        self,
+        result: Any,
+        summary_text: str,
+    ) -> str:
+        requested_date = str(getattr(result, "requested_date", "") or "unknown")
+        calendar = str(getattr(result, "calendar", "") or "unknown")
+        source_url = str(getattr(result, "source_url", "") or "unknown")
+        summary_md_path = str(getattr(result, "summary_md_path", "") or "unknown")
+        summary_title = str(getattr(result, "summary_title", "") or "Orthocal Day")
+        feast_level = str(getattr(result, "feast_level_description", "") or "")
+        fast_level = str(getattr(result, "fast_level_desc", "") or "")
+        fast_exception = str(getattr(result, "fast_exception_desc", "") or "")
+        tone = getattr(result, "tone", None)
+        reading_files = list(getattr(result, "reading_files", []) or [])
+        story_files = list(getattr(result, "story_files", []) or [])
+
+        lines = [
+            f"# {summary_title}",
+            "",
+            f"- Requested date: {requested_date}",
+            f"- Calendar: {calendar}",
+            f"- Source URL: {source_url}",
+            f"- Summary file: {summary_md_path}",
+            f"- Feast level: {feast_level or 'unknown'}",
+            f"- Fast: {fast_level or 'unknown'}"
+            + (f"; {fast_exception}" if fast_exception else ""),
+            f"- Tone: {tone if tone is not None else 'unknown'}",
+            "",
+            "## Readings",
+        ]
+        if reading_files:
+            for item in reading_files:
+                lines.append(
+                    f"{getattr(item, 'index', '?')}. {getattr(item, 'title', 'Reading')} - `{getattr(item, 'path', '')}`"
+                )
+        else:
+            lines.append("_None._")
+
+        lines.extend(["", "## Stories"])
+        if story_files:
+            for item in story_files:
+                lines.append(
+                    f"{getattr(item, 'index', '?')}. {getattr(item, 'title', 'Story')} - `{getattr(item, 'path', '')}`"
+                )
+        else:
+            lines.append("_None._")
+
+        lines.extend(
+            [
+                "",
+                "## Discussion Themes",
+                "- The feast, fast, and tone set the initial theological frame for discussion.",
+                "- The listed readings and stories are prepared locally and can be read on request before close interpretation.",
+                "",
+                "## Ready Note",
+                "- The local Orthocal files above are ready to be read on request.",
+            ]
+        )
+        trimmed_summary = str(summary_text or "").strip()
+        if trimmed_summary:
+            lines.extend(["", "## Source Summary", trimmed_summary])
+        return "\n".join(lines).strip()
+
+    def _create_orthocal_capsule(
+        self,
+        result: Any,
+        briefing_text: str,
+    ) -> OrthocalContextCapsule:
+        command_data = {}
+        to_command_data = getattr(result, "to_command_data", None)
+        if callable(to_command_data):
+            try:
+                maybe_data = to_command_data()
+                if isinstance(maybe_data, dict):
+                    command_data = maybe_data
+            except Exception:
+                command_data = {}
+
+        raw_reading_files = list(
+            getattr(result, "reading_files", None)
+            or command_data.get("reading_files", [])
+            or []
+        )
+        raw_story_files = list(
+            getattr(result, "story_files", None)
+            or command_data.get("story_files", [])
+            or []
+        )
+
+        def _coerce_context_file(item: Any) -> OrthocalContextFile:
+            if isinstance(item, dict):
+                return OrthocalContextFile(
+                    index=int(item.get("index", 0) or 0),
+                    title=str(item.get("title", "") or ""),
+                    path=str(item.get("path", "") or ""),
+                )
+            return OrthocalContextFile(
+                index=int(getattr(item, "index", 0) or 0),
+                title=str(getattr(item, "title", "") or ""),
+                path=str(getattr(item, "path", "") or ""),
+            )
+
+        reading_files = [
+            _coerce_context_file(item) for item in raw_reading_files
+        ]
+        story_files = [
+            _coerce_context_file(item) for item in raw_story_files
+        ]
+        return OrthocalContextCapsule(
+            requested_date=str(getattr(result, "requested_date", "") or ""),
+            calendar=str(getattr(result, "calendar", "") or ""),
+            source_url=str(getattr(result, "source_url", "") or ""),
+            summary_md_path=str(getattr(result, "summary_md_path", "") or ""),
+            reading_files=reading_files,
+            story_files=story_files,
+            briefing_text=str(briefing_text or "").strip(),
+        )
+
+    def _build_compact_command_payload(
+        self,
+        memory: SessionMemoryState,
+    ) -> Dict[str, Any]:
+        payload = memory.to_dict()
+        payload["brief_preview"] = self._truncate_preview(memory.carry_forward_summary)
+        return payload
+
     async def _observe_neuralsym_user_input(self, payload: UserRequest) -> None:
         if self._neuralsym_adapter is None:
             return
@@ -1222,7 +1458,7 @@ class AgentService:
             emit_skill_warnings=False,
         )
         estimate = await self._estimate_request_metrics(full_history)
-        return self._usage_ledger.build_snapshot(
+        snapshot = self._usage_ledger.build_snapshot(
             stored_history_tokens=int(getattr(stats, "total_tokens", 0) or 0),
             message_count=int(getattr(stats, "message_count", 0) or 0),
             loaded_files_count=int(getattr(stats, "loaded_files_count", 0) or 0),
@@ -1234,6 +1470,38 @@ class AgentService:
             auto_confirm=bool(self._auto_confirm),
             request_estimate=estimate,
         )
+        memory = self._session_memory
+        capsule = self._orthocal_capsule
+        snapshot.update(
+            {
+                "session_memory_active": bool(
+                    memory is not None and not memory.is_effectively_empty()
+                ),
+                "session_memory_updated_at": (
+                    memory.updated_at if memory is not None else ""
+                ),
+                "session_memory_counts": (
+                    memory.counts()
+                    if memory is not None
+                    else {
+                        "active_work_count": 0,
+                        "decisions_count": 0,
+                        "constraints_count": 0,
+                        "open_loops_count": 0,
+                        "important_paths_count": 0,
+                    }
+                ),
+                "orthocal_active": capsule is not None,
+                "orthocal_requested_date": (
+                    capsule.requested_date if capsule is not None else ""
+                ),
+                "orthocal_summary_md_path": (
+                    capsule.summary_md_path if capsule is not None else ""
+                ),
+                "orthocal_updated_at": capsule.updated_at if capsule is not None else "",
+            }
+        )
+        return snapshot
 
     async def _emit_status_snapshot(self) -> Dict[str, Any]:
         return await self._build_runtime_snapshot()
@@ -1246,6 +1514,18 @@ class AgentService:
         history: List[Message],
         compact_system_prompt: str,
     ) -> List[Message]:
+        injected: List[Message] = []
+        if history and history[0].role == "system":
+            injected.append(history[0])
+        if self._session_memory is not None and not self._session_memory.is_effectively_empty():
+            injected.append(
+                Message(
+                    role="system",
+                    content=self._build_session_memory_injection_text(self._session_memory),
+                    timestamp=time.time(),
+                    metadata={"id": str(uuid.uuid4()), "source": "session_memory"},
+                )
+            )
         compact_system = Message(
             role="system",
             content=str(compact_system_prompt or "").strip(),
@@ -1253,7 +1533,7 @@ class AgentService:
             metadata={"id": str(uuid.uuid4()), "mode": "compact"},
         )
         conversation_only = [msg for msg in history if msg.role != "system"]
-        return [compact_system, *conversation_only]
+        return [*injected, compact_system, *conversation_only]
 
     async def _set_status(
         self,
@@ -1522,6 +1802,10 @@ class AgentService:
             )
             return
 
+        if command_name == "orthocal_clear":
+            await self._handle_orthocal_clear_command()
+            return
+
         if command_name == "skills":
             ok, payload_skills, warnings, message = await self._resolve_skill_catalog()
             await self._emit_skill_runtime_warnings(warnings)
@@ -1643,18 +1927,121 @@ class AgentService:
                 )
                 return
 
+            briefing_source = ""
+            summary_text = ""
+            briefing_generation = "fallback"
+            try:
+                summary_md_path = Path(
+                    str(getattr(result, "summary_md_path", "") or "")
+                ).resolve(strict=False)
+                if summary_md_path.exists():
+                    summary_text = summary_md_path.read_text(encoding="utf-8").strip()
+                briefing_source = self._build_orthocal_briefing_source(
+                    result,
+                    summary_text,
+                )
+                orthocal_prompt = load_prompt_template(
+                    ORTHOCAL_BRIEFING_PROMPT_TEMPLATE_FILENAME
+                )
+                prep_history: List[Message] = []
+                base_system = self._context.get_system_prompt()
+                if base_system is not None:
+                    prep_history.append(base_system)
+                prep_history.extend(
+                    [
+                        Message(
+                            role="system",
+                            content=str(orthocal_prompt or "").strip(),
+                            timestamp=time.time(),
+                            metadata={"id": str(uuid.uuid4()), "mode": "orthocal"},
+                        ),
+                        Message(
+                            role="user",
+                            content=briefing_source,
+                            timestamp=time.time(),
+                            metadata={"id": str(uuid.uuid4()), "mode": "orthocal_source"},
+                        ),
+                    ]
+                )
+                await self._set_status(
+                    AgentState.THINKING,
+                    "Preparing Orthocal session briefing...",
+                    turn_id=turn_id,
+                    round_index=1,
+                )
+                prep_response = await self._run_internal_model_pass(
+                    history=prep_history,
+                    turn_id=turn_id,
+                    round_index=1,
+                )
+                generated_briefing = str(prep_response.content or "").strip()
+                if generated_briefing and not list(prep_response.tool_calls or []):
+                    self._orthocal_capsule = self._create_orthocal_capsule(
+                        result,
+                        generated_briefing,
+                    )
+                    briefing_generation = "model"
+                else:
+                    self._orthocal_capsule = self._create_orthocal_capsule(
+                        result,
+                        self._build_deterministic_orthocal_briefing(result, summary_text),
+                    )
+            except Exception as exc:
+                log_exception(
+                    self._logger,
+                    logging.WARNING,
+                    "Orthocal briefing generation failed; using fallback briefing",
+                    exc,
+                )
+                self._orthocal_capsule = self._create_orthocal_capsule(
+                    result,
+                    self._build_deterministic_orthocal_briefing(result, summary_text),
+                )
+
             await self._set_status(
                 AgentState.IDLE,
                 "Ready",
                 turn_id=turn_id,
-                round_index=0,
+                round_index=1,
             )
-            self._stage_orthocal_summary_for_next_turn(result)
+            capsule = self._orthocal_capsule
+            command_data = result.to_command_data()
+            if capsule is not None:
+                capsule_payload = capsule.to_dict()
+                for key, value in capsule_payload.items():
+                    if key in {"readings_count", "stories_count"} and key in command_data:
+                        command_data[f"capsule_{key}"] = value
+                        continue
+                    if key in command_data and command_data.get(key) not in (None, "", []):
+                        continue
+                    command_data[key] = value
+                command_data["briefing_preview"] = self._truncate_preview(
+                    capsule.briefing_text
+                )
+                command_data["briefing_generation"] = briefing_generation
             await self._emit_command_result(
                 "orthocal",
                 True,
-                result.summary_message(),
-                result.to_command_data(),
+                result.summary_message() + " Session Orthocal briefing activated.",
+                command_data,
+            )
+
+    async def _handle_orthocal_clear_command(self) -> None:
+        async with self._request_lock:
+            had_capsule = self._orthocal_capsule is not None
+            self._clear_orthocal_capsule()
+            await self._emit_command_result(
+                "orthocal",
+                True,
+                (
+                    "Orthocal session briefing cleared."
+                    if had_capsule
+                    else "No active Orthocal session briefing to clear."
+                ),
+                {
+                    "active": False,
+                    "cleared": had_capsule,
+                },
             )
 
     async def _handle_compact_command(self) -> None:
@@ -1679,16 +2066,13 @@ class AgentService:
                     turn_id=turn_id,
                     round_index=0,
                 )
-                response = await self._run_model_pass(
-                    base_history=history,
-                    full_history=compact_history,
+                response = await self._run_internal_model_pass(
+                    history=compact_history,
                     turn_id=turn_id,
                     round_index=0,
-                    persist_pruned_history=False,
-                    include_runtime_injections=False,
                 )
-                summary = str(response.content or "").strip()
-                if not summary:
+                memory = self._parse_session_memory_state(str(response.content or ""))
+                if memory is None:
                     await self._set_status(
                         AgentState.IDLE,
                         "Ready",
@@ -1698,28 +2082,13 @@ class AgentService:
                     await self._emit_command_result(
                         "compact",
                         False,
-                        "Compaction produced an empty summary. Context unchanged.",
+                        "Compaction did not produce valid session memory. Context unchanged.",
                     )
                     return
 
                 await self._context.reset()
-                normal_system_prompt = str(getattr(self._settings, "system_prompt", "")).strip()
-                if not normal_system_prompt:
-                    current_system = self._context.get_system_prompt()
-                    normal_system_prompt = str(
-                        getattr(current_system, "content", "") or ""
-                    ).strip()
-                if normal_system_prompt:
-                    await self._context.set_system_prompt_text(normal_system_prompt)
-
-                stats = await self._context.add_assistant_pass(
-                    content=summary,
-                    thinking="",
-                    pass_id=f"compact-{response.pass_id or uuid.uuid4()}",
-                    tokens=max(1, int(response.tokens or 0)),
-                    tool_call_count=0,
-                    tool_calls=[],
-                )
+                self._session_memory = memory
+                stats = await self._resolve_context_stats()
                 await self._emit_context_update(stats, turn_id=turn_id, round_index=1)
                 await self._set_status(
                     AgentState.IDLE,
@@ -1730,13 +2099,8 @@ class AgentService:
                 await self._emit_command_result(
                     "compact",
                     True,
-                    "Context compacted and reset successfully.",
-                    {
-                        "summary_chars": len(summary),
-                        "summary_tokens": max(1, int(response.tokens or 0)),
-                        "message_count": stats.message_count,
-                        "total_tokens": stats.total_tokens,
-                    },
+                    "Context compacted into session memory and raw history was cleared.",
+                    self._build_compact_command_payload(memory),
                 )
             except Exception as exc:
                 if self._state.current != AgentState.IDLE:
@@ -1802,6 +2166,8 @@ class AgentService:
         Handle context reset command.
         """
         try:
+            self._clear_session_memory()
+            self._clear_orthocal_capsule()
             # Reset the context coordinator
             await self._context.reset()
             stats = await self._resolve_context_stats()

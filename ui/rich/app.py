@@ -530,6 +530,18 @@ class RichPromptToolkitUI:
         if command == "metrics" and ok:
             self._renderer.render_metrics_snapshot(payload)
             return
+        if command == "compact" and ok:
+            self._renderer.render_info(message)
+            self._renderer.render_compact_result(payload)
+            return
+        if command == "orthocal" and ok:
+            self._renderer.render_info(message)
+            if payload and (
+                bool(payload.get("active", False))
+                or bool(str(payload.get("summary_md_path", "") or "").strip())
+            ):
+                self._renderer.render_orthocal_result(payload)
+            return
         if not message:
             return
         if ok:

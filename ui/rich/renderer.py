@@ -257,7 +257,7 @@ class RichRenderer:
         self._console.print("═" * 50, style="monk.border")
         self._console.print("  Protocol Monk", style="monk.text")
         self._console.print(
-            "  Enter submits | /aa /reset /status /compact /orthocal | quit|exit|bye sign off",
+            "  Enter submits | /aa /reset /status /compact /orthocal [/clear|date] | quit|exit|bye sign off",
             style="muted",
         )
         self._console.print("═" * 50, style="monk.border")
@@ -374,6 +374,9 @@ class RichRenderer:
 
     def render_status_snapshot(self, payload: Mapping[str, Any]) -> None:
         """Render a concise status snapshot for /status command."""
+        memory_counts = payload.get("session_memory_counts")
+        if not isinstance(memory_counts, Mapping):
+            memory_counts = {}
         rows = [
             ("Provider", str(payload.get("provider", ""))),
             ("Model", str(payload.get("model", ""))),
@@ -401,6 +404,31 @@ class RichRenderer:
                 "Auto-Approve",
                 "enabled" if bool(payload.get("auto_confirm", False)) else "disabled",
             ),
+            (
+                "Session Memory",
+                (
+                    f"active ({payload.get('session_memory_updated_at', '')})"
+                    if bool(payload.get("session_memory_active", False))
+                    else "inactive"
+                ),
+            ),
+            (
+                "Memory Loops",
+                str(memory_counts.get("open_loops_count", 0)),
+            ),
+            (
+                "Memory Paths",
+                str(memory_counts.get("important_paths_count", 0)),
+            ),
+            (
+                "Orthocal",
+                (
+                    f"active ({payload.get('orthocal_requested_date', '')})"
+                    if bool(payload.get("orthocal_active", False))
+                    else "inactive"
+                ),
+            ),
+            ("Orthocal Path", str(payload.get("orthocal_summary_md_path", ""))),
         ]
 
         table = Table(
@@ -488,6 +516,84 @@ class RichRenderer:
             Panel(
                 Group(*renderables),
                 title="[tech.cyan]Metrics[/]",
+                border_style="tech.cyan",
+                box=box.ROUNDED,
+                padding=(0, 1),
+            )
+        )
+
+    def render_compact_result(self, payload: Mapping[str, Any]) -> None:
+        rows = [
+            ("Updated", str(payload.get("updated_at", ""))),
+            ("Active Work", str(payload.get("active_work_count", 0))),
+            ("Decisions", str(payload.get("decisions_count", 0))),
+            ("Constraints", str(payload.get("constraints_count", 0))),
+            ("Open Loops", str(payload.get("open_loops_count", 0))),
+            ("Important Paths", str(payload.get("important_paths_count", 0))),
+        ]
+        table = Table(
+            Column("Field", style="user.text", no_wrap=True),
+            Column("Value", style="monk.text"),
+            show_header=False,
+            box=None,
+            padding=(0, 2),
+        )
+        for label, value in rows:
+            table.add_row(label, value)
+
+        preview = str(payload.get("brief_preview", "") or "").strip()
+        renderables: list[RenderableType] = [table]
+        if preview:
+            renderables.extend(
+                [
+                    Text(""),
+                    Text("Carry Forward Summary", style="tool"),
+                    Text(preview, style="monk.text"),
+                ]
+            )
+        self._emit(
+            Panel(
+                Group(*renderables),
+                title="[tech.cyan]Session Memory[/]",
+                border_style="tech.cyan",
+                box=box.ROUNDED,
+                padding=(0, 1),
+            )
+        )
+
+    def render_orthocal_result(self, payload: Mapping[str, Any]) -> None:
+        rows = [
+            ("Requested Date", str(payload.get("requested_date", ""))),
+            ("Calendar", str(payload.get("calendar", ""))),
+            ("Summary File", str(payload.get("summary_md_path", ""))),
+            ("Readings", str(payload.get("readings_count", 0))),
+            ("Stories", str(payload.get("stories_count", 0))),
+            ("Briefing", str(payload.get("briefing_generation", ""))),
+        ]
+        table = Table(
+            Column("Field", style="user.text", no_wrap=True),
+            Column("Value", style="monk.text"),
+            show_header=False,
+            box=None,
+            padding=(0, 2),
+        )
+        for label, value in rows:
+            table.add_row(label, value)
+
+        renderables: list[RenderableType] = [table]
+        preview = str(payload.get("briefing_preview", "") or "").strip()
+        if preview:
+            renderables.extend(
+                [
+                    Text(""),
+                    Text("Briefing Preview", style="tool"),
+                    Text(preview, style="monk.text"),
+                ]
+            )
+        self._emit(
+            Panel(
+                Group(*renderables),
+                title="[tech.cyan]Orthocal Session Briefing[/]",
                 border_style="tech.cyan",
                 box=box.ROUNDED,
                 padding=(0, 1),

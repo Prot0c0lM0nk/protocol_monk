@@ -125,7 +125,7 @@ class PromptToolkitCLI:
         print("Protocol Monk CLI")
         print("Press Enter to submit")
         print(
-            "Slash commands: /aa /reset /status /metrics /compact /orthocal /skills "
+            "Slash commands: /aa /reset /status /metrics /compact /orthocal [date|clear] /skills "
             "/activate-skill /deactivate-skill"
         )
         print("Type 'quit', 'exit', or 'bye' to sign off")
@@ -447,6 +447,9 @@ class PromptToolkitCLI:
         payload = data.get("data") if isinstance(data.get("data"), dict) else {}
 
         if command == "status" and ok:
+            memory_counts = payload.get("session_memory_counts")
+            if not isinstance(memory_counts, dict):
+                memory_counts = {}
             rows = [
                 ("Provider", payload.get("provider", "")),
                 ("Model", payload.get("model", "")),
@@ -465,6 +468,25 @@ class PromptToolkitCLI:
                     "Auto-Approve",
                     "enabled" if bool(payload.get("auto_confirm", False)) else "disabled",
                 ),
+                (
+                    "Session Memory",
+                    (
+                        f"active ({payload.get('session_memory_updated_at', '')})"
+                        if bool(payload.get("session_memory_active", False))
+                        else "inactive"
+                    ),
+                ),
+                ("Memory Loops", memory_counts.get("open_loops_count", 0)),
+                ("Memory Paths", memory_counts.get("important_paths_count", 0)),
+                (
+                    "Orthocal",
+                    (
+                        f"active ({payload.get('orthocal_requested_date', '')})"
+                        if bool(payload.get("orthocal_active", False))
+                        else "inactive"
+                    ),
+                ),
+                ("Orthocal Path", payload.get("orthocal_summary_md_path", "")),
             ]
             print()
             print(f"{Colors.INFO}Status{Colors.RESET}")
@@ -504,6 +526,48 @@ class PromptToolkitCLI:
                         f"total={record.get('total_tokens', 'n/a')} "
                         f"delta={record.get('prompt_token_delta', 'n/a')}"
                     )
+            print()
+            return
+
+        if command == "compact" and ok:
+            print(f"{Colors.INFO}  ℹ {message}{Colors.RESET}")
+            rows = [
+                ("Updated", payload.get("updated_at", "")),
+                ("Active Work", payload.get("active_work_count", 0)),
+                ("Decisions", payload.get("decisions_count", 0)),
+                ("Constraints", payload.get("constraints_count", 0)),
+                ("Open Loops", payload.get("open_loops_count", 0)),
+                ("Important Paths", payload.get("important_paths_count", 0)),
+            ]
+            print(f"{Colors.INFO}Session Memory{Colors.RESET}")
+            for label, value in rows:
+                print(f"{Colors.DIM}  {label:<17}{Colors.RESET} {value}")
+            preview = str(payload.get("brief_preview", "") or "").strip()
+            if preview:
+                print(f"{Colors.DIM}  Carry Summary{Colors.RESET} {preview}")
+            print()
+            return
+
+        if command == "orthocal" and ok:
+            print(f"{Colors.INFO}  ℹ {message}{Colors.RESET}")
+            if bool(payload.get("active", False)) or bool(
+                str(payload.get("summary_md_path", "") or "").strip()
+            ):
+                rows = [
+                    ("Requested Date", payload.get("requested_date", "")),
+                    ("Calendar", payload.get("calendar", "")),
+                    ("Summary File", payload.get("summary_md_path", "")),
+                    ("Readings", payload.get("readings_count", 0)),
+                    ("Stories", payload.get("stories_count", 0)),
+                    ("Briefing", payload.get("briefing_generation", "")),
+                ]
+                print(f"{Colors.INFO}Orthocal Session Briefing{Colors.RESET}")
+                for label, value in rows:
+                    print(f"{Colors.DIM}  {label:<17}{Colors.RESET} {value}")
+                preview = str(payload.get("briefing_preview", "") or "").strip()
+                if preview:
+                    print(f"{Colors.DIM}  Briefing Preview{Colors.RESET}")
+                    print(preview)
             print()
             return
 

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 
 # --- 0. Provider Signals (The New Stream Contract) ---
@@ -122,6 +123,106 @@ class Message:
     tool_call_id: Optional[str] = None  # For role="tool" messages
     tool_calls: Optional[List[Dict[str, Any]]] = None  # For role="assistant" messages
     name: Optional[str] = None  # Tool name (for role="tool" messages)
+
+
+@dataclass(frozen=True)
+class OrthocalContextFile:
+    """Compact metadata for a prepared Orthocal bundle file."""
+
+    index: int
+    title: str
+    path: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "index": int(self.index),
+            "title": str(self.title),
+            "path": str(self.path),
+        }
+
+
+@dataclass
+class SessionMemoryState:
+    """Session-scoped working memory, separate from raw chat history."""
+
+    session_goal: str = ""
+    active_work: List[str] = field(default_factory=list)
+    decisions: List[str] = field(default_factory=list)
+    constraints: List[str] = field(default_factory=list)
+    open_loops: List[str] = field(default_factory=list)
+    important_paths: List[str] = field(default_factory=list)
+    carry_forward_summary: str = ""
+    updated_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+
+    def counts(self) -> Dict[str, int]:
+        return {
+            "active_work_count": len(self.active_work),
+            "decisions_count": len(self.decisions),
+            "constraints_count": len(self.constraints),
+            "open_loops_count": len(self.open_loops),
+            "important_paths_count": len(self.important_paths),
+        }
+
+    def is_effectively_empty(self) -> bool:
+        return not any(
+            [
+                str(self.session_goal).strip(),
+                any(str(item).strip() for item in self.active_work),
+                any(str(item).strip() for item in self.decisions),
+                any(str(item).strip() for item in self.constraints),
+                any(str(item).strip() for item in self.open_loops),
+                any(str(item).strip() for item in self.important_paths),
+                str(self.carry_forward_summary).strip(),
+            ]
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = {
+            "session_goal": str(self.session_goal),
+            "active_work": list(self.active_work),
+            "decisions": list(self.decisions),
+            "constraints": list(self.constraints),
+            "open_loops": list(self.open_loops),
+            "important_paths": list(self.important_paths),
+            "carry_forward_summary": str(self.carry_forward_summary),
+            "updated_at": str(self.updated_at),
+        }
+        payload.update(self.counts())
+        payload["active"] = not self.is_effectively_empty()
+        return payload
+
+
+@dataclass
+class OrthocalContextCapsule:
+    """Prepared Orthocal context kept active for the current session."""
+
+    requested_date: str
+    calendar: str
+    source_url: str
+    summary_md_path: str
+    reading_files: List[OrthocalContextFile] = field(default_factory=list)
+    story_files: List[OrthocalContextFile] = field(default_factory=list)
+    briefing_text: str = ""
+    updated_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "active": True,
+            "requested_date": str(self.requested_date),
+            "calendar": str(self.calendar),
+            "source_url": str(self.source_url),
+            "summary_md_path": str(self.summary_md_path),
+            "reading_files": [item.to_dict() for item in self.reading_files],
+            "story_files": [item.to_dict() for item in self.story_files],
+            "readings_count": len(self.reading_files),
+            "stories_count": len(self.story_files),
+            "briefing_text": str(self.briefing_text),
+            "updated_at": str(self.updated_at),
+        }
 
 
 @dataclass

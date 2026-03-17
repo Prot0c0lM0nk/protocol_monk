@@ -10,6 +10,7 @@ from typing import Any
 AUTO_CONFIRM_ALIASES = {"/aa", "/auto-approve", "/autoapprove"}
 SIGNOFF_KEYWORDS = {"quit", "exit", "bye"}
 COMPACT_PROMPT_TEMPLATE_FILENAME = "compact_system_prompt.txt"
+ORTHOCAL_BRIEFING_PROMPT_TEMPLATE_FILENAME = "orthocal_briefing_prompt.txt"
 SESSION_SIGNOFF_PROMPT_FILENAME = "session_signoff_prompt.txt"
 
 _DEFAULT_SIGNOFF_PROMPT = (
@@ -113,6 +114,9 @@ def parse_slash_command(text: str) -> SlashCommandParseResult:
     if command_text == "/orthocal":
         if not args:
             result.command = "orthocal"
+            return result
+        if len(args) == 1 and args[0] == "clear":
+            result.command = "orthocal_clear"
             return result
         if len(args) != 1:
             result.error = "Usage: /orthocal [YYYY-MM-DD]"
