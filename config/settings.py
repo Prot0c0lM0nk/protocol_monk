@@ -30,7 +30,6 @@ class ResolvedPaths:
     state_home: Path
     ollama_models_json: Path
     openrouter_models_json: Path
-    openrouter_example_json: Path
     skills_root: Path
     scratch_root: Path
 
@@ -159,9 +158,6 @@ class Settings(BaseSettings):
             state_home=state_home,
             ollama_models_json=self.models_json_path,
             openrouter_models_json=self.openrouter_models_json_path,
-            openrouter_example_json=(
-                self.project_root / "protocol_monk" / "config" / "openrouter_models.example.json"
-            ).resolve(strict=False),
             skills_root=(self.project_root / "skills").resolve(strict=False),
             scratch_root=self.workspace,
         )
@@ -277,15 +273,11 @@ class Settings(BaseSettings):
         if target.exists():
             return
 
-        example = self.resolved_paths.openrouter_example_json
-        if not example.exists():
-            raise ConfigError(
-                f"OpenRouter example model map not found: {example}"
-            )
-
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(example, target)
-        logger.info("Seeded OpenRouter model map from %s to %s", example, target)
+        raise ConfigError(
+            f"OpenRouter curated model map not found: {target}. "
+            "Create or restore protocol_monk/config/openrouter_models.json, "
+            "or set OPENROUTER_MODELS_JSON_PATH to a valid curated map."
+        )
 
     async def initialize(self) -> None:
         """

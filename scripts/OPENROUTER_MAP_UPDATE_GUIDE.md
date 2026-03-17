@@ -11,8 +11,7 @@ The updater script:
 ## File Paths
 
 - Script: `protocol_monk/scripts/fetch_openrouter_model_config.py`
-- Default runtime map: `protocol_monk/config/openrouter_models.json`
-- Example map: `protocol_monk/config/openrouter_models.example.json`
+- Curated runtime map: `protocol_monk/config/openrouter_models.json`
 
 ## Prerequisites
 
@@ -57,8 +56,7 @@ python -m protocol_monk.scripts.fetch_openrouter_model_config \
 ```bash
 python -m protocol_monk.scripts.fetch_openrouter_model_config \
   --model z-ai/glm-5 \
-  --model mistralai/ministral-14b-2512 \
-  --sync-example
+  --model mistralai/ministral-14b-2512
 ```
 
 3. Validate map loads cleanly in app startup:
@@ -103,8 +101,6 @@ python -m protocol_monk.scripts.fetch_openrouter_model_config \
 - `--model <id>`: Repeatable. Required.
 - `--default-model <id>`: Force default model after update.
 - `--output <path>`: Write the runtime map to a different file.
-- `--sync-example`: Also update `protocol_monk/config/openrouter_models.example.json`.
-- `--example-output <path>`: Override the example map path used by `--sync-example`.
 - `--base-url <url>`: Override API base URL.
 - `--api-key <key>`: Override env API key.
 - `--timeout <seconds>`: HTTP timeout.

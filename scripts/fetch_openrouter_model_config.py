@@ -50,16 +50,6 @@ def _parse_args() -> argparse.Namespace:
         help="Output map path. Defaults to the resolved OpenRouter runtime map path.",
     )
     parser.add_argument(
-        "--sync-example",
-        action="store_true",
-        help="Also update the tracked openrouter_models.example.json seed file.",
-    )
-    parser.add_argument(
-        "--example-output",
-        default="",
-        help="Optional example map path when --sync-example is used.",
-    )
-    parser.add_argument(
         "--base-url",
         default="https://openrouter.ai/api/v1",
         help="OpenRouter API base URL.",
@@ -110,18 +100,12 @@ def _write_json(path: Path, payload: dict) -> None:
     )
 
 
-def _sync_example_map(path: Path, config: dict) -> None:
-    _write_json(path, config)
-    logger.info("Saved OpenRouter example model map to %s", path)
-
-
 def _print_summary(
     config: dict,
     requested_models: List[str],
     *,
     dry_run: bool,
     output_path: Path,
-    example_path: Path | None = None,
 ) -> None:
     models = config.get("models", {})
     model_count = len(models) if isinstance(models, dict) else 0
@@ -130,8 +114,6 @@ def _print_summary(
     print(f"Map models count: {model_count}")
     print(f"Default model: {config.get('default_model', '')}")
     print(f"Runtime map: {output_path}")
-    if example_path is not None:
-        print(f"Example map: {example_path}")
     if dry_run:
         print("Dry run: no file was written.")
 
@@ -150,15 +132,6 @@ def main() -> int:
         args.output,
         project_root=settings.project_root,
         default_path=settings.openrouter_models_json_path,
-    )
-    example_path = (
-        _resolve_output_path(
-            args.example_output,
-            project_root=settings.project_root,
-            default_path=settings.resolved_paths.openrouter_example_json,
-        )
-        if args.sync_example
-        else None
     )
     api_key = str(args.api_key or settings.openrouter_api_key or "").strip()
     requested_default = str(args.default_model or "").strip() or None
@@ -180,14 +153,11 @@ def main() -> int:
         if not args.dry_run:
             _write_json(output_path, config)
             logger.info("Saved OpenRouter model map to %s", output_path)
-            if example_path is not None:
-                _sync_example_map(example_path, config)
         _print_summary(
             config,
             model_ids,
             dry_run=args.dry_run,
             output_path=output_path,
-            example_path=example_path,
         )
         return 0
     except ConfigError as exc:
