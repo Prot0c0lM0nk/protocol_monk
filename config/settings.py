@@ -5,7 +5,6 @@ import logging
 import os
 import shutil
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -116,6 +115,7 @@ class Settings(BaseSettings):
 
     _models_json_path_overridden: bool = PrivateAttr(default=False)
     _openrouter_models_json_path_overridden: bool = PrivateAttr(default=False)
+    _active_model_alias_explicit: bool = PrivateAttr(default=False)
 
     @model_validator(mode="after")
     def validate_and_compute(self) -> "Settings":
@@ -175,6 +175,9 @@ class Settings(BaseSettings):
         self._openrouter_models_json_path_overridden = (
             "OPENROUTER_MODELS_JSON_PATH" in env_keys
         )
+        self._active_model_alias_explicit = "ACTIVE_MODEL_ALIAS" in env_keys and bool(
+            str(self.active_model_alias or "").strip()
+        )
 
     def apply_session_choices(
         self,
@@ -190,6 +193,7 @@ class Settings(BaseSettings):
             self.workspace = _resolve_path(workspace, self.project_root)
         if model is not None:
             self.active_model_alias = model
+            self._active_model_alias_explicit = bool(str(model or "").strip())
 
         if self.resolved_paths is not None:
             self.resolved_paths.workspace_root = self.workspace
@@ -289,6 +293,8 @@ class Settings(BaseSettings):
     async def _discover_models(self) -> None:
         """Load model config for the selected provider."""
         self.last_model_load_error = None
+        self.models_config = None
+        self._active_model_config = {}
         try:
             if self.llm_provider == "openrouter":
                 logger.info("Loading OpenRouter model map...")
@@ -309,6 +315,10 @@ class Settings(BaseSettings):
                 self._set_active_model(self.active_model_alias)
             elif model_config.get("default_model"):
                 self._set_active_model(model_config["default_model"])
+            else:
+                raise ConfigError(
+                    f"No default model is configured for provider '{self.llm_provider}'."
+                )
 
             logger.info(
                 "Model configuration loaded for provider '%s'. Active model: %s",
@@ -322,12 +332,12 @@ class Settings(BaseSettings):
             raise
         except Exception as exc:
             self.last_model_load_error = str(exc)
+            self.models_config = None
+            self._active_model_config = {}
             logger.error("Model configuration loading failed: %s", exc)
             if self.llm_provider == "openrouter":
-                self.models_config = None
                 raise ConfigError(f"Failed to load OpenRouter model map: {exc}") from exc
-            self.models_config = self._create_fallback_model_config()
-            self._set_active_model(self.models_config.get("default_model", ""))
+            raise ConfigError(f"Failed to discover Ollama models: {exc}") from exc
 
     async def reload_models_for_provider(self, provider: str) -> None:
         """Reload model config for a specific provider."""
@@ -352,6 +362,10 @@ class Settings(BaseSettings):
             return
 
         models = self.models_config.get("models", {})
+        if not isinstance(models, dict) or not models:
+            raise ConfigError(
+                f"Resolved model map for provider '{self.llm_provider}' does not contain any models."
+            )
 
         if model_alias in models:
             self._active_model_config = models[model_alias]
@@ -364,47 +378,21 @@ class Settings(BaseSettings):
                 self.active_model_name = name
                 return
 
-        logger.warning("Model '%s' not found. Using default.", model_alias)
+        if self._active_model_alias_explicit and str(model_alias or "").strip():
+            raise ConfigError(
+                f"ACTIVE_MODEL_ALIAS '{model_alias}' was not found in the resolved "
+                f"{self.llm_provider} model map."
+            )
+
         default = self.models_config.get("default_model")
         if default and default in models:
             self._active_model_config = models[default]
             self.active_model_name = default
+            return
 
-    def _create_fallback_model_config(self) -> Dict[str, Any]:
-        """Create minimal fallback config if model loading fails."""
-        return {
-            "version": "1.0",
-            "last_updated": datetime.now().isoformat(),
-            "default_model": "llama2",
-            "families": {
-                "llama": {
-                    "supports_thinking": False,
-                    "supports_tools": True,
-                    "avg_chars_per_token": 4.0,
-                    "default_params": {
-                        "temperature": 0.7,
-                        "top_p": 0.9,
-                        "num_predict": 2048,
-                    },
-                }
-            },
-            "models": {
-                "llama2": {
-                    "name": "llama2",
-                    "family": "llama",
-                    "context_window": 4096,
-                    "supports_thinking": False,
-                    "supports_tools": True,
-                    "parameters": {
-                        "temperature": 0.7,
-                        "top_p": 0.9,
-                        "num_predict": 2048,
-                    },
-                    "discovered_at": datetime.now().isoformat(),
-                    "user_overrides": {},
-                }
-            },
-        }
+        raise ConfigError(
+            f"Resolved model map for provider '{self.llm_provider}' did not yield a usable active model."
+        )
 
     @property
     def workspace_root(self) -> Path:
@@ -473,6 +461,7 @@ def load_settings(base_path: Optional[Path] = None) -> Settings:
         for key in (
             "MODELS_JSON_PATH",
             "OPENROUTER_MODELS_JSON_PATH",
+            "ACTIVE_MODEL_ALIAS",
         )
         if key in os.environ
     }

@@ -5,6 +5,7 @@ from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
 from protocol_monk.config.settings import Settings
 from protocol_monk.tools.output_contract import build_process_output
+from protocol_monk.tools.shell_operations.process_runner import run_shell_command
 
 
 class ExecuteCommandTool(BaseTool):
@@ -50,11 +51,6 @@ class ExecuteCommandTool(BaseTool):
         return True  # Shell commands are dangerous!
 
     async def run(self, **kwargs) -> Any:
-        # Note: In a real async system, we should use asyncio.create_subprocess_shell
-        # But to keep logic consistent with your existing code, we wrap the sync call.
-        return self._execute_sync(**kwargs)
-
-    def _execute_sync(self, **kwargs) -> Dict[str, Any]:
         command = kwargs.get("command", "").strip()
         description = kwargs.get("description", "").strip()
         timeout = kwargs.get("timeout", 30)
@@ -75,15 +71,10 @@ class ExecuteCommandTool(BaseTool):
             )
 
         try:
-            # We enforce CWD to be the workspace
-            result = subprocess.run(
+            result = await run_shell_command(
                 command,
-                shell=True,
                 cwd=self.working_dir,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
+                timeout_seconds=timeout,
             )
 
             if result.returncode != 0:
@@ -115,6 +106,12 @@ class ExecuteCommandTool(BaseTool):
             )
 
         except subprocess.TimeoutExpired:
+            raise ToolError(
+                f"Command timed out after {timeout}s",
+                user_hint=f"Command timed out after {timeout}s.",
+                details={"command": command, "timeout": timeout},
+            )
+        except TimeoutError:
             raise ToolError(
                 f"Command timed out after {timeout}s",
                 user_hint=f"Command timed out after {timeout}s.",

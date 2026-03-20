@@ -47,9 +47,8 @@ class ToolRegistry:
                     self._logger.warning(...)
                 self._tools[tool.name] = tool
         """
-        # TODO: Add phase boundary check
-        # if self._sealed:
-        #     raise RuntimeError("Cannot register tools after registry is sealed")
+        if self._sealed:
+            raise RuntimeError("Cannot register tools after registry is sealed")
 
         if tool.name in self._tools:
             self._logger.warning(f"Overwriting existing tool: {tool.name}")
@@ -65,7 +64,6 @@ class ToolRegistry:
         - This prevents accidental late writes during runtime
         - Makes the "initialization vs runtime" contract explicit
 
-        TODO: Call this in main.py after all tools are registered
         """
         self._sealed = True
         self._logger.info(f"Registry sealed with {len(self._tools)} tools")

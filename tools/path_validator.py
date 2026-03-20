@@ -1,6 +1,5 @@
-import os
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union
 from protocol_monk.exceptions.tools import ToolError
 
 
@@ -37,8 +36,11 @@ class PathValidator:
 
         try:
             # 2. Resolve: Handle relative paths against workspace
-            target_path = (self.workspace_root / clean_str).resolve()
-        except Exception as e:
+            raw_path = Path(clean_str).expanduser()
+            if not raw_path.is_absolute():
+                raw_path = self.workspace_root / raw_path
+            target_path = raw_path.resolve(strict=False)
+        except Exception:
             raise ToolError(
                 f"Invalid path format: {clean_str}",
                 user_hint="The file path format is invalid.",
@@ -46,7 +48,7 @@ class PathValidator:
 
         # 3. Confinement Check (Jail)
         # Ensure the target is actually inside the workspace
-        if not str(target_path).startswith(str(self.workspace_root)):
+        if not target_path.is_relative_to(self.workspace_root):
             raise ToolError(
                 f"Access denied: {clean_str}",
                 user_hint="I cannot access files outside the active workspace.",

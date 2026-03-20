@@ -5,6 +5,7 @@ from pathlib import Path
 
 # 1. Import Config
 from protocol_monk.config.settings import load_settings
+from protocol_monk.exceptions.config import ConfigError
 from protocol_monk.exceptions.base import log_exception
 
 # 2. Import Protocol Layer
@@ -72,6 +73,36 @@ def _apply_rich_log_suppression(ui_backend: str, root_level: int) -> None:
         logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
+def _log_startup_diagnostics(settings) -> None:
+    logger.info(
+        (
+            "Startup diagnostics: provider=%s active_model=%s workspace=%s "
+            "ollama_model_map=%s openrouter_model_map=%s"
+        ),
+        getattr(settings, "llm_provider", "unknown"),
+        getattr(settings, "active_model_name", "unknown"),
+        getattr(settings, "workspace_root", getattr(settings, "workspace", "unknown")),
+        getattr(settings, "models_json_path", "unknown"),
+        getattr(settings, "openrouter_models_json_path", "unknown"),
+    )
+
+
+async def _validate_provider_ready(provider, settings) -> None:
+    provider_name = getattr(settings, "llm_provider", "unknown")
+    active_model = getattr(settings, "active_model_name", "unknown")
+    try:
+        is_ready = await provider.validate_connection()
+    except Exception as exc:
+        raise ConfigError(
+            f"Provider '{provider_name}' failed readiness check for model '{active_model}': {exc}"
+        ) from exc
+
+    if not is_ready:
+        raise ConfigError(
+            f"Provider '{provider_name}' is unavailable or not authenticated for model '{active_model}'."
+        )
+
+
 def _validate_context_tracking_tools(registry: ToolRegistry) -> tuple[list[str], list[str]]:
     expected = sorted(
         {ContextCoordinator.FILE_READ_TOOL, *ContextCoordinator.FILE_MUTATION_TOOLS}
@@ -113,6 +144,10 @@ async def run_session_app(
 
         # Initialize provider/model state only after setup choices are applied.
         await settings.initialize()
+        _log_startup_diagnostics(settings)
+
+        provider = create_provider(settings)
+        await _validate_provider_ready(provider, settings)
 
         ui_backend, ui_note = _resolve_ui_backend(requested_ui_backend)
         _apply_rich_log_suppression(ui_backend, root_level)
@@ -193,7 +228,6 @@ async def run_session_app(
         registry.seal()
 
         # C. The Provider (The Model Interface)
-        provider = create_provider(settings)
         await bus.emit(
             EventTypes.INFO,
             {
@@ -201,6 +235,7 @@ async def run_session_app(
                 "data": {
                     "provider": settings.llm_provider,
                     "active_model": settings.active_model_name,
+                    "connection_validated": True,
                 },
             },
         )
@@ -224,6 +259,8 @@ async def run_session_app(
                     "provider": settings.llm_provider,
                     "active_model": settings.active_model_name,
                     "workspace": str(settings.workspace_root),
+                    "ollama_model_map": str(settings.models_json_path),
+                    "openrouter_model_map": str(settings.openrouter_models_json_path),
                 },
             },
         )

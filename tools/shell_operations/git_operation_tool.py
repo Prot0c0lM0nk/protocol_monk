@@ -5,6 +5,7 @@ from protocol_monk.config.settings import Settings
 from protocol_monk.exceptions.tools import ToolError
 from protocol_monk.tools.base import BaseTool
 from protocol_monk.tools.output_contract import build_git_operation_output
+from protocol_monk.tools.shell_operations.process_runner import run_exec_command
 
 
 class GitOperationTool(BaseTool):
@@ -70,10 +71,10 @@ class GitOperationTool(BaseTool):
         if operation == "commit" and commit_msg:
             command[-1] = commit_msg
 
-        before_state = self._capture_before_state(operation)
+        before_state = await self._capture_before_state(operation)
 
         try:
-            result = self._run_git(command, timeout=60)
+            result = await self._run_git(command, timeout=60)
 
             if result.returncode != 0:
                 raise ToolError(
@@ -88,7 +89,7 @@ class GitOperationTool(BaseTool):
                     },
                 )
 
-            git_result, summary = self._build_git_result(
+            git_result, summary = await self._build_git_result(
                 operation=operation,
                 primary_result=result,
                 before_state=before_state,
@@ -114,7 +115,7 @@ class GitOperationTool(BaseTool):
                 details={"operation": operation, "error": str(e)},
             )
 
-    def _build_git_result(
+    async def _build_git_result(
         self,
         *,
         operation: str,
@@ -143,7 +144,9 @@ class GitOperationTool(BaseTool):
 
         if operation == "add":
             staged_files = self._parse_name_status_output(
-                self._optional_stdout(["git", "diff", "--cached", "--name-status", "-M"])
+                await self._optional_stdout(
+                    ["git", "diff", "--cached", "--name-status", "-M"]
+                )
             )
             staged_count = len(staged_files)
             return (
@@ -155,8 +158,8 @@ class GitOperationTool(BaseTool):
             )
 
         if operation == "commit":
-            commit_record = self._get_commit_record("HEAD")
-            stats = self._get_commit_stats("HEAD")
+            commit_record = await self._get_commit_record("HEAD")
+            stats = await self._get_commit_stats("HEAD")
             short_hash = commit_record.get("short_hash") if commit_record else None
             subject = commit_record.get("subject") if commit_record else None
             summary = (
@@ -173,7 +176,7 @@ class GitOperationTool(BaseTool):
             )
 
         if operation == "pull":
-            git_result = self._build_pull_result(before_state)
+            git_result = await self._build_pull_result(before_state)
             if git_result["updated"]:
                 summary = f"Pulled updates for {git_result['branch'] or 'current branch'}."
             else:
@@ -181,7 +184,7 @@ class GitOperationTool(BaseTool):
             return git_result, summary
 
         if operation == "push":
-            git_result = self._build_push_result(before_state)
+            git_result = await self._build_push_result(before_state)
             if git_result["updated_remote"] is True:
                 summary = (
                     f"Pushed {git_result['branch'] or 'current branch'} to "
@@ -193,40 +196,40 @@ class GitOperationTool(BaseTool):
 
         return {}, f"Completed git {operation}."
 
-    def _capture_before_state(self, operation: str) -> Dict[str, Any]:
+    async def _capture_before_state(self, operation: str) -> Dict[str, Any]:
         state: Dict[str, Any] = {}
         if operation not in {"pull", "push"}:
             return state
 
-        branch = self._get_current_branch()
-        upstream = self._get_upstream_ref()
+        branch = await self._get_current_branch()
+        upstream = await self._get_upstream_ref()
         remote, remote_branch = self._split_upstream_ref(upstream)
         state.update(
             {
                 "branch": branch,
                 "upstream": upstream,
-                "before_head": self._get_head_commit(),
+                "before_head": await self._get_head_commit(),
                 "remote": remote,
                 "remote_branch": remote_branch or branch,
             }
         )
 
         if operation == "push":
-            state["before_remote_head"] = self._get_remote_head(
+            state["before_remote_head"] = await self._get_remote_head(
                 remote,
                 remote_branch or branch,
             )
 
         return state
 
-    def _build_pull_result(self, before_state: Dict[str, Any]) -> Dict[str, Any]:
+    async def _build_pull_result(self, before_state: Dict[str, Any]) -> Dict[str, Any]:
         before_head = before_state.get("before_head")
-        after_head = self._get_head_commit()
-        upstream = before_state.get("upstream") or self._get_upstream_ref()
+        after_head = await self._get_head_commit()
+        upstream = before_state.get("upstream") or await self._get_upstream_ref()
         remote, upstream_branch = self._split_upstream_ref(upstream)
-        branch = before_state.get("branch") or self._get_current_branch()
+        branch = before_state.get("branch") or await self._get_current_branch()
         observed_branch = branch or upstream_branch
-        conflicts = self._has_unmerged_paths()
+        conflicts = await self._has_unmerged_paths()
 
         updated: Optional[bool]
         if before_head is None and after_head is None:
@@ -238,7 +241,7 @@ class GitOperationTool(BaseTool):
         if updated is False:
             fast_forward = False
         elif before_head and after_head:
-            fast_forward = self._is_ancestor(before_head, after_head)
+            fast_forward = await self._is_ancestor(before_head, after_head)
         else:
             fast_forward = None
 
@@ -252,14 +255,18 @@ class GitOperationTool(BaseTool):
             "conflicts": conflicts,
         }
 
-    def _build_push_result(self, before_state: Dict[str, Any]) -> Dict[str, Any]:
-        upstream = before_state.get("upstream") or self._get_upstream_ref()
+    async def _build_push_result(self, before_state: Dict[str, Any]) -> Dict[str, Any]:
+        upstream = before_state.get("upstream") or await self._get_upstream_ref()
         remote, upstream_branch = self._split_upstream_ref(upstream)
-        branch = before_state.get("branch") or self._get_current_branch() or upstream_branch
+        branch = (
+            before_state.get("branch")
+            or await self._get_current_branch()
+            or upstream_branch
+        )
         observed_remote_branch = before_state.get("remote_branch") or upstream_branch or branch
         before_remote_head = before_state.get("before_remote_head")
-        pushed_head = self._get_head_commit()
-        after_remote_head = self._get_remote_head(remote, observed_remote_branch)
+        pushed_head = await self._get_head_commit()
+        after_remote_head = await self._get_remote_head(remote, observed_remote_branch)
 
         if pushed_head is None or after_remote_head is None:
             updated_remote: Optional[bool] = None
@@ -279,47 +286,52 @@ class GitOperationTool(BaseTool):
             "new_remote_branch": new_remote_branch,
         }
 
-    def _run_git(
+    async def _run_git(
         self,
         command: Sequence[str],
         *,
         timeout: int = 30,
     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
+        result = await run_exec_command(
             list(command),
             cwd=self.working_dir,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=timeout,
+            timeout_seconds=timeout,
+        )
+        return subprocess.CompletedProcess(
+            args=list(command),
+            returncode=result.returncode,
+            stdout=result.stdout,
+            stderr=result.stderr,
         )
 
-    def _optional_stdout(
+    async def _optional_stdout(
         self,
         command: Sequence[str],
         *,
         timeout: int = 30,
     ) -> str:
         try:
-            result = self._run_git(command, timeout=timeout)
+            result = await self._run_git(command, timeout=timeout)
         except Exception:
             return ""
         if result.returncode != 0:
             return ""
         return result.stdout
 
-    def _get_head_commit(self) -> Optional[str]:
-        result = self._optional_stdout(["git", "rev-parse", "HEAD"])
+    async def _get_head_commit(self) -> Optional[str]:
+        result = await self._optional_stdout(["git", "rev-parse", "HEAD"])
         head = result.strip()
         return head or None
 
-    def _get_current_branch(self) -> Optional[str]:
-        branch = self._optional_stdout(["git", "branch", "--show-current"]).strip()
+    async def _get_current_branch(self) -> Optional[str]:
+        branch = (await self._optional_stdout(["git", "branch", "--show-current"])).strip()
         return branch or None
 
-    def _get_upstream_ref(self) -> Optional[str]:
-        upstream = self._optional_stdout(
+    async def _get_upstream_ref(self) -> Optional[str]:
+        upstream = (
+            await self._optional_stdout(
             ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
+            )
         ).strip()
         return upstream or None
 
@@ -329,10 +341,12 @@ class GitOperationTool(BaseTool):
         remote, branch = upstream.split("/", 1)
         return remote or None, branch or None
 
-    def _get_remote_head(self, remote: Optional[str], branch: Optional[str]) -> Optional[str]:
+    async def _get_remote_head(
+        self, remote: Optional[str], branch: Optional[str]
+    ) -> Optional[str]:
         if not remote or not branch:
             return None
-        output = self._optional_stdout(
+        output = await self._optional_stdout(
             ["git", "ls-remote", "--heads", remote, f"refs/heads/{branch}"],
             timeout=60,
         )
@@ -341,17 +355,19 @@ class GitOperationTool(BaseTool):
             return None
         return line.split()[0]
 
-    def _has_unmerged_paths(self) -> Optional[bool]:
-        output = self._optional_stdout(["git", "diff", "--name-only", "--diff-filter=U"])
+    async def _has_unmerged_paths(self) -> Optional[bool]:
+        output = await self._optional_stdout(
+            ["git", "diff", "--name-only", "--diff-filter=U"]
+        )
         if output == "":
             return False
         return bool(output.splitlines())
 
-    def _is_ancestor(self, ancestor: str, descendant: str) -> Optional[bool]:
+    async def _is_ancestor(self, ancestor: str, descendant: str) -> Optional[bool]:
         if not ancestor or not descendant:
             return None
         try:
-            result = self._run_git(
+            result = await self._run_git(
                 ["git", "merge-base", "--is-ancestor", ancestor, descendant],
                 timeout=30,
             )
@@ -540,8 +556,9 @@ class GitOperationTool(BaseTool):
             return "unknown"
         return self._status_code_to_change_type(code[0], " ")
 
-    def _get_commit_record(self, rev: str) -> Optional[Dict[str, Any]]:
-        output = self._optional_stdout(
+    async def _get_commit_record(self, rev: str) -> Optional[Dict[str, Any]]:
+        output = (
+            await self._optional_stdout(
             [
                 "git",
                 "show",
@@ -550,6 +567,7 @@ class GitOperationTool(BaseTool):
                 "--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI",
                 rev,
             ]
+            )
         ).strip()
         if not output:
             return None
@@ -564,8 +582,8 @@ class GitOperationTool(BaseTool):
             "authored_at": parts[4],
         }
 
-    def _get_commit_stats(self, rev: str) -> Dict[str, int]:
-        output = self._optional_stdout(["git", "show", "--format=", "--numstat", rev])
+    async def _get_commit_stats(self, rev: str) -> Dict[str, int]:
+        output = await self._optional_stdout(["git", "show", "--format=", "--numstat", rev])
         files_changed = 0
         insertions = 0
         deletions = 0
