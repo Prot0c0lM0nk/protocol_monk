@@ -15,7 +15,14 @@ import argparse
 import json
 import logging
 from pathlib import Path
+import sys
 from typing import List
+
+# Allow direct execution via `python protocol_monk/scripts/...py` from the repo root.
+if __package__ in {None, ""}:
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
 from protocol_monk.config.settings import load_settings
 from protocol_monk.exceptions.config import ConfigError
