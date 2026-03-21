@@ -31,14 +31,29 @@ class ModelDiscovery:
         Preserves user overrides between runs.
         """
         existing = self._load_existing_config()
+        cached_is_fresh = not force_refresh and self._is_config_fresh(existing)
 
-        if not force_refresh and self._is_config_fresh(existing):
-            logger.info("Using cached model configuration.")
-            return existing
+        if cached_is_fresh:
+            try:
+                live_model_names = await self._query_ollama_models()
+            except Exception:
+                logger.warning(
+                    "Failed to verify live Ollama model list. Using cached model configuration."
+                )
+                return existing
 
-        logger.info("Refreshing model configuration from Ollama...")
-        model_names = await self._query_ollama_models()
-        config = await self._build_config(model_names, existing)
+            if self._model_names_match(existing, live_model_names):
+                logger.info("Using cached model configuration.")
+                return existing
+
+            logger.info(
+                "Refreshing model configuration from Ollama because the live model list changed..."
+            )
+        else:
+            logger.info("Refreshing model configuration from Ollama...")
+            live_model_names = await self._query_ollama_models()
+
+        config = await self._build_config(live_model_names, existing)
         self._save_config(config)
 
         logger.info(f"Discovered {len(config['models'])} models.")
@@ -65,6 +80,32 @@ class ModelDiscovery:
             return age_hours < max_age_hours
         except Exception:
             return False
+
+    @staticmethod
+    def _normalize_model_names(model_names: List[str]) -> List[str]:
+        """Return deduplicated model names for stable cache comparisons."""
+        normalized: List[str] = []
+        seen = set()
+        for raw_name in model_names:
+            name = str(raw_name or "").strip()
+            if not name or name in seen:
+                continue
+            normalized.append(name)
+            seen.add(name)
+        return sorted(normalized)
+
+    @classmethod
+    def _model_names_match(
+        cls, cached_config: Dict[str, Any], live_model_names: List[str]
+    ) -> bool:
+        """Detect whether the cached map tracks the current live Ollama catalog."""
+        cached_models = cached_config.get("models", {})
+        if not isinstance(cached_models, dict):
+            return False
+
+        cached_names = cls._normalize_model_names(list(cached_models.keys()))
+        live_names = cls._normalize_model_names(live_model_names)
+        return cached_names == live_names
 
     async def _query_ollama_models(self) -> List[str]:
         """Get list of available model names from Ollama."""
